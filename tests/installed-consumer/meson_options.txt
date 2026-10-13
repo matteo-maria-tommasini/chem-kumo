@@ -1,0 +1,1 @@
+option('kumo_prefix', type: 'string', value: '', description: 'Private KUMO install prefix')

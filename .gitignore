@@ -1,0 +1,15 @@
+/build/
+/build-*/
+/_install/
+/build-install/
+*.cube
+!tests/data/*.cube
+!tests/data/mo_reference_cubes/*.cube
+.DS_Store
+._*
+__MACOSX/
+*.dSYM/
+*.o
+*.dylib
+*.so
+*.a

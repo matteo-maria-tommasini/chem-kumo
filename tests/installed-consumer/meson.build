@@ -1,0 +1,6 @@
+project('kumo-installed-consumer', 'cpp', default_options: ['cpp_std=c++20'])
+cpp = meson.get_compiler('cpp')
+eigen = dependency('eigen3')
+inc = include_directories(get_option('kumo_prefix') / 'include')
+kumo = cpp.find_library('kumo', dirs: [get_option('kumo_prefix') / get_option('libdir')], required: true)
+executable('installed-kumo-consumer', 'main.cpp', include_directories: inc, dependencies: [eigen, kumo], install: false)
