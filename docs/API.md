@@ -1,8 +1,10 @@
 # chem-kumo C++ API guide
 
 Include `<chem/kumo.hpp>` and link against `kumo_dep` in Meson. Public types
-are in namespace `chem::kumo`. All spatial coordinates and grid vectors use
-atomic units (bohr).
+are in namespace `chem::kumo`. Examples use fully qualified names (such as
+`chem::kumo::Molecule` and `chem::kumo::Spin`) rather than namespace-wide
+`using` directives. All spatial coordinates and grid vectors use atomic
+units (bohr).
 
 ## Reading an FCHK
 

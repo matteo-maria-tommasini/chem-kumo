@@ -67,18 +67,21 @@ electrons/bohr^3; orbital amplitudes are in bohr^(-3/2).
 
 ```cpp
 #include <chem/kumo.hpp>
-using namespace chem::kumo;
 
-auto mol = Molecule::from_fchk("molecule.fchk");
-auto grid = Grid::around(mol.atoms(), 5.0, 0.2); // bohr
+int main()
+{
+    auto mol = chem::kumo::Molecule::from_fchk("molecule.fchk");
+    auto grid = chem::kumo::Grid::around(mol.atoms(), 5.0, 0.2); // bohr
 
-mol.density(grid, Spin::Total).write_cube("density.cube");
-auto spin_fields = mol.spin_densities(grid);
-spin_fields.spin.write_cube("spin.cube");
+    mol.density(grid, chem::kumo::Spin::Total).write_cube("density.cube");
+    auto spin_fields = mol.spin_densities(grid);
+    spin_fields.spin.write_cube("spin.cube");
 
-// Orbital numbers are 1-based; Spin::Alpha / Spin::Beta select MO channels.
-auto homo = mol.orbital(grid, 15, Spin::Alpha);
-homo.write_orbital_cube("homo.cube", 15);
+    // Orbital numbers are 1-based; Alpha/Beta select MO channels.
+    auto homo = mol.orbital(grid, 15, chem::kumo::Spin::Alpha);
+    homo.write_orbital_cube("homo.cube", 15);
+    return 0;
+}
 ```
 
 The default density evaluator uses blocked Eigen contractions (128 points per
