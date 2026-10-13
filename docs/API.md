@@ -66,7 +66,7 @@ ordering; `evaluate_into` fills a caller-provided vector; `evaluate_batch`
 produces AO columns for a batch of points. The `evaluate_into_reference`
 method is a numerical-regression implementation.
 
-## Spatial derivative API (1.2.0-dev)
+## Spatial derivative API (1.2.0)
 
 `BasisEvaluator::evaluate_derivatives(point)` returns an `AODerivatives`
 structure: `values` (N AO), `gradient` (N AO x 3) and `hessian`

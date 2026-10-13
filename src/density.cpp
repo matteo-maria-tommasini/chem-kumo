@@ -60,7 +60,7 @@ double Field::operator()(int i,int j,int k) const {
 void Field::write_cube(const std::filesystem::path& path, const std::string& comment) const {
     std::ofstream out(path);
     if (!out) throw std::runtime_error("cannot open cube output");
-    out << "chem-kumo 1.2.0-dev\n" << comment << "\n" << std::fixed << std::setprecision(6);
+    out << "chem-kumo " CHEM_KUMO_VERSION "\n" << comment << "\n" << std::fixed << std::setprecision(6);
     out << std::setw(5) << atoms_.size();
     for (int k=0;k<3;++k) out << std::setw(13) << grid_.origin[k];
     out << '\n';
@@ -85,7 +85,7 @@ void Field::write_orbital_cube(const std::filesystem::path& path, std::size_t or
     if (orbital_index == 0 || orbital_index > 9999) throw std::invalid_argument("invalid orbital index for Cube");
     std::ofstream out(path);
     if (!out) throw std::runtime_error("cannot open orbital cube output");
-    out << "chem-kumo 1.2.0-dev\n" << comment << "\n" << std::fixed << std::setprecision(6);
+    out << "chem-kumo " CHEM_KUMO_VERSION "\n" << comment << "\n" << std::fixed << std::setprecision(6);
     out << std::setw(5) << -static_cast<long long>(atoms_.size());
     for (int k=0;k<3;++k) out << std::setw(13) << grid_.origin[k];
     out << '\n';

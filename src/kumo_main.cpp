@@ -28,7 +28,7 @@ struct Options {
     bool output_set = false;
 };
 void usage() {
-    std::cout << "kumo 1.2.0-dev - ground-state electron densities and molecular orbitals\n\n"
+    std::cout << "kumo " CHEM_KUMO_VERSION " - ground-state electron densities and molecular orbitals\n\n"
       << "Usage: kumo FILE.fchk[.gz] [options]\n\n"
       << "  (default)                  Write total electron density\n"
       << "  --spin total|alpha|beta|difference|all   Density component(s)\n"
@@ -161,7 +161,7 @@ void write_orbitals(const Molecule& mol,const chem::kumo::Grid& grid,const Optio
 int main(int argc,char** argv) {
     try {
         if (argc==2 && std::string(argv[1])=="--help") {usage();return 0;}
-        if (argc==2 && std::string(argv[1])=="--version") {std::cout << "kumo 1.2.0-dev\n";return 0;}
+        if (argc==2 && std::string(argv[1])=="--version") {std::cout << "kumo " CHEM_KUMO_VERSION "\n";return 0;}
         const auto o=parse(argc,argv);
         const auto mol=Molecule::from_fchk(o.input);
         if (o.list) {

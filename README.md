@@ -1,4 +1,4 @@
-# chem-kumo 1.2.0-dev
+# chem-kumo 1.2.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -7,11 +7,11 @@
 **chem-kumo** is a lightweight C++20 library and command-line application for
 reconstructing ground-state SCF electron densities and molecular orbitals from
 Gaussian formatted checkpoint (`.fchk` or gzip-compressed `.fchk.gz`) files. It supports restricted and
-unrestricted calculations, with Eigen as its only numerical dependency.
+unrestricted calculations, with Eigen for numerical operations and zlib for gzip input.
 
 ## Requirements and build
 
-- C++20 compiler; Eigen 3.4; Meson (>= 0.63) and Ninja for building.
+- C++20 compiler; Eigen 3.4; zlib; Meson (>= 0.63) and Ninja for building.
 - No Gaussian installation or external BLAS/LAPACK is needed to use KUMO.
 
 ```sh
@@ -97,7 +97,7 @@ The grid origin, axis-step vectors, and atomic coordinates are in **bohr**.
 `Spin::Difference` means `rho_alpha - rho_beta`. The field index order is
 `(i,j,k)` and a Cube file stores values on the specified regular grid.
 
-### Spatial derivatives (development branch)
+### Spatial derivatives (since 1.2.0)
 
 The C++ API evaluates analytic **spatial** derivatives at arbitrary points,
 with nuclear geometry and FCHK wavefunction data held fixed. The

@@ -24,5 +24,5 @@ fi
 if "$KUMO" "$FCHK" --mo 9999 --spacing 1 --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo 'Invalid orbital unexpectedly accepted' >&2; exit 1
 fi
-"$KUMO" --version | grep -q '1.2.0-dev'
+"$KUMO" --version | grep -q '1.2.0'
 echo 'CLI end-to-end OK'

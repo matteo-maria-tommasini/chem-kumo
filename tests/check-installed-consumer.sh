@@ -23,8 +23,8 @@ if [ ! -x "$PREFIX/bin/kumo" ]; then
   echo 'ERROR: installed kumo CLI not found' >&2; exit 1
 fi
 if [ "$(uname -s)" = Darwin ]; then
-  DYLD_LIBRARY_PATH="$LIBDIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version | grep -q '1.2.0-dev'
+  DYLD_LIBRARY_PATH="$LIBDIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version | grep -q '1.2.0'
 else
-  LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version | grep -q '1.2.0-dev'
+  LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version | grep -q '1.2.0'
 fi
 echo 'installed KUMO CLI OK'

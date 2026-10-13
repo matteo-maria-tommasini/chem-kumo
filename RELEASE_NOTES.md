@@ -1,4 +1,4 @@
-# chem-kumo 1.2.0-dev — development notes (not a release)
+# chem-kumo 1.2.0 — release notes
 
 This development branch adds analytic Cartesian spatial derivatives of
 Gaussian AO basis functions, signed molecular orbitals, and spin-resolved
@@ -12,7 +12,7 @@ first-derivative panels into one matrix and uses a single dense Eigen
 product. Second-derivative panels enter only the linear reductions.
 This improves data reuse without changing dense quadratic AO scaling.
 
-A developer-only spatial benchmark reports AO evaluation, derivative,
+An optional spatial benchmark reports AO evaluation, derivative,
 pointwise/blocked, and separate/fused contraction timings. On HBC
 (B3LYP/def2-TZVP, 1410 AO, 1000 points, Apple Silicon), the measured
 blocked B=128 time was 0.4423 s versus 1.3674 s pointwise; the fused
@@ -21,15 +21,15 @@ and workload-specific observations, not guaranteed speedups.
 
 The FCHK reader also accepts files without `P(S=P) Contraction coefficients`
 when no SP shell is present. The existing density/MO behavior remains
-unchanged. The 30-test suite passed on macOS ARM64 on 2026-10-13.
+unchanged. The 31-test suite passed on macOS ARM64 on 2026-10-13, including gzip integrity checks and compressed HBC references.
 The CLI does not yet export derivative fields; all new derivative methods
-are exposed through the C++ API. Dependencies remain C++20 and Eigen.
+are exposed through the C++ API. Dependencies are C++20, Eigen, and zlib.
 
 See [docs/API.md](docs/API.md),
 [mathematical foundations](docs/mathematics/chem-kumo-mathematics.tex), and
 [benchmark methodology](benchmarks/SPATIAL_DERIVATIVES.md).
 
-- Store all five FCHK reference datasets as losslessly compressed `.fchk.gz` files, including three HBC benchmarks.
+The five FCHK reference datasets are stored as losslessly compressed `.fchk.gz` files, including three HBC benchmarks (678, 720 and 1410 AO). The FCHK reader uses zlib and checks gzip integrity.
 
 ---
 
