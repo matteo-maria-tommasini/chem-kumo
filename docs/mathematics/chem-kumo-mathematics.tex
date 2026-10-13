@@ -1,0 +1,192 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,booktabs,geometry,hyperref}
+\geometry{margin=25mm}
+\hypersetup{hidelinks}
+\title{chem-kumo: Mathematical Foundations and Numerical Algorithms}
+\author{Matteo Tommasini}
+\date{Version 1.2.0-dev}
+\begin{document}
+\maketitle
+\tableofcontents
+
+\section{Scope and conventions}
+KUMO is a non-SCF evaluator of real ground-state electronic fields from
+Gaussian formatted checkpoint (FCHK) data. It neither determines the electronic
+state nor relaxes orbital coefficients. All derivatives below are with respect
+to the electronic Cartesian coordinate $\mathbf r$, with the molecular geometry
+and FCHK data fixed. No nuclear derivatives or electronic response equations
+are implemented. Atomic units are used: distances in bohr, energies in hartree.
+AO and MO values have dimensions $a_0^{-3/2}$, density $a_0^{-3}$,
+its gradient $a_0^{-4}$, Hessian and Laplacian $a_0^{-5}$, and the positive
+kinetic-energy density $E_h a_0^{-3}$ in atomic units.
+
+\section{Gaussian atomic-orbital basis}
+A Cartesian primitive centered at $\mathbf A$ is
+\begin{equation}
+ g_{\ell mn}(\mathbf r;\alpha)=N_{\ell mn}(\alpha)
+ u^\ell v^m w^n\exp[-\alpha(u^2+v^2+w^2)],\qquad
+ (u,v,w)=\mathbf r-\mathbf A.
+\end{equation}
+An AO is a contracted linear combination of primitives (with the appropriate
+normalization and contraction conventions):
+\begin{equation}
+ \chi_\mu(\mathbf r)=\sum_p d_{\mu p}g_{\mu p}(\mathbf r).
+\end{equation}
+For pure spherical shells, a fixed Cartesian-to-real-spherical linear
+transformation maps primitive or contracted Cartesian components into the
+FCHK AO order. This same transformation is applied to all spatial derivatives.
+For combined SP shells, S and P contractions use their respective coefficients.
+The FCHK record for SP contraction coefficients need not exist when no SP
+shell is present. The AO ordering and normalization must agree with the
+coefficient and density matrices read from the same FCHK.
+
+\section{Analytic AO derivatives through second order}
+Define the polynomial factors
+\begin{align}
+ f_\ell(u)&=u^\ell,\\
+ D_\ell(u;\alpha)&=\ell u^{\ell-1}-2\alpha u^{\ell+1},\\
+ E_\ell(u;\alpha)&=\ell(\ell-1)u^{\ell-2}
+ -2\alpha(2\ell+1)u^\ell+4\alpha^2u^{\ell+2}.
+\end{align}
+Terms whose prefactors vanish are evaluated as zero, without forming
+negative powers at the origin. With $G=N_{\ell mn}\exp[-\alpha(u^2+v^2+w^2)]$,
+\begin{align}
+ \partial_x g_{\ell mn}&=G D_\ell(u;\alpha)f_m(v)f_n(w),\\
+ \partial_{xx}g_{\ell mn}&=G E_\ell(u;\alpha)f_m(v)f_n(w),\\
+ \partial_{xy}g_{\ell mn}&=G D_\ell(u;\alpha)D_m(v;\alpha)f_n(w).
+\end{align}
+The other Cartesian components follow by permutation. Derivation commutes
+with contraction and the Cartesian-to-pure transformation. The AO evaluator
+returns $\chi_\mu$, three first derivatives, and six unique second derivatives
+in the order $(xx,yy,zz,xy,xz,yz)$. This is the storage convention, not the
+matrix layout of the symmetric $3\times3$ Hessian.
+
+\section{Molecular orbitals}
+For real molecular orbitals in spin channel $\sigma\in\{\alpha,\beta\}$,
+\begin{align}
+ \psi_i^\sigma(\mathbf r)&=\sum_\mu C_{\mu i}^\sigma\chi_\mu(\mathbf r),\\
+ \partial_a\psi_i^\sigma&=\sum_\mu C_{\mu i}^\sigma\partial_a\chi_\mu,\\
+ \partial_{ab}\psi_i^\sigma&=\sum_\mu C_{\mu i}^\sigma\partial_{ab}\chi_\mu.
+\end{align}
+These are derivatives of the signed orbital amplitude, not of its square.
+The public MO indices are one-based, whereas internal coefficient matrices
+use zero-based indexing. Alpha and beta select orbital channels, not total
+or spin-difference orbitals. No MO phase alignment is applied.
+
+\section{Spin densities and the AO density matrix}
+Let $\boldsymbol\chi(\mathbf r)$ be the column vector of AO values and
+$P^\sigma$ a real symmetric spin density matrix. Then
+\begin{equation}
+ \rho_\sigma=\boldsymbol\chi^T P^\sigma\boldsymbol\chi
+ =\sum_i n_{i\sigma}(\psi_i^\sigma)^2,
+ \qquad P^\sigma=C^\sigma n^\sigma(C^\sigma)^T.
+\end{equation}
+Here $n^\sigma$ is diagonal and contains spin-orbital occupations. In the
+restricted closed-shell case the two spin matrices are equal and each
+contains half the total density. Define
+\begin{equation}
+ P^{\mathrm{total}}=P^\alpha+P^\beta,\qquad
+ P^{\mathrm{spin}}=P^\alpha-P^\beta.
+\end{equation}
+KUMO supports total, alpha, beta, and alpha-minus-beta components.
+The spin-difference field is signed and need not be nonnegative.
+
+\section{Spatial derivatives of the electron density}
+Write $\boldsymbol\chi_a=\partial_a\boldsymbol\chi$ and
+$\boldsymbol\chi_{ab}=\partial_a\partial_b\boldsymbol\chi$.
+For any of the symmetric matrices $P^s$ described above,
+\begin{align}
+ \rho_s&=\boldsymbol\chi^T P^s\boldsymbol\chi,\\
+ \partial_a\rho_s&=2\boldsymbol\chi_a^T P^s\boldsymbol\chi,\\
+ \partial_{ab}\rho_s&=2\boldsymbol\chi_{ab}^T P^s\boldsymbol\chi
+       +2\boldsymbol\chi_a^T P^s\boldsymbol\chi_b,\\
+ \nabla^2\rho_s&=\sum_{a=x,y,z}\partial_{aa}\rho_s
+                  =\operatorname{tr}H(\rho_s).
+\end{align}
+The full Hessian is symmetric; the off-diagonal components are evaluated
+analytically. The positive-definite kinetic-energy density for a physical
+spin channel is
+\begin{equation}
+ \tau_\sigma(\mathbf r)=\frac12\sum_{a=x,y,z}
+ \boldsymbol\chi_a^T P^\sigma\boldsymbol\chi_a
+ =\frac12\sum_i n_{i\sigma}|\nabla\psi_i^\sigma|^2.
+\end{equation}
+The same linear formula applied to $P^{\mathrm{spin}}$ yields
+$\tau_\alpha-\tau_\beta$, which is not necessarily positive.
+The identity
+\begin{equation}
+ \nabla^2\rho_s=2(\nabla^2\boldsymbol\chi)^TP^s\boldsymbol\chi
+ +4\tau_s
+\end{equation}
+provides an additional algebraic consistency check.
+
+\section{Blocked dense contractions with Eigen}
+For $B$ spatial points, let $\Phi,\Phi_x,\Phi_y,\Phi_z$ be
+$N_{\mathrm{AO}}\times B$ panels of AO values and first derivatives.
+The implementation packs these into one column-major matrix
+\begin{equation}
+ A=[\Phi\ \Phi_x\ \Phi_y\ \Phi_z]
+ \in\mathbb R^{N_{\mathrm{AO}}\times4B}
+\end{equation}
+and applies the selected density matrix in one Eigen matrix product:
+\begin{equation}
+ V=P^s A=[V_0\ V_x\ V_y\ V_z].
+\end{equation}
+For each point (column) $j$, the fields are obtained by vector products:
+\begin{align}
+ \rho_{s,j}&=\Phi_j^T(V_0)_j,\\
+ (\nabla\rho_s)_{a,j}&=2(\Phi_a)_j^T(V_0)_j,\\
+ (H_s)_{ab,j}&=2(\Phi_{ab})_j^T(V_0)_j
+                  +2(\Phi_a)_j^T(V_b)_j,\\
+ \tau_{s,j}&=\tfrac12\sum_a(\Phi_a)_j^T(V_a)_j.
+\end{align}
+Six second-derivative panels are retained for the linear reductions but
+\emph{are not} multiplied by $P^s$. Only the diagonal pointwise contractions
+are required; no $B\times B$ field matrix is formed. The AO derivatives
+are still evaluated point by point inside each block.
+
+The dense matrix product requires $O(4N_{\mathrm{AO}}^2B)$ arithmetic
+per block; AO derivative evaluation and reductions scale approximately
+linearly with $N_{\mathrm{AO}}$ for fixed basis structure. The fused product
+reduces separate Eigen calls and may improve reuse of $P^s$ in cache,
+but it does not change the asymptotic complexity or reduce the number of
+mathematical density-matrix applications. No sparse screening is applied.
+
+For a full block, ten AO panels (one value, three gradients, six Hessians)
+and four product panels together require approximately
+$14N_{\mathrm{AO}}B$ doubles, excluding the density matrices, output and
+temporary storage. At $N_{\mathrm{AO}}=1410$, $B=128$, this is approximately
+20.2 MB of panel data. The public blocked API returns a vector of results,
+so its total output memory grows with the number of points even though AO
+scratch data are block-local.
+
+\section{Validation and benchmark methodology}
+AO, MO, and density spatial derivatives are checked against centered finite
+differences of independent value/gradient evaluations. Finite differences
+are used only for testing, never to compute production derivatives.
+Density-matrix results are also checked against independent occupied-MO
+sums for density, gradient, Hessian, and $\tau$, and blocked results are
+compared with the pointwise reference. The regression suite includes Gaussian
+09 reference Cube comparisons for density and signed orbital amplitudes.
+These tests establish agreement on the tested FCHK cases, not universal
+support for every Gaussian basis or method.
+
+The optional \texttt{kumo-spatial-benchmark} executable times AO values,
+AO derivatives, representative dense contractions, density-only evaluation,
+and pointwise/blocked density derivatives. The timer uses one warm-up and
+the minimum of repeated wall-clock times. Representative contraction timings
+are not additive components of end-to-end timings; the full methods have
+different setup and allocation costs. Benchmark times are performance
+measurements, never pass/fail correctness thresholds.
+
+\section{Limits and intended use}
+KUMO evaluates the real electronic fields defined by the supplied FCHK.
+It does not perform SCF, orbital optimization, response theory, or nuclear
+coordinate differentiation. The present blocked derivative evaluator uses
+dense matrices and fixed-size blocks, without AO screening or streaming
+output of derivative fields. Its mathematical derivatives are analytic
+with respect to the supplied finite Gaussian representation; grid sampling
+and floating-point arithmetic introduce their usual numerical limitations.
+\end{document}

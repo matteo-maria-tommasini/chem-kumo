@@ -24,7 +24,12 @@ BasisSet::BasisSet(const FormattedCheckpoint& fchk) {
     const auto& centers = fchk.integers("Shell to atom map");
     const auto& exponents = fchk.reals("Primitive exponents");
     const auto& coeff = fchk.reals("Contraction coefficients");
-    const auto& p_coeff = fchk.reals("P(S=P) Contraction coefficients");
+    // Gaussian omits this optional record for bases without shared sp shells
+    // (e.g. def2-SVP and def2-TZVP). It is required only for shell type -1.
+    const bool has_p_coeff = fchk.contains("P(S=P) Contraction coefficients");
+    const std::vector<double> empty_p_coeff;
+    const auto& p_coeff = has_p_coeff
+        ? fchk.reals("P(S=P) Contraction coefficients") : empty_p_coeff;
     const auto& xyz = fchk.reals("Coordinates of each shell");
 
     if (types.size() != nprim.size() || types.size() != centers.size()) {
@@ -33,13 +38,20 @@ BasisSet::BasisSet(const FormattedCheckpoint& fchk) {
     if (xyz.size() != 3U * types.size()) {
         throw std::runtime_error("invalid shell-coordinate array in fchk");
     }
-    if (exponents.size() != coeff.size() || exponents.size() != p_coeff.size()) {
+    if (exponents.size() != coeff.size() ||
+        (has_p_coeff && exponents.size() != p_coeff.size())) {
         throw std::runtime_error("inconsistent primitive arrays in fchk");
     }
 
     const auto atom_count = detail::checked_positive_size(fchk.integer("Number of atoms"), "Number of atoms");
     const auto declared_basis = detail::checked_positive_size(fchk.integer("Number of basis functions"),
                                                       "Number of basis functions");
+
+    if (!has_p_coeff) {
+        for (const auto type : types)
+            if (type == -1)
+                throw std::runtime_error("missing P(S=P) coefficients for sp shell");
+    }
 
     shells_.reserve(types.size());
     std::size_t primitive_offset = 0;
@@ -76,8 +88,12 @@ BasisSet::BasisSet(const FormattedCheckpoint& fchk) {
                                exponents.begin() + static_cast<std::ptrdiff_t>(primitive_offset + count));
         shell.coefficients.assign(coeff.begin() + static_cast<std::ptrdiff_t>(primitive_offset),
                                   coeff.begin() + static_cast<std::ptrdiff_t>(primitive_offset + count));
-        shell.p_coefficients.assign(p_coeff.begin() + static_cast<std::ptrdiff_t>(primitive_offset),
-                                    p_coeff.begin() + static_cast<std::ptrdiff_t>(primitive_offset + count));
+        if (has_p_coeff) {
+            shell.p_coefficients.assign(p_coeff.begin() + static_cast<std::ptrdiff_t>(primitive_offset),
+                                        p_coeff.begin() + static_cast<std::ptrdiff_t>(primitive_offset + count));
+        } else {
+            shell.p_coefficients.assign(count, 0.0);
+        }
         for (std::size_t p = 0; p < count; ++p) {
             if (!(shell.exponents[p] > 0.0) || !std::isfinite(shell.exponents[p]) ||
                 !std::isfinite(shell.coefficients[p]) || !std::isfinite(shell.p_coefficients[p])) {

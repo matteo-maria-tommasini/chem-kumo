@@ -1,4 +1,4 @@
-# chem-kumo 1.1.0
+# chem-kumo 1.2.0-dev
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -6,7 +6,7 @@
 
 **chem-kumo** is a lightweight C++20 library and command-line application for
 reconstructing ground-state SCF electron densities and molecular orbitals from
-Gaussian formatted checkpoint (`.fchk`) files. It supports restricted and
+Gaussian formatted checkpoint (`.fchk` or gzip-compressed `.fchk.gz`) files. It supports restricted and
 unrestricted calculations, with Eigen as its only numerical dependency.
 
 ## Requirements and build
@@ -25,11 +25,13 @@ meson test -C build --print-errorlogs
 To install, use `meson install -C build` with a suitable Meson prefix.
 The installable targets are the `kumo` executable, `libkumo`, and public headers.
 Benchmarks are optional (`meson configure build -Dbenchmarks=true`).
+For performance comparisons, select `-Dbuildtype=release` and rebuild.
 
 ## Command-line examples
 
 ```sh
 kumo molecule.fchk                              # total SCF density
+kumo molecule.fchk.gz                           # transparent gzip input
 kumo o2.fchk --spin all                          # total, alpha, beta, spin difference
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
@@ -95,18 +97,53 @@ The grid origin, axis-step vectors, and atomic coordinates are in **bohr**.
 `Spin::Difference` means `rho_alpha - rho_beta`. The field index order is
 `(i,j,k)` and a Cube file stores values on the specified regular grid.
 
+### Spatial derivatives (development branch)
+
+The C++ API evaluates analytic **spatial** derivatives at arbitrary points,
+with nuclear geometry and FCHK wavefunction data held fixed. The
+`BasisEvaluator` provides AO values, Cartesian gradients and all six unique
+Hessian components. `Molecule::orbital_derivatives()` returns signed MO
+amplitude, gradient and Hessian for a 1-based orbital index and alpha/beta
+channel. `Molecule::density_derivatives()` returns density, gradient,
+full Hessian, Laplacian and positive kinetic-energy density `tau` for any
+density component. The blocked variant accepts a 3 x N point matrix:
+
+```cpp
+#include <chem/kumo.hpp>
+
+int main()
+{
+    auto mol = chem::kumo::Molecule::from_fchk("molecule.fchk");
+    const Eigen::Vector3d point(0.0, 0.0, 1.0); // bohr
+    const auto d = mol.density_derivatives(point, chem::kumo::Spin::Total);
+    const double laplacian = d.laplacian;
+    const double kinetic_density = d.tau;
+    (void)laplacian;
+    (void)kinetic_density;
+    return 0;
+}
+```
+
+No derivatives with respect to nuclear displacements, SCF steps, or
+response calculations are performed. The current `kumo` CLI still writes
+density and MO Cube files; the new derivative methods are **C++ API only**.
+
+For the mathematical definitions, see
+[Mathematical Foundations](docs/mathematics/chem-kumo-mathematics.tex).
+For numerical organization and performance measurements, see
+[Spatial derivative benchmark](benchmarks/SPATIAL_DERIVATIVES.md).
 For a method-by-method guide and contracts, see [docs/API.md](docs/API.md).
 
 ## Validation and supported scope
 
-The Meson suite currently registers **26 tests**: 13 established density,
-input, and consumer tests; 10 orbital comparisons with Gaussian 09 Cubegen;
-and 2 CLI listing checks. The 26 tests passed on macOS ARM64 (Apple Clang)
-for the development package tested on 2026-10-13. The MO comparisons include
-occupied and virtual alpha/beta orbitals of open-shell O2 and restricted
-acrolein, including signed amplitudes and orbital norms. Existing density
-references cover total, alpha, beta, and spin density. See
-[tests/REFERENCE_CUBES.md](tests/REFERENCE_CUBES.md) for reference details.
+The Meson suite on the spatial-derivatives development branch registers
+**30 tests**. The new tests cover AO, MO and density spatial derivatives
+against centered finite differences; independent MO versus density-matrix
+reconstruction; and blocked versus pointwise density derivatives. The 30
+regression tests passed on macOS ARM64 (Apple Clang) on 2026-10-13 after
+the fused Eigen optimization. Gaussian 09 Cubegen reference comparisons
+for signed MO amplitudes and density components remain in the suite.
+See [tests/REFERENCE_CUBES.md](tests/REFERENCE_CUBES.md) for reference details.
 
 The reference tests account for the rounding of the **known** Gaussian grid
 step (1/6 bohr) in Cube headers; this correction is specific to those
@@ -142,3 +179,27 @@ debugging, and documentation.
 
 MIT License; see [LICENSE](LICENSE). Eigen is an external dependency and is not
 bundled. Reference Cube and FCHK files are provided for numerical regression.
+
+### Compressed formatted checkpoints
+
+KUMO reads gzip-compressed FCHK files directly with zlib; the CLI and
+`chem::kumo::Molecule::from_fchk(path)` accept either plain `.fchk` or
+compressed `.fchk.gz` without temporary decompressed files. Compression is
+detected from the gzip header, not the filename. Corrupted gzip data and
+invalid gzip checksums are reported as input errors. The FCHK parser and
+all numerical algorithms are unchanged. zlib is a required build dependency.
+
+To check the integrity of a committed compressed reference:
+
+```sh
+gzip -t tests/data/o2.fchk.gz
+```
+
+### Compressed reference data
+
+The repository stores its five Gaussian formatted checkpoints as `.fchk.gz`
+files: O2 and acrolein for numerical regression, and three HBC basis-set
+variants in `tests/data/hbc/` for reproducible performance measurements.
+KUMO reads them directly without temporary decompression. The `fchk-gzip`
+regression test materializes plain-text copies in a temporary directory to
+check exact numerical equivalence and rejects corrupted gzip trailers.

@@ -60,7 +60,7 @@ double Field::operator()(int i,int j,int k) const {
 void Field::write_cube(const std::filesystem::path& path, const std::string& comment) const {
     std::ofstream out(path);
     if (!out) throw std::runtime_error("cannot open cube output");
-    out << "chem-kumo 1.1.0-dev\n" << comment << "\n" << std::fixed << std::setprecision(6);
+    out << "chem-kumo 1.2.0-dev\n" << comment << "\n" << std::fixed << std::setprecision(6);
     out << std::setw(5) << atoms_.size();
     for (int k=0;k<3;++k) out << std::setw(13) << grid_.origin[k];
     out << '\n';
@@ -85,7 +85,7 @@ void Field::write_orbital_cube(const std::filesystem::path& path, std::size_t or
     if (orbital_index == 0 || orbital_index > 9999) throw std::invalid_argument("invalid orbital index for Cube");
     std::ofstream out(path);
     if (!out) throw std::runtime_error("cannot open orbital cube output");
-    out << "chem-kumo 1.1.0-dev\n" << comment << "\n" << std::fixed << std::setprecision(6);
+    out << "chem-kumo 1.2.0-dev\n" << comment << "\n" << std::fixed << std::setprecision(6);
     out << std::setw(5) << -static_cast<long long>(atoms_.size());
     for (int k=0;k<3;++k) out << std::setw(13) << grid_.origin[k];
     out << '\n';
@@ -164,6 +164,114 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     if (result.beta_mos_.cols() && !result.beta_energies_.empty() &&
         result.beta_energies_.size() != static_cast<std::size_t>(result.beta_mos_.cols()))
         throw std::runtime_error("beta orbital energy count mismatch");
+    return result;
+}
+DensityDerivatives Molecule::density_derivatives(
+    const Eigen::Vector3d& point, Spin component) const {
+    if (!point.allFinite())
+        throw std::invalid_argument("density evaluation point must be finite");
+    // P is symmetric. The alpha/beta split preserves the FCHK density
+    // convention and permits the same contractions for all four fields.
+    const Eigen::MatrixXd* p = &total_;
+    Eigen::MatrixXd selected;
+    switch (component) {
+        case Spin::Total: break;
+        case Spin::Difference: p = &spin_; break;
+        case Spin::Alpha:
+            selected = 0.5 * (total_ + spin_);
+            p = &selected;
+            break;
+        case Spin::Beta:
+            selected = 0.5 * (total_ - spin_);
+            p = &selected;
+            break;
+        default: throw std::invalid_argument("invalid density spin component");
+    }
+    const auto ao = evaluator_.evaluate_derivatives(point);
+    const Eigen::VectorXd y = (*p) * ao.values;
+    const Eigen::Matrix<double, Eigen::Dynamic, 3> pg = (*p) * ao.gradient;
+    DensityDerivatives result;
+    result.value = ao.values.dot(y);
+    result.gradient = 2.0 * ao.gradient.transpose() * y;
+    // AO Hessian storage order: xx, yy, zz, xy, xz, yz.
+    constexpr int indices[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+    for (int a = 0; a < 3; ++a) {
+        for (int b = a; b < 3; ++b) {
+            const double value = 2.0 * (
+                ao.hessian.col(indices[a][b]).dot(y) +
+                ao.gradient.col(a).dot(pg.col(b)));
+            result.hessian(a,b) = value;
+            result.hessian(b,a) = value;
+        }
+        result.tau += 0.5 * ao.gradient.col(a).dot(pg.col(a));
+    }
+    result.laplacian = result.hessian.trace();
+    return result;
+}
+std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+    Spin component, std::size_t block_size) const {
+    if (block_size == 0) throw std::invalid_argument("block size must be positive");
+    if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
+    Eigen::MatrixXd selected;
+    const Eigen::MatrixXd* p = &total_;
+    switch (component) {
+        case Spin::Total: break;
+        case Spin::Difference: p = &spin_; break;
+        case Spin::Alpha: selected = 0.5 * (total_ + spin_); p = &selected; break;
+        case Spin::Beta: selected = 0.5 * (total_ - spin_); p = &selected; break;
+        default: throw std::invalid_argument("invalid density spin component");
+    }
+    const auto n = static_cast<Eigen::Index>(basis_size());
+    const auto count = static_cast<std::size_t>(points.cols());
+    std::vector<DensityDerivatives> result(count);
+    constexpr int index[3][3] = {{0,3,4},{3,1,5},{4,5,2}};
+    for (std::size_t start = 0; start < count;) {
+        const std::size_t size = std::min(block_size, count-start);
+        const auto b = static_cast<Eigen::Index>(size);
+        // Pack AO values and first derivatives into one column-major panel.
+        // A single GEMM applies P to all four panels, avoiding four separate
+        // matrix products and improving reuse of the (potentially large) P.
+        Eigen::MatrixXd input(n, 4*b);
+        auto phi = input.middleCols(0, b);
+        auto dx  = input.middleCols(b, b);
+        auto dy  = input.middleCols(2*b, b);
+        auto dz  = input.middleCols(3*b, b);
+        Eigen::MatrixXd hxx(n,b), hyy(n,b), hzz(n,b), hxy(n,b), hxz(n,b), hyz(n,b);
+        for (Eigen::Index j=0; j<b; ++j) {
+            const auto ao = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j));
+            phi.col(j) = ao.values;
+            dx.col(j) = ao.gradient.col(0);
+            dy.col(j) = ao.gradient.col(1);
+            dz.col(j) = ao.gradient.col(2);
+            hxx.col(j) = ao.hessian.col(0);
+            hyy.col(j) = ao.hessian.col(1);
+            hzz.col(j) = ao.hessian.col(2);
+            hxy.col(j) = ao.hessian.col(3);
+            hxz.col(j) = ao.hessian.col(4);
+            hyz.col(j) = ao.hessian.col(5);
+        }
+        Eigen::MatrixXd product(n, 4*b);
+        product.noalias() = (*p) * input;
+        const auto y  = product.middleCols(0, b);
+        const Eigen::MatrixXd* h[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
+        for (Eigen::Index j=0; j<b; ++j) {
+            auto& out = result[start+static_cast<std::size_t>(j)];
+            out.value = phi.col(j).dot(y.col(j));
+            for (int a=0; a<3; ++a) {
+                const auto ga = input.col((a+1)*b+j);
+                out.gradient[a] = 2.0*ga.dot(y.col(j));
+                out.tau += 0.5*ga.dot(product.col((a+1)*b+j));
+                for (int c=a; c<3; ++c) {
+                    const double v = 2.0*(h[index[a][c]]->col(j).dot(y.col(j)) +
+                                            ga.dot(product.col((c+1)*b+j)));
+                    out.hessian(a,c) = out.hessian(c,a) = v;
+                }
+            }
+            out.laplacian = out.hessian.trace();
+        }
+        start += size;
+    }
     return result;
 }
 Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {

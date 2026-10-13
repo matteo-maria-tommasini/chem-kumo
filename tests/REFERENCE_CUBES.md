@@ -25,3 +25,5 @@ from numerical integration on finite three-dimensional grids.
 The automated reference tests compare chem-kumo results against
 Gaussian Cube data point by point, including numerical integration
 and error statistics.
+
+The corresponding FCHK inputs are stored as `o2.fchk.gz` and `acrolein.fchk.gz`.

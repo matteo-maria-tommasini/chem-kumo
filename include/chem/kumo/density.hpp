@@ -45,6 +45,24 @@ struct SpinDensities {
     Field beta;
     Field spin;
 };
+/// Signed MO amplitude and its Cartesian spatial derivatives at one point.
+/// Hessian is symmetric; derivatives are in atomic units at fixed geometry.
+struct OrbitalDerivatives {
+    double value = 0.0;
+    Eigen::Vector3d gradient = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d hessian = Eigen::Matrix3d::Zero();
+};
+/// Spatial derivatives of an electron-density component at one Cartesian point.
+/// Units: rho e/bohr^3, gradient e/bohr^4, Hessian/Laplacian e/bohr^5,
+/// positive kinetic-energy density tau hartree/bohr^3 (atomic units).
+/// All derivatives are with respect to electronic position at fixed geometry.
+struct DensityDerivatives {
+    double value = 0.0;
+    Eigen::Vector3d gradient = Eigen::Vector3d::Zero();
+    Eigen::Matrix3d hessian = Eigen::Matrix3d::Zero();
+    double laplacian = 0.0;
+    double tau = 0.0;
+};
 /// Ground-state SCF density and molecular-orbital evaluator from an FCHK.
 /// Public calculations use the same stored AO basis and Gaussian ordering.
 class Molecule {
@@ -53,6 +71,16 @@ public:
     const std::vector<Atom>& atoms() const noexcept { return atoms_; }
     /// Evaluate one density component (default: total) in e/bohr^3.
     Field density(const Grid& grid, Spin spin = Spin::Total) const;
+    /// Analytic density, spatial gradient, Hessian, Laplacian and positive
+    /// kinetic-energy density at one point; all spin components supported.
+    [[nodiscard]] DensityDerivatives density_derivatives(
+        const Eigen::Vector3d& point, Spin spin = Spin::Total) const;
+    /// Evaluate spatial density derivatives at arbitrary Cartesian points.
+    /// Each input column is a point in bohr; output order matches the columns.
+    /// AO derivatives are shared within each block, with Eigen matrix contractions.
+    [[nodiscard]] std::vector<DensityDerivatives> density_derivatives_blocked(
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+        Spin spin = Spin::Total, std::size_t block_size = 128) const;
     // Reference implementation retained for numerical regression testing.
     [[nodiscard]] Field density_pointwise(const Grid& grid, Spin spin = Spin::Total) const;
     /// Evaluate total, alpha, beta and alpha-minus-beta together.
@@ -74,6 +102,11 @@ public:
     /// Signed MO amplitude; orbital index is 1-based, channel Alpha/Beta.
     [[nodiscard]] Field orbital(const Grid& grid, std::size_t index_one_based,
                                 Spin channel = Spin::Alpha) const;
+    /// Analytic value, gradient and full Hessian of a signed MO amplitude.
+    /// The MO index is 1-based; only Alpha/Beta channels are accepted.
+    [[nodiscard]] OrbitalDerivatives orbital_derivatives(
+        const Eigen::Vector3d& point, std::size_t index_one_based,
+        Spin channel = Spin::Alpha) const;
     /// Evaluate several 1-based MOs with shared AO batches.
     [[nodiscard]] std::vector<Field> orbitals(const Grid& grid,
                                 const std::vector<std::size_t>& indices_one_based,

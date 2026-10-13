@@ -285,6 +285,65 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
     }
 }
 
+AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point) const {
+    const auto n = static_cast<Eigen::Index>(basis_.function_count());
+    AODerivatives result;
+    result.values = Eigen::VectorXd::Zero(n);
+    result.gradient.setZero(n, 3);
+    result.hessian.setZero(n, 6);
+
+    // Differentiate the primitive Cartesian polynomial and its Gaussian factor
+    // analytically. The contraction and pure-shell transform are linear and
+    // therefore applied unchanged to every derivative component.
+    for (const auto& block : blocks_) {
+        const Eigen::Vector3d r = point - block.origin;
+        const double r2 = r.squaredNorm();
+        const auto nc = static_cast<Eigen::Index>(block.powers.size());
+        Eigen::MatrixXd cart = Eigen::MatrixXd::Zero(nc, 10);
+        for (Eigen::Index k = 0; k < nc; ++k) {
+            const auto& power = block.powers[static_cast<std::size_t>(k)];
+            const int degrees[3] = {power.x, power.y, power.z};
+            for (std::size_t p = 0; p < block.exponents.size(); ++p) {
+                const double a = block.exponents[p];
+                const double weight = block.primitive_weights(k, static_cast<Eigen::Index>(p)) *
+                                      std::exp(-a * r2);
+                double v[3], d[3], dd[3];
+                for (int axis = 0; axis < 3; ++axis) {
+                    const int l = degrees[axis];
+                    const double x = r[axis];
+                    const double xl = integer_power(x, l);
+                    v[axis] = xl;
+                    d[axis] = (l ? l * integer_power(x, l - 1) : 0.0) - 2.0 * a * x * xl;
+                    dd[axis] = (l >= 2 ? l * (l - 1) * integer_power(x, l - 2) : 0.0)
+                             - 2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl;
+                }
+                cart(k, 0) += weight * v[0] * v[1] * v[2];
+                cart(k, 1) += weight * d[0] * v[1] * v[2];
+                cart(k, 2) += weight * v[0] * d[1] * v[2];
+                cart(k, 3) += weight * v[0] * v[1] * d[2];
+                cart(k, 4) += weight * dd[0] * v[1] * v[2];
+                cart(k, 5) += weight * v[0] * dd[1] * v[2];
+                cart(k, 6) += weight * v[0] * v[1] * dd[2];
+                cart(k, 7) += weight * d[0] * d[1] * v[2];
+                cart(k, 8) += weight * d[0] * v[1] * d[2];
+                cart(k, 9) += weight * v[0] * d[1] * d[2];
+            }
+        }
+        const auto offset = static_cast<Eigen::Index>(block.output_offset);
+        Eigen::MatrixXd transformed;
+        if (block.pure_transform.size() == 0) {
+            transformed = std::move(cart);
+        } else {
+            transformed.noalias() = block.pure_transform * cart;
+        }
+        const auto count = static_cast<Eigen::Index>(block.output_count);
+        result.values.segment(offset, count) = transformed.col(0);
+        result.gradient.middleRows(offset, count) = transformed.middleCols(1, 3);
+        result.hessian.middleRows(offset, count) = transformed.middleCols(4, 6);
+    }
+    return result;
+}
+
 Eigen::VectorXd BasisEvaluator::evaluate(const Eigen::Vector3d& point) const {
     Eigen::VectorXd output(static_cast<Eigen::Index>(basis_.function_count()));
     evaluate_into(point, output);

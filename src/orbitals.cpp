@@ -41,6 +41,28 @@ const std::vector<double>& Molecule::orbital_energies(Spin channel) const {
     check_channel(channel);
     return (channel == Spin::Beta && unrestricted_) ? beta_energies_ : alpha_energies_;
 }
+OrbitalDerivatives Molecule::orbital_derivatives(
+    const Eigen::Vector3d& point, std::size_t index, Spin channel) const {
+    check_channel(channel);
+    if (!point.allFinite())
+        throw std::invalid_argument("MO evaluation point must be finite");
+    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+    if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
+        throw std::out_of_range("MO index outside available coefficient range");
+    const auto ao = evaluator_.evaluate_derivatives(point);
+    const auto c = coeff.col(static_cast<Eigen::Index>(index - 1));
+    OrbitalDerivatives result;
+    result.value = c.dot(ao.values);
+    result.gradient = ao.gradient.transpose() * c;
+    const Eigen::Matrix<double, 6, 1> h = ao.hessian.transpose() * c;
+    result.hessian(0,0) = h[0];
+    result.hessian(1,1) = h[1];
+    result.hessian(2,2) = h[2];
+    result.hessian(0,1) = result.hessian(1,0) = h[3];
+    result.hessian(0,2) = result.hessian(2,0) = h[4];
+    result.hessian(1,2) = result.hessian(2,1) = h[5];
+    return result;
+}
 Field Molecule::orbital(const Grid& grid, std::size_t index, Spin channel) const {
     auto fields = orbitals(grid, {index}, channel);
     return std::move(fields.front());

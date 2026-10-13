@@ -1,10 +1,12 @@
 #include "chem/kumo/fchk.hpp"
 
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <zlib.h>
 
 namespace chem::kumo {
 namespace {
@@ -71,6 +73,55 @@ void read_array_tokens(std::istream& input,
     }
 }
 
+// Inflate a complete gzip stream. Z_STREAM_END is mandatory: reaching the
+// physical end of the file is not sufficient to validate CRC32 and ISIZE.
+std::string decompress_gzip(const std::filesystem::path& path) {
+    std::ifstream source(path, std::ios::binary);
+    if (!source) throw std::runtime_error("cannot open gzip formatted checkpoint: " + path.string());
+
+    z_stream stream{};
+    if (inflateInit2(&stream, MAX_WBITS + 16) != Z_OK) {
+        throw std::runtime_error("cannot initialize gzip decoder: " + path.string());
+    }
+    std::array<unsigned char, 65536> input_buffer{};
+    std::array<unsigned char, 65536> output_buffer{};
+    std::string contents;
+    try {
+        bool complete = false;
+        while (!complete) {
+            if (stream.avail_in == 0) {
+                source.read(reinterpret_cast<char*>(input_buffer.data()),
+                            static_cast<std::streamsize>(input_buffer.size()));
+                const auto count = source.gcount();
+                if (count == 0) {
+                    throw std::runtime_error("truncated gzip formatted checkpoint: " + path.string());
+                }
+                stream.next_in = input_buffer.data();
+                stream.avail_in = static_cast<uInt>(count);
+            }
+            stream.next_out = output_buffer.data();
+            stream.avail_out = static_cast<uInt>(output_buffer.size());
+            const int status = inflate(&stream, Z_NO_FLUSH);
+            const auto produced = output_buffer.size() - stream.avail_out;
+            contents.append(reinterpret_cast<const char*>(output_buffer.data()), produced);
+            if (status == Z_STREAM_END) {
+                complete = true;
+            } else if (status != Z_OK) {
+                throw std::runtime_error("invalid gzip data or checksum: " + path.string());
+            }
+        }
+        // Do not silently accept garbage or additional data after the member.
+        if (stream.avail_in != 0 || source.peek() != std::char_traits<char>::eof()) {
+            throw std::runtime_error("trailing data in gzip formatted checkpoint: " + path.string());
+        }
+    } catch (...) {
+        inflateEnd(&stream);
+        throw;
+    }
+    inflateEnd(&stream);
+    return contents;
+}
+
 } // namespace
 
 FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
@@ -79,10 +130,31 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
     if (size_error) {
         throw std::runtime_error("cannot stat formatted checkpoint: " + path.string());
     }
-    std::ifstream input(path);
-    if (!input) {
+    std::ifstream source(path, std::ios::binary);
+    if (!source) {
         throw std::runtime_error("cannot open formatted checkpoint: " + path.string());
     }
+    unsigned char signature[2]{};
+    source.read(reinterpret_cast<char*>(signature), 2);
+    const bool compressed = source.gcount() == 2 &&
+                            signature[0] == 0x1f && signature[1] == 0x8b;
+    source.clear();
+    source.seekg(0);
+
+    // Plain FCHK is streamed directly; gzip is decompressed into a buffer.
+    // The array-size guard below must use the *uncompressed* size.
+    std::string decoded;
+    std::istringstream decoded_stream;
+    std::istream* input_ptr = &source;
+    std::uintmax_t logical_size = file_size;
+    if (compressed) {
+        source.close();
+        decoded = decompress_gzip(path);
+        logical_size = decoded.size();
+        decoded_stream.str(std::move(decoded));
+        input_ptr = &decoded_stream;
+    }
+    std::istream& input = *input_ptr;
 
     std::string line;
     if (!std::getline(input, line) || !std::getline(input, line)) {
@@ -112,7 +184,7 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
             }
             const auto count_unsigned = static_cast<unsigned long long>(count_raw);
             if (count_unsigned > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max()) ||
-                count_unsigned > static_cast<unsigned long long>(file_size)) {
+                count_unsigned > static_cast<unsigned long long>(logical_size)) {
                 throw std::runtime_error("unreasonable array size in fchk: " + label);
             }
             const auto count = static_cast<std::size_t>(count_unsigned);

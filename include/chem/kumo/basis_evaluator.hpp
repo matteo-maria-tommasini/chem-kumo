@@ -19,6 +19,15 @@ struct CartesianPower {
 [[nodiscard]] std::vector<CartesianPower> gaussian_cartesian_order(int l);
 [[nodiscard]] Eigen::MatrixXd gaussian_cartesian_to_pure(int l);
 
+/// AO values and Cartesian spatial derivatives at a fixed nuclear geometry.
+/// Columns of gradient are x,y,z; Hessian components are xx,yy,zz,xy,xz,yz.
+/// Rows follow the Gaussian FCHK AO ordering. All coordinates are in bohr.
+struct AODerivatives {
+    Eigen::VectorXd values;
+    Eigen::Matrix<double, Eigen::Dynamic, 3> gradient;
+    Eigen::Matrix<double, Eigen::Dynamic, 6> hessian;
+};
+
 /// Evaluate AO basis functions at points in FCHK AO ordering.
 /// Batch output stores one AO vector per column.
 class BasisEvaluator {
@@ -28,6 +37,8 @@ public:
     [[nodiscard]] const BasisSet& basis() const noexcept { return basis_; }
     [[nodiscard]] std::size_t basis_size() const noexcept { return basis_.function_count(); }
     [[nodiscard]] Eigen::VectorXd evaluate(const Eigen::Vector3d& point) const;
+    /// Exact spatial derivatives through second order, including mixed terms.
+    [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point) const;
     void evaluate_into(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
     /// Original pointwise evaluator retained as a regression oracle.
     void evaluate_into_reference(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
