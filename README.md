@@ -1,5 +1,9 @@
 # chem-kumo 1.1.0
 
+<p align="center">
+  <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
+</p>
+
 **chem-kumo** is a lightweight C++20 library and command-line application for
 reconstructing ground-state SCF electron densities and molecular orbitals from
 Gaussian formatted checkpoint (`.fchk`) files. It supports restricted and
