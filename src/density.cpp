@@ -1,6 +1,11 @@
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
 #include <algorithm>
+#include <cstdint>
+#include <exception>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 #include <Eigen/LU>
 #include <cmath>
 #include <fstream>
@@ -335,7 +340,21 @@ std::map<Spin, Field> Molecule::densities_blocked(
     const Eigen::MatrixXd pb = need_b ? Eigen::MatrixXd(0.5*(total_-spin_)) : Eigen::MatrixXd();
     const Eigen::Index m = static_cast<Eigen::Index>(basis_size());
     const int ny = grid.counts[1], nz = grid.counts[2];
-    for (std::size_t start = 0; start < count; start += std::min(block_size, count-start)) {
+    // Each block owns its AO panels and writes to disjoint output indices.
+    // Keep the same arithmetic and point ordering in serial and OpenMP builds.
+    const std::size_t nblocks = count / block_size + (count % block_size != 0);
+    // OpenMP's canonical loop uses a signed counter. Avoid narrowing overflow.
+    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
+        throw std::length_error("too many grid blocks for parallel evaluation");
+    std::exception_ptr worker_error;
+    // Exceptions must not escape an OpenMP region. Preserve the first error
+    // and rethrow it on the caller thread after all workers have finished.
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(nblocks > 1)
+#endif
+    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+        try {
+        const std::size_t start = static_cast<std::size_t>(block) * block_size;
         const auto b = static_cast<Eigen::Index>(std::min(block_size, count-start));
         Eigen::Matrix<double,3,Eigen::Dynamic> points(3,b);
         for (Eigen::Index t=0; t<b; ++t) {
@@ -363,7 +382,16 @@ std::map<Spin, Field> Molecule::densities_blocked(
             if (auto it=buffers.find(Spin::Total);it!=buffers.end()) it->second[q]=a[t]+bb[t];
             if (auto it=buffers.find(Spin::Difference);it!=buffers.end()) it->second[q]=a[t]-bb[t];
         }
+        } catch (...) {
+#ifdef _OPENMP
+#pragma omp critical(kumo_density_block_error)
+#endif
+            {
+                if (!worker_error) worker_error = std::current_exception();
+            }
+        }
     }
+    if (worker_error) std::rethrow_exception(worker_error);
     std::map<Spin,Field> result;
     for (auto& [spin, values]:buffers)
         result.emplace(spin,Field(grid,atoms_,std::move(values)));

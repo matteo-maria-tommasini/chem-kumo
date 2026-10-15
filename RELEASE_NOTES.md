@@ -58,3 +58,7 @@ installed CLI. These additions must be validated on the final release package.
 
 The numerical core is unchanged from the validated 1.1.0 development baseline.
 Dependencies remain C++20 and Eigen, with Meson as the build system.
+
+OpenMP stage 02: optionally parallelize blocked density grids with a static
+schedule, thread-local AO/Eigen matrices, and unchanged arithmetic per block.
+Serial builds remain the default; spatial derivatives are still serial.

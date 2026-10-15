@@ -9,6 +9,8 @@ openmp_enabled = get_option('openmp')
 openmp_deps = []
 if openmp_enabled
   openmp_deps += dependency('openmp', required: true)
+  # Eigen must not start nested worker pools inside OpenMP grid workers.
+  add_project_arguments('-DEIGEN_DONT_PARALLELIZE', language: 'cpp')
 endif
 message('OpenMP support requested: ' + (openmp_enabled ? 'yes' : 'no'))
 benchmarks_enabled = get_option('benchmarks')
@@ -57,6 +59,11 @@ test('blocked-densities', blocked_test,
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz', meson.current_source_dir()/'tests/data/acrolein.fchk.gz'])
 if benchmarks_enabled
   executable('kumo-block-benchmark', 'benchmarks/block_benchmark.cpp', dependencies:kumo_dep)
+endif
+
+if benchmarks_enabled
+  executable('kumo-parallel-density-benchmark',
+    'benchmarks/parallel_density_benchmark.cpp', dependencies:kumo_dep)
 endif
 
 # The default public path uses blocked Eigen contractions.  The original
@@ -142,3 +149,10 @@ test('fchk-gzip', executable('kumo-fchk-gzip-test',
         meson.current_source_dir()/'tests/data/hbc/hbc_b3lyp_631gdp.fchk.gz',
         meson.current_source_dir()/'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz',
         meson.current_source_dir()/'tests/data/hbc/hbc_b3lyp_def2tzvp.fchk.gz'])
+
+# Compare density grids with 1/2/4 OpenMP workers (also runs in serial builds).
+parallel_density_test = executable('kumo-parallel-density-test',
+  'tests/parallel_density_test.cpp', dependencies:kumo_dep)
+test('parallel-density', parallel_density_test,
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)

@@ -1,3 +1,3 @@
 option('benchmarks', type: 'boolean', value: false, description: 'Build optional developer benchmarks')
 
-option('openmp', type: 'boolean', value: false, description: 'Enable optional OpenMP toolchain support (no parallel loops in stage 01)')
+option('openmp', type: 'boolean', value: false, description: 'Enable OpenMP parallel evaluation of density grid blocks')

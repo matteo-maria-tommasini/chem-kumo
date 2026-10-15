@@ -244,3 +244,15 @@ variants in `tests/data/hbc/` for reproducible performance measurements.
 KUMO reads them directly without temporary decompression. The `fchk-gzip`
 regression test materializes plain-text copies in a temporary directory to
 check exact numerical equivalence and rejects corrupted gzip trailers.
+
+### OpenMP density grid evaluation (1.3.0-dev)
+
+With `-Dopenmp=true`, `Molecule::densities_blocked()` and its public
+`density()`, `densities()` and `spin_densities()` callers distribute
+independent grid blocks across OpenMP threads. The default build remains
+serial. Control concurrency with `OMP_NUM_THREADS` (for example,
+`OMP_NUM_THREADS=4`). The implementation uses a static block schedule,
+thread-private Eigen workspaces and disjoint output slices; Cube writing
+remains serial. Eigen's internal threading is disabled in OpenMP builds to
+avoid nested parallelism. Orbital fields and spatial density derivatives
+are not parallelized in this stage.
