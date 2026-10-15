@@ -3,7 +3,7 @@ project('chem-kumo','cpp',version:'1.3.0-dev',meson_version:'>=0.63',default_opt
 add_project_arguments('-DCHEM_KUMO_VERSION="' + meson.project_version() + '"', language: 'cpp')
 eigen_dep = dependency('eigen3', required: true)
 zlib_dep = dependency('zlib', required: true)
-# Optional OpenMP infrastructure only: no numerical loops are parallelized yet.
+# Optional OpenMP for independent grid blocks in density, derivative and MO evaluations.
 # Fail explicitly if the user requests OpenMP but the toolchain lacks it.
 openmp_enabled = get_option('openmp')
 openmp_deps = []
@@ -18,6 +18,18 @@ inc = include_directories('include')
 kumo_lib = library('kumo', ['src/fchk.cpp','src/basis.cpp','src/basis_math.cpp','src/basis_evaluator.cpp','src/density.cpp','src/orbitals.cpp'],include_directories:inc,dependencies:[eigen_dep,zlib_dep] + openmp_deps,install:true)
 kumo_dep = declare_dependency(link_with:kumo_lib,include_directories:inc,dependencies:[eigen_dep,zlib_dep] + openmp_deps)
 meson.override_dependency('chem-kumo', kumo_dep)
+# Installed consumers can discover the public headers and shared library.
+# Eigen appears in public headers; zlib is an implementation dependency.
+pkg = import('pkgconfig')
+pkg.generate(
+  kumo_lib,
+  name: 'chem-kumo',
+  filebase: 'chem-kumo',
+  description: 'Ground-state electronic fields from Gaussian FCHK files',
+  version: meson.project_version(),
+  requires: ['eigen3'],
+  requires_private: ['zlib'],
+)
 install_headers('include/chem/kumo.hpp',subdir:'chem')
 install_headers('include/chem/kumo/density.hpp','include/chem/kumo/fchk.hpp','include/chem/kumo/basis.hpp','include/chem/kumo/basis_evaluator.hpp',subdir:'chem/kumo')
 executable('kumo-example','examples/fchk_to_cube.cpp',dependencies:kumo_dep)

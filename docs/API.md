@@ -92,6 +92,18 @@ and returns `std::vector<DensityDerivatives>` in the same order. A zero
 block size and non-finite points are rejected. The method currently
 materializes the result vector; it is not a streaming grid writer.
 
+`Molecule::orbital_derivatives_blocked(points, index_one_based, channel,
+block_size=128)` accepts the same 3 x N point layout and returns ordered
+`OrbitalDerivatives` for one alpha/beta MO. It currently reuses the analytic
+pointwise evaluator inside independently scheduled blocks.
+
+When built with `-Dopenmp=true`, `densities_blocked()`,
+`density_derivatives_blocked()`, `orbitals()` (and `orbital()` through it), and
+`orbital_derivatives_blocked()` schedule independent grid/point blocks across
+OpenMP workers. OpenMP is optional and off by default. Pointwise evaluators
+remain serial; thread count is controlled through `OMP_NUM_THREADS`.
+See [docs/OPENMP.md](OPENMP.md) for execution and deployment notes.
+
 The blocked derivative path uses Eigen to apply the density matrix once
 to a packed panel containing AO values and their three first derivatives.
 Six AO second-derivative panels are used in linear reductions; no density

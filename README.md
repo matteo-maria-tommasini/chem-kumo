@@ -27,46 +27,30 @@ The installable targets are the `kumo` executable, `libkumo`, and public headers
 Benchmarks are optional (`meson configure build -Dbenchmarks=true`).
 For performance comparisons, select `-Dbuildtype=release` and rebuild.
 
-## OpenMP development configuration (1.3.0-dev, stage 01)
+## Optional OpenMP parallelism (1.3.0-dev)
 
-OpenMP is **optional and disabled by default**. At this stage it enables only
-compiler/runtime support; **the numerical kernels remain serial**. No speedup
-is expected until the parallel grid implementation is introduced.
+OpenMP is optional and disabled by default. When enabled, independent grid
+blocks are evaluated concurrently for electron densities, spatial density
+derivatives, molecular orbitals, and blocked orbital derivatives. The
+pointwise APIs remain serial. Numerical kernels and point ordering are shared
+between serial and parallel builds. Eigen internal threading is disabled in
+OpenMP builds to avoid nested parallelism.
 
-```sh
-meson setup build-serial -Dopenmp=false -Dbuildtype=release
-meson compile -C build-serial
-meson test -C build-serial --print-errorlogs
-
-# Requires an OpenMP-capable compiler and runtime (e.g. GCC on Debian).
-meson setup build-openmp -Dopenmp=true -Dbuildtype=release
-meson compile -C build-openmp
-meson test -C build-openmp --print-errorlogs
-```
-
-If `-Dopenmp=true` is requested but unavailable, configuration fails rather
-than silently falling back. The `build-and-test.sh` helper uses the default
-(serial) configuration after `--clean`.
-
-On macOS with MacPorts Clang 22 and `libomp`, use the provided native file:
+Use the build helper to select separate build directories and toolchains:
 
 ```sh
-# Configure in a fresh directory: Meson selects the compiler at setup time.
-meson setup build-openmp --native-file meson/native/macports-clang22.ini \
-    -Dopenmp=true -Dbuildtype=release
-meson compile -C build-openmp
-CI=1 meson test -C build-openmp --print-errorlogs
+./build-and-test.sh --clean                 # serial, default compiler
+./build-and-test.sh --clean --openmp --release  # OpenMP, release
 ```
 
-The native file specifies only the C/C++ compilers. It does not change the
-system compiler, require MacPorts for serial builds, or automatically enable
-OpenMP. To select another compiler, use a different native file or set
-`CC`/`CXX` when configuring a *new* build directory. The tested MacPorts
-configuration is Clang 22.1.8 with `libomp` 21.1.7 on Apple ARM64.
-
-Keep serial and OpenMP build directories separate. At stage 01 both builds
-run the same serial numerical algorithms; `-Dopenmp=true` only enables the
-toolchain/runtime and does not imply a speedup.
+On macOS, OpenMP builds use the supplied MacPorts Clang 22 native file
+(`meson/native/macports-clang22.ini`) and require a compatible `libomp`.
+On Linux, the default compiler (tested with GCC 14) is used. Manual Meson
+configuration is also supported with `-Dopenmp=true` or `-Dopenmp=false`.
+Requesting OpenMP without a suitable compiler/runtime fails at configuration.
+Set `OMP_NUM_THREADS` to control thread count, and optionally use
+`OMP_PROC_BIND`/`OMP_PLACES` for experiments with affinity; KUMO does not
+impose a binding policy. See [OpenMP guide](docs/OPENMP.md).
 
 ## Command-line examples
 
@@ -244,15 +228,3 @@ variants in `tests/data/hbc/` for reproducible performance measurements.
 KUMO reads them directly without temporary decompression. The `fchk-gzip`
 regression test materializes plain-text copies in a temporary directory to
 check exact numerical equivalence and rejects corrupted gzip trailers.
-
-### OpenMP density grid evaluation (1.3.0-dev)
-
-With `-Dopenmp=true`, `Molecule::densities_blocked()` and its public
-`density()`, `densities()` and `spin_densities()` callers distribute
-independent grid blocks across OpenMP threads. The default build remains
-serial. Control concurrency with `OMP_NUM_THREADS` (for example,
-`OMP_NUM_THREADS=4`). The implementation uses a static block schedule,
-thread-private Eigen workspaces and disjoint output slices; Cube writing
-remains serial. Eigen's internal threading is disabled in OpenMP builds to
-avoid nested parallelism. Orbital fields and spatial density derivatives
-are not parallelized in this stage.

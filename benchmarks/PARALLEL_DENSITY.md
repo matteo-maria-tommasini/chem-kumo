@@ -100,3 +100,24 @@ Reproduce the larger-grid measurements with:
 These timings measure only the parallelized `densities_blocked()` path.
 They are not directly comparable with `gcubegen09d` end-to-end timings or
 with a different compiler, grid, or set of requested fields.
+
+## Measured baseline: Avatar, Debian x86-64, 2026-10-15
+
+Dual Intel Xeon E5640 (2 sockets, 4 physical cores/socket, 2 SMT threads/core,
+2 NUMA nodes), GCC 14.2, OpenMP 4.5, release build. HBC B3LYP/def2-TZVP,
+1410 AO, 5832 points, 3 timed repetitions; minimum wall times in seconds.
+
+| Threads | Block 64 | Block 128 | Block 256 |
+|---:|---:|---:|---:|
+| 1 | 14.312816 | 14.010070 | 13.859962 |
+| 2 | 7.280535 | 7.144165 | 7.175005 |
+| 4 | 4.524861 | 4.545798 | 4.511535 |
+| 8 | 3.011630 | 2.886840 | 2.846716 |
+| 16 | 2.207877 | 2.033396 | 2.272181 |
+
+At block 128, the 16-thread speedup was 6.88999x relative to the
+same-block one-thread timing; all reported `max_abs=0`. With block 128,
+`OMP_PROC_BIND=close OMP_PLACES=cores` gave 2.130629 s at 16 threads,
+and `spread` gave 2.223092 s, versus 2.033396 s with default placement.
+These are single benchmark sweeps; small differences require independent
+replication before drawing conclusions about NUMA affinity.

@@ -82,3 +82,20 @@ The validated functional suite passed **34/34** tests with Apple Clang 21
 (OpenMP disabled, `debugoptimized`) and **34/34** with MacPorts Clang 22
 (OpenMP enabled, `release`). These different build types should not be used
 for a direct compiler performance comparison.
+
+## Measured baseline: Avatar, Debian x86-64, 2026-10-15
+
+Dual Intel Xeon E5640, GCC 14.2, OpenMP 4.5, release build. HBC
+B3LYP/def2-TZVP, 1410 AO, 5832 points, requested block size 128,
+3 timed repetitions per thread count. Minimum wall times in seconds.
+
+| Workload | 1 thread | 2 threads | 4 threads | 8 threads | 16 threads | Best speedup |
+|---|---:|---:|---:|---:|---:|---:|
+| Density derivatives | 27.959591 | 15.180608 | 9.166416 | 5.850316 | 4.132953 | 6.765x |
+| One MO amplitude | 0.514391 | 0.259687 | 0.192623 | 0.139769 | 0.105682 | 4.867x |
+| Eight MO amplitudes | 0.547609 | 0.276774 | 0.242195 | 0.122817 | 0.092186 | 5.940x |
+| One MO and spatial derivatives | 1.890029 | 0.954644 | 0.744899 | 0.494681 | 0.352898 | 5.356x |
+
+All measured configurations reported `max_abs=0`. MO amplitude timings are
+short and susceptible to run-to-run variability; do not interpret small
+relative differences as a reproducible optimization.
