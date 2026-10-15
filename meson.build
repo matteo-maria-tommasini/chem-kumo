@@ -1,4 +1,4 @@
-project('chem-kumo','cpp',version:'1.3.0-dev',meson_version:'>=0.63',default_options:['cpp_std=c++20','warning_level=2'])
+project('chem-kumo','cpp',version:'1.3.0',meson_version:'>=0.63',default_options:['cpp_std=c++20','warning_level=2'])
 # Single source of truth for version strings in the CLI and Cube headers.
 add_project_arguments('-DCHEM_KUMO_VERSION="' + meson.project_version() + '"', language: 'cpp')
 eigen_dep = dependency('eigen3', required: true)

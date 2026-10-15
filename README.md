@@ -1,4 +1,4 @@
-# chem-kumo 1.3.0-dev
+# chem-kumo 1.3.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -27,7 +27,7 @@ The installable targets are the `kumo` executable, `libkumo`, and public headers
 Benchmarks are optional (`meson configure build -Dbenchmarks=true`).
 For performance comparisons, select `-Dbuildtype=release` and rebuild.
 
-## Optional OpenMP parallelism (1.3.0-dev)
+## Optional OpenMP parallelism (1.3.0)
 
 OpenMP is optional and disabled by default. When enabled, independent grid
 blocks are evaluated concurrently for electron densities, spatial density

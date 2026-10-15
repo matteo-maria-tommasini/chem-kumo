@@ -1,4 +1,4 @@
-# chem-kumo 1.3.0-dev — prerelease notes
+# chem-kumo 1.3.0 — release notes
 
 - Optional OpenMP grid-block parallelism for density components, spatial
   density derivatives, MO amplitudes and blocked MO spatial derivatives.
