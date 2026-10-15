@@ -1,3 +1,13 @@
+# chem-kumo 1.3.0-dev — OpenMP development notes
+
+Stage 01 adds an optional Meson `openmp` build option (default `false`).
+Enabling it requires a supported OpenMP compiler/runtime and propagates the
+build dependency to KUMO targets and consumers. **No numerical evaluation
+loops are parallelized in this stage**; performance and results should remain
+those of the serial implementation. The stable 1.2.0 release is unchanged.
+
+---
+
 # chem-kumo 1.2.0 — release notes
 
 This development branch adds analytic Cartesian spatial derivatives of

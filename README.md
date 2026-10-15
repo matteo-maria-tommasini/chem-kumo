@@ -1,4 +1,4 @@
-# chem-kumo 1.2.0
+# chem-kumo 1.3.0-dev
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -26,6 +26,47 @@ To install, use `meson install -C build` with a suitable Meson prefix.
 The installable targets are the `kumo` executable, `libkumo`, and public headers.
 Benchmarks are optional (`meson configure build -Dbenchmarks=true`).
 For performance comparisons, select `-Dbuildtype=release` and rebuild.
+
+## OpenMP development configuration (1.3.0-dev, stage 01)
+
+OpenMP is **optional and disabled by default**. At this stage it enables only
+compiler/runtime support; **the numerical kernels remain serial**. No speedup
+is expected until the parallel grid implementation is introduced.
+
+```sh
+meson setup build-serial -Dopenmp=false -Dbuildtype=release
+meson compile -C build-serial
+meson test -C build-serial --print-errorlogs
+
+# Requires an OpenMP-capable compiler and runtime (e.g. GCC on Debian).
+meson setup build-openmp -Dopenmp=true -Dbuildtype=release
+meson compile -C build-openmp
+meson test -C build-openmp --print-errorlogs
+```
+
+If `-Dopenmp=true` is requested but unavailable, configuration fails rather
+than silently falling back. The `build-and-test.sh` helper uses the default
+(serial) configuration after `--clean`.
+
+On macOS with MacPorts Clang 22 and `libomp`, use the provided native file:
+
+```sh
+# Configure in a fresh directory: Meson selects the compiler at setup time.
+meson setup build-openmp --native-file meson/native/macports-clang22.ini \
+    -Dopenmp=true -Dbuildtype=release
+meson compile -C build-openmp
+CI=1 meson test -C build-openmp --print-errorlogs
+```
+
+The native file specifies only the C/C++ compilers. It does not change the
+system compiler, require MacPorts for serial builds, or automatically enable
+OpenMP. To select another compiler, use a different native file or set
+`CC`/`CXX` when configuring a *new* build directory. The tested MacPorts
+configuration is Clang 22.1.8 with `libomp` 21.1.7 on Apple ARM64.
+
+Keep serial and OpenMP build directories separate. At stage 01 both builds
+run the same serial numerical algorithms; `-Dopenmp=true` only enables the
+toolchain/runtime and does not imply a speedup.
 
 ## Command-line examples
 
