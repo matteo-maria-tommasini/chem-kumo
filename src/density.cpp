@@ -231,7 +231,18 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     const auto count = static_cast<std::size_t>(points.cols());
     std::vector<DensityDerivatives> result(count);
     constexpr int index[3][3] = {{0,3,4},{3,1,5},{4,5,2}};
-    for (std::size_t start = 0; start < count;) {
+    // Independent blocks write to disjoint output slots. All Eigen panels
+    // and AO derivative buffers are private to each iteration.
+    const std::size_t nblocks = count / block_size + (count % block_size != 0);
+    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
+        throw std::length_error("too many derivative blocks for parallel evaluation");
+    std::exception_ptr worker_error;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if(nblocks > 1)
+#endif
+    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+        try {
+        const std::size_t start = static_cast<std::size_t>(block) * block_size;
         const std::size_t size = std::min(block_size, count-start);
         const auto b = static_cast<Eigen::Index>(size);
         // Pack AO values and first derivatives into one column-major panel.
@@ -275,8 +286,16 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
             }
             out.laplacian = out.hessian.trace();
         }
-        start += size;
+        } catch (...) {
+#ifdef _OPENMP
+#pragma omp critical(kumo_derivatives_block_error)
+#endif
+            {
+                if (!worker_error) worker_error = std::current_exception();
+            }
+        }
     }
+    if (worker_error) std::rethrow_exception(worker_error);
     return result;
 }
 Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {

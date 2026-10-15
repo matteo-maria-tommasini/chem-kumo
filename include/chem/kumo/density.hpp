@@ -107,6 +107,13 @@ public:
     [[nodiscard]] OrbitalDerivatives orbital_derivatives(
         const Eigen::Vector3d& point, std::size_t index_one_based,
         Spin channel = Spin::Alpha) const;
+    /// Evaluate value, gradient and Hessian of one MO at arbitrary points.
+    /// Columns of points are Cartesian coordinates in bohr; output order is preserved.
+    /// Independent blocks can be evaluated concurrently when OpenMP is enabled.
+    [[nodiscard]] std::vector<OrbitalDerivatives> orbital_derivatives_blocked(
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+        std::size_t index_one_based, Spin channel = Spin::Alpha,
+        std::size_t block_size = 128) const;
     /// Evaluate several 1-based MOs with shared AO batches.
     [[nodiscard]] std::vector<Field> orbitals(const Grid& grid,
                                 const std::vector<std::size_t>& indices_one_based,

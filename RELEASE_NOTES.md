@@ -1,3 +1,10 @@
+### OpenMP Stage 03b (development)
+
+- Parallelize `orbitals()` over independent grid blocks, preserving existing AO batching and MO contractions.
+- Add `orbital_derivatives_blocked()` for parallel evaluation of orbital values, gradients and Hessians at arbitrary points.
+- Add alpha/beta MO serial/OpenMP regression tests.
+- Preserve point ordering and propagate worker exceptions after the parallel region.
+
 # chem-kumo 1.3.0-dev — OpenMP development notes
 
 Stage 01 adds an optional Meson `openmp` build option (default `false`).
@@ -62,3 +69,16 @@ Dependencies remain C++20 and Eigen, with Meson as the build system.
 OpenMP stage 02: optionally parallelize blocked density grids with a static
 schedule, thread-local AO/Eigen matrices, and unchanged arithmetic per block.
 Serial builds remain the default; spatial derivatives are still serial.
+
+### OpenMP Stage 03a (development)
+
+- Parallelize `density_derivatives_blocked()` over independent point blocks.
+- Preserve fused four-panel density-matrix contractions and point ordering.
+- Add serial/OpenMP comparisons for density, gradient, Hessian, Laplacian and tau.
+- No changes to orbital evaluation or public API.
+
+### Stage 03c: performance instrumentation
+
+- Add optional `kumo-parallel-fields-benchmark` for density derivatives, one/multiple molecular orbitals, and orbital derivatives.
+- Report single-thread versus OpenMP timing, speedup, efficiency, and full-component numerical consistency on matching grids.
+- See `benchmarks/PARALLEL_FIELDS.md` for methodology and usage. No numerical kernels are changed.

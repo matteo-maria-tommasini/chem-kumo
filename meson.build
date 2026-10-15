@@ -66,6 +66,11 @@ if benchmarks_enabled
     'benchmarks/parallel_density_benchmark.cpp', dependencies:kumo_dep)
 endif
 
+if benchmarks_enabled
+  executable('kumo-parallel-fields-benchmark',
+    'benchmarks/parallel_fields_benchmark.cpp', dependencies:kumo_dep)
+endif
+
 # The default public path uses blocked Eigen contractions.  The original
 # pointwise implementation is retained as an independent regression oracle.
 test('default-blocked', executable('kumo-default-blocked-test',
@@ -154,5 +159,17 @@ test('fchk-gzip', executable('kumo-fchk-gzip-test',
 parallel_density_test = executable('kumo-parallel-density-test',
   'tests/parallel_density_test.cpp', dependencies:kumo_dep)
 test('parallel-density', parallel_density_test,
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+parallel_derivatives_test = executable('kumo-parallel-derivatives-test',
+  'tests/parallel_derivatives_test.cpp', dependencies:kumo_dep)
+test('parallel-derivatives', parallel_derivatives_test,
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# MO grid and spatial-derivative consistency across OpenMP worker counts.
+parallel_orbitals_test = executable('kumo-parallel-orbitals-test',
+  'tests/parallel_orbitals_test.cpp', dependencies:kumo_dep)
+test('parallel-orbitals', parallel_orbitals_test,
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
