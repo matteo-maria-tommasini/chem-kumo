@@ -312,7 +312,8 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
 // combinations of their contractions, never reconstructed from MO occupations.
 std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-    const std::vector<Spin>& components, std::size_t block_size) const {
+    const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
+    if (ao_order != 1 && ao_order != 2) throw std::invalid_argument("shared AO derivative order must be 1 or 2");
     if (block_size == 0) throw std::invalid_argument("block size must be positive");
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
     const std::size_t count = static_cast<std::size_t>(points.cols());
@@ -343,8 +344,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
         Eigen::MatrixXd product_total, product_spin;
         if (total_needed) product_total.resize(n, 4*capacity);
         if (spin_needed) product_spin.resize(n, 4*capacity);
-        Eigen::MatrixXd hxx(n,capacity), hyy(n,capacity), hzz(n,capacity);
-        Eigen::MatrixXd hxy(n,capacity), hxz(n,capacity), hyz(n,capacity);
+        const Eigen::Index hcapacity = ao_order == 2 ? capacity : 0;
+        Eigen::MatrixXd hxx(n,hcapacity), hyy(n,hcapacity), hzz(n,hcapacity);
+        Eigen::MatrixXd hxy(n,hcapacity), hxz(n,hcapacity), hyz(n,hcapacity);
         const Eigen::MatrixXd* h[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
 #ifdef _OPENMP
 #pragma omp for schedule(static)
@@ -355,15 +357,17 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                 const Eigen::Index b = static_cast<Eigen::Index>(std::min(block_size, count-start));
                 auto phi = input.middleCols(0,b);
                 for (Eigen::Index j=0; j<b; ++j) {
-                    const auto ao = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j));
+                    const auto ao = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j), ao_order);
                     phi.col(j) = ao.values;
                     for (int a=0; a<3; ++a) input.col((a+1)*b+j) = ao.gradient.col(a);
-                    hxx.col(j) = ao.hessian.col(0);
-                    hyy.col(j) = ao.hessian.col(1);
-                    hzz.col(j) = ao.hessian.col(2);
-                    hxy.col(j) = ao.hessian.col(3);
-                    hxz.col(j) = ao.hessian.col(4);
-                    hyz.col(j) = ao.hessian.col(5);
+                    if (ao_order == 2) {
+                        hxx.col(j) = ao.hessian.col(0);
+                        hyy.col(j) = ao.hessian.col(1);
+                        hzz.col(j) = ao.hessian.col(2);
+                        hxy.col(j) = ao.hessian.col(3);
+                        hxz.col(j) = ao.hessian.col(4);
+                        hyz.col(j) = ao.hessian.col(5);
+                    }
                 }
                 if (total_needed) product_total.leftCols(4*b).noalias() = total_*input.leftCols(4*b);
                 if (spin_needed) product_spin.leftCols(4*b).noalias() = spin_*input.leftCols(4*b);
@@ -378,7 +382,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                             const auto ga = input.col((a+1)*b+j);
                             out.gradient[a] = 2.0*ga.dot(y);
                             out.tau += 0.5*ga.dot(product.col((a+1)*b+j));
-                            for (int c=a; c<3; ++c) {
+                            if (ao_order == 2) for (int c=a; c<3; ++c) {
                                 const double v = 2.0*(h[index[a][c]]->col(j).dot(y) +
                                                        ga.dot(product.col((c+1)*b+j)));
                                 out.hessian(a,c) = out.hessian(c,a) = v;

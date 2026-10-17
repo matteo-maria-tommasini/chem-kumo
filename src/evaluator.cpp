@@ -65,7 +65,8 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                 if (plan.components[detail::EvaluationPlan::index(component)].derivatives())
                     needed.push_back(spin_of(component));
             }
-            const auto shared = molecule_->density_derivatives_shared(block_points, needed, options_.block_size);
+            const auto shared = molecule_->density_derivatives_shared(
+                block_points, needed, options_.block_size, plan.maximum_ao_order);
             for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
                                    DensityComponent::Beta, DensityComponent::Spin}) {
                 if (!plan.components[detail::EvaluationPlan::index(component)].derivatives()) continue;

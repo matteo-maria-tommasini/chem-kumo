@@ -223,3 +223,16 @@ test('shared-ao-validation', executable('kumo-shared-ao-validation-test',
 if benchmarks_enabled
   executable('kumo-shared-ao-benchmark', 'benchmarks/shared_ao_benchmark.cpp', dependencies:kumo_dep)
 endif
+
+# Stage 02C.3: first-order AO path against full second-order contractions.
+test('selective-ao-derivatives', executable('kumo-selective-ao-derivatives-test',
+  'tests/selective_ao_derivatives_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 02C.3b: benchmark selective first-order versus second-order AO derivatives.
+if benchmarks_enabled
+  executable('kumo-selective-ao-benchmark',
+    'benchmarks/selective_ao_benchmark.cpp',
+    dependencies: kumo_dep)
+endif

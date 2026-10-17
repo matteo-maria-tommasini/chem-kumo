@@ -39,6 +39,8 @@ public:
     [[nodiscard]] Eigen::VectorXd evaluate(const Eigen::Vector3d& point) const;
     /// Exact spatial derivatives through second order, including mixed terms.
     [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point) const;
+    /// Compute only derivatives up to order 1 or 2; omitted Hessians are zero.
+    [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point, int order) const;
     void evaluate_into(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
     /// Original pointwise evaluator retained as a regression oracle.
     void evaluate_into_reference(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;

@@ -286,6 +286,11 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
 }
 
 AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point) const {
+    return evaluate_derivatives(point, 2);
+}
+
+AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point, int order) const {
+    if (order < 1 || order > 2) throw std::invalid_argument("AO derivative order must be 1 or 2");
     const auto n = static_cast<Eigen::Index>(basis_.function_count());
     AODerivatives result;
     result.values = Eigen::VectorXd::Zero(n);
@@ -299,7 +304,7 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point)
         const Eigen::Vector3d r = point - block.origin;
         const double r2 = r.squaredNorm();
         const auto nc = static_cast<Eigen::Index>(block.powers.size());
-        Eigen::MatrixXd cart = Eigen::MatrixXd::Zero(nc, 10);
+        Eigen::MatrixXd cart = Eigen::MatrixXd::Zero(nc, order == 2 ? 10 : 4);
         for (Eigen::Index k = 0; k < nc; ++k) {
             const auto& power = block.powers[static_cast<std::size_t>(k)];
             const int degrees[3] = {power.x, power.y, power.z};
@@ -314,19 +319,22 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point)
                     const double xl = integer_power(x, l);
                     v[axis] = xl;
                     d[axis] = (l ? l * integer_power(x, l - 1) : 0.0) - 2.0 * a * x * xl;
-                    dd[axis] = (l >= 2 ? l * (l - 1) * integer_power(x, l - 2) : 0.0)
-                             - 2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl;
+                    if (order == 2)
+                        dd[axis] = (l >= 2 ? l * (l - 1) * integer_power(x, l - 2) : 0.0)
+                                 - 2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl;
                 }
                 cart(k, 0) += weight * v[0] * v[1] * v[2];
                 cart(k, 1) += weight * d[0] * v[1] * v[2];
                 cart(k, 2) += weight * v[0] * d[1] * v[2];
                 cart(k, 3) += weight * v[0] * v[1] * d[2];
-                cart(k, 4) += weight * dd[0] * v[1] * v[2];
-                cart(k, 5) += weight * v[0] * dd[1] * v[2];
-                cart(k, 6) += weight * v[0] * v[1] * dd[2];
-                cart(k, 7) += weight * d[0] * d[1] * v[2];
-                cart(k, 8) += weight * d[0] * v[1] * d[2];
-                cart(k, 9) += weight * v[0] * d[1] * d[2];
+                if (order == 2) {
+                    cart(k, 4) += weight * dd[0] * v[1] * v[2];
+                    cart(k, 5) += weight * v[0] * dd[1] * v[2];
+                    cart(k, 6) += weight * v[0] * v[1] * dd[2];
+                    cart(k, 7) += weight * d[0] * d[1] * v[2];
+                    cart(k, 8) += weight * d[0] * v[1] * d[2];
+                    cart(k, 9) += weight * v[0] * d[1] * d[2];
+                }
             }
         }
         const auto offset = static_cast<Eigen::Index>(block.output_offset);
@@ -339,7 +347,8 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point)
         const auto count = static_cast<Eigen::Index>(block.output_count);
         result.values.segment(offset, count) = transformed.col(0);
         result.gradient.middleRows(offset, count) = transformed.middleCols(1, 3);
-        result.hessian.middleRows(offset, count) = transformed.middleCols(4, 6);
+        if (order == 2)
+            result.hessian.middleRows(offset, count) = transformed.middleCols(4, 6);
     }
     return result;
 }

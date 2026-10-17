@@ -123,7 +123,7 @@ private:
     // Internal multi-component AO-P contraction; one AO derivative evaluation per point.
     [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-        const std::vector<Spin>& components, std::size_t block_size) const;
+        const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2) const;
     Molecule(std::vector<Atom> atoms, BasisEvaluator evaluator, Eigen::MatrixXd total, Eigen::MatrixXd spin);
     std::vector<Atom> atoms_;
     BasisEvaluator evaluator_;
