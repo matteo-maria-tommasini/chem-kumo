@@ -40,23 +40,35 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
             throw std::invalid_argument("orbital indices are one-based");
         result.fields_.try_emplace(key, PropertyField{n, std::vector<std::vector<double>>(channels(key.kind), std::vector<double>(n))});
     }
-    // Use the established grid ordering: (i*ny+j)*nz+k.
-    for (const auto& [key, unused] : result.fields_) {
-        auto& output = result.fields_.at(key);
-        if (key.kind == PropertyKind::Density || key.kind == PropertyKind::Orbital) {
-            Field field = key.kind == PropertyKind::Density
-                ? molecule_->density(grid, spin_of(key.component))
-                : molecule_->orbital(grid, key.orbital_index, key.channel == SpinChannel::Alpha ? Spin::Alpha : Spin::Beta);
-            std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
-        } else {
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(n));
-            for (int i = 0; i < grid.counts[0]; ++i)
-                for (int j = 0; j < grid.counts[1]; ++j)
-                    for (int k = 0; k < grid.counts[2]; ++k) {
-                        const auto idx = (static_cast<std::size_t>(i)*grid.counts[1]+j)*grid.counts[2]+k;
-                        points.col(static_cast<Eigen::Index>(idx)) = grid.origin + grid.steps * Eigen::Vector3d(i,j,k);
-                    }
-            auto derivatives = molecule_->density_derivatives_blocked(points, spin_of(key.component), options_.block_size);
+    // Build the Cartesian coordinates only when a derivative is requested.
+    bool needs_derivatives = false;
+    for (const auto& [key, field] : result.fields_)
+        if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital)
+            needs_derivatives = true;
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points;
+    if (needs_derivatives) {
+        points.resize(3, static_cast<Eigen::Index>(n));
+        for (int i = 0; i < grid.counts[0]; ++i)
+            for (int j = 0; j < grid.counts[1]; ++j)
+                for (int k = 0; k < grid.counts[2]; ++k) {
+                    const auto idx = (static_cast<std::size_t>(i)*grid.counts[1]+j)*grid.counts[2]+k;
+                    points.col(static_cast<Eigen::Index>(idx)) = grid.origin + grid.steps * Eigen::Vector3d(i,j,k);
+                }
+    }
+    // One derivative contraction per requested spin component, independent
+    // of how many of gradient/Hessian/Laplacian/tau were requested.
+    for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
+                           DensityComponent::Beta, DensityComponent::Spin}) {
+        bool requested = false;
+        for (const auto& [key, field] : result.fields_)
+            if (key.component == component && key.kind != PropertyKind::Density &&
+                key.kind != PropertyKind::Orbital) requested = true;
+        if (!requested) continue;
+        const auto derivatives = molecule_->density_derivatives_blocked(
+            points, spin_of(component), options_.block_size);
+        for (auto& [key, output] : result.fields_) {
+            if (key.component != component || key.kind == PropertyKind::Density ||
+                key.kind == PropertyKind::Orbital) continue;
             for (std::size_t p = 0; p < n; ++p) {
                 const auto& d = derivatives[p];
                 switch (key.kind) {
@@ -77,6 +89,15 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                 }
             }
         }
+    }
+    // Scalar density and orbital paths remain delegated to the 1.3 kernels.
+    for (auto& [key, output] : result.fields_) {
+        if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital) continue;
+        Field field = key.kind == PropertyKind::Density
+            ? molecule_->density(grid, spin_of(key.component))
+            : molecule_->orbital(grid, key.orbital_index,
+                key.channel == SpinChannel::Alpha ? Spin::Alpha : Spin::Beta);
+        std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
     }
     return result;
 }

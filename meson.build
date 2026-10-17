@@ -201,3 +201,9 @@ if benchmarks_enabled
 endif
 
 test('evaluator-api', executable('kumo-evaluator-api-test', 'tests/evaluator_api_test.cpp', dependencies:kumo_dep), args:[meson.current_source_dir()/'tests/data/o2.fchk.gz'])
+
+# Stage 02B.1: fused/individual evaluator requests against validated 1.3 kernels.
+test('evaluator-fusion', executable('kumo-evaluator-fusion-test',
+  'tests/evaluator_fusion_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
