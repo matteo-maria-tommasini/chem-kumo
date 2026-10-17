@@ -1,5 +1,6 @@
 #include "chem/kumo/evaluator.hpp"
 #include "evaluation_plan.hpp"
+#include "automatic_backend.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -24,15 +25,14 @@ std::size_t channels(PropertyKind k) {
 Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
     : molecule_(&molecule), options_(options) {
     if (!options.block_size || options.threads < 0) throw std::invalid_argument("invalid evaluation options");
-    if (options.backend != Backend::AO_P && options.backend != Backend::AO_MO)
+    if (options.backend != Backend::AUTO && options.backend != Backend::AO_P && options.backend != Backend::AO_MO)
         throw std::invalid_argument("unknown evaluation backend");
     if (options.backend == Backend::AO_MO && !molecule.electronic_structure_info().ao_mo_eligible())
         throw std::invalid_argument("AO_MO backend requested but orbital representation is not eligible");
 if (options.threads > 1) throw std::invalid_argument("explicit multi-thread control is not implemented in the API adapter");
 }
 Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
-    // Stage 02A: correctness-first adapter to the validated 1.3 kernels.
-    // It does not yet implement fused multi-property contraction or AO-MO selection.
+    // Plan the requested properties before resolving the electronic backend.
     std::size_t n = 1;
     for (int axis = 0; axis < 3; ++axis) {
         if (grid.counts[axis] <= 0 || n > std::numeric_limits<std::size_t>::max() / static_cast<std::size_t>(grid.counts[axis]))
@@ -40,14 +40,19 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
         n *= static_cast<std::size_t>(grid.counts[axis]);
     }
     const auto plan = detail::EvaluationPlan::from(request);
+    const auto& info = molecule_->electronic_structure_info();
+    const Backend backend = detail::choose_backend(options_.backend,
+        info.ao_mo_eligible(), molecule_->basis_size(),
+        info.occupied_alpha, info.occupied_beta, plan);
     Results result;
+    result.backend_used_ = backend;
     for (auto key : request.properties()) {
         result.fields_.try_emplace(key, PropertyField{n, std::vector<std::vector<double>>(channels(key.kind), std::vector<double>(n))});
     }
     // Stage 02C.2a: bound coordinate and derivative temporaries by block_size.
     // The validated AO-P kernel remains the numerical reference. This is not
     // yet a fused AO evaluation across electronic components.
-    if (plan.needs_derivative_points() || (options_.backend == Backend::AO_MO &&
+    if (plan.needs_derivative_points() || (backend == Backend::AO_MO &&
         std::any_of(plan.components.begin(), plan.components.end(),
                     [](const auto& c) { return c.density; }))) {
         const std::size_t block_capacity = std::min(n, options_.block_size);
@@ -70,10 +75,10 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                                    DensityComponent::Beta, DensityComponent::Spin}) {
                 const auto& component_plan = plan.components[detail::EvaluationPlan::index(component)];
                 if (component_plan.derivatives() ||
-                    (options_.backend == Backend::AO_MO && component_plan.density))
+                    (backend == Backend::AO_MO && component_plan.density))
                     needed.push_back(spin_of(component));
             }
-            const auto shared = options_.backend == Backend::AO_MO
+            const auto shared = backend == Backend::AO_MO
                 ? molecule_->density_derivatives_mo(block_points, needed, options_.block_size,
                       std::max(0, plan.maximum_ao_order))
                 : molecule_->density_derivatives_shared(
@@ -82,11 +87,11 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                                    DensityComponent::Beta, DensityComponent::Spin}) {
                 const auto& component_plan = plan.components[detail::EvaluationPlan::index(component)];
                 if (!component_plan.derivatives() &&
-                    !(options_.backend == Backend::AO_MO && component_plan.density)) continue;
+                    !(backend == Backend::AO_MO && component_plan.density)) continue;
                 const auto& derivatives = shared.at(spin_of(component));
                 for (auto& [key, output] : result.fields_) {
                     if (key.component != component || key.kind == PropertyKind::Orbital ||
-                        (key.kind == PropertyKind::Density && options_.backend == Backend::AO_P)) continue;
+                        (key.kind == PropertyKind::Density && backend == Backend::AO_P)) continue;
                     for (std::size_t local = 0; local < count; ++local) {
                         const auto& d = derivatives[local];
                         const std::size_t p = start + local;
@@ -115,7 +120,7 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
     // Scalar density and orbital paths remain delegated to the 1.3 kernels.
     for (auto& [key, output] : result.fields_) {
         if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital) continue;
-        if (key.kind == PropertyKind::Density && options_.backend == Backend::AO_MO) continue;
+        if (key.kind == PropertyKind::Density && backend == Backend::AO_MO) continue;
         Field field = key.kind == PropertyKind::Density
             ? molecule_->density(grid, spin_of(key.component))
             : molecule_->orbital(grid, key.orbital_index,

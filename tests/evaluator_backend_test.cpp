@@ -43,6 +43,11 @@ void run(const Molecule& m) {
                 if(order>=2) req.add(d.hessian()).add(d.laplacian());
             }
             const auto result=mo.evaluate(grid,req);
+            if (result.backend_used() != Backend::AO_MO)
+                throw std::runtime_error("explicit AO_MO backend metadata mismatch");
+            const auto automatic = Evaluator(m,{.threads=1,.block_size=block,.backend=Backend::AUTO}).evaluate(grid,req);
+            if (automatic.backend_used() != Backend::AO_MO)
+                throw std::runtime_error("AUTO did not select eligible AO_MO");
             const auto reference=detail::AoMoTestAccess::run(m,points,
                 {spins.begin(),spins.end()},block,order);
             for(std::size_t c=0;c<4;++c) {
@@ -65,6 +70,8 @@ void run(const Molecule& m) {
             }
             if(order==2) {
                 const auto ao_result=ao.evaluate(grid,req);
+                if (ao_result.backend_used() != Backend::AO_P)
+                    throw std::runtime_error("explicit AO_P backend metadata mismatch");
                 if(!ao_result.contains(density::total.hessian()))
                     throw std::runtime_error("AO_P backend regression");
             }

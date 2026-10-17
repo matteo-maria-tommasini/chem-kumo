@@ -55,7 +55,10 @@ public:
 private:
     std::vector<Property> properties_;
 };
-enum class Backend { AO_P, AO_MO };
+// AUTO prefers validated occupied-MO contractions, otherwise the general
+// FCHK density-matrix contraction. The chosen backend is recorded in Results.
+// AO_MO is faster in our tested workloads, but not guaranteed universally.
+enum class Backend { AUTO, AO_P, AO_MO };
 struct EvaluationOptions {
     int threads = 0; // 0: runtime default, 1: serial
     std::size_t block_size = 128;
@@ -71,9 +74,14 @@ class Results {
 public:
     const PropertyField& get(Property key) const { return fields_.at(key); }
     bool contains(Property key) const noexcept { return fields_.contains(key); }
+    // Actual density-contraction backend selected for this evaluation.
+    // For orbital-only or empty AUTO requests, AO_P is the neutral marker;
+    // orbital amplitudes themselves are independent of this choice.
+    [[nodiscard]] Backend backend_used() const noexcept { return backend_used_; }
 private:
     friend class Evaluator;
     std::map<Property, PropertyField> fields_;
+    Backend backend_used_ = Backend::AO_P;
 };
 class Evaluator {
 public:

@@ -267,3 +267,16 @@ if benchmarks_enabled
   executable('kumo-evaluator-backend-benchmark',
     'benchmarks/evaluator_backend_benchmark.cpp', dependencies:kumo_dep)
 endif
+
+# Stage 02D.3a: deterministic, conservative automatic backend selection.
+test('automatic-backend', executable('kumo-automatic-backend-test',
+  'tests/automatic_backend_test.cpp', include_directories: include_directories('src'),
+  dependencies: kumo_dep))
+
+# Stage 02D.3b: measure AUTO decisions against both explicit backends.
+if benchmarks_enabled
+  executable('kumo-automatic-backend-benchmark',
+    'benchmarks/automatic_backend_benchmark.cpp',
+    include_directories: include_directories('src'),
+    dependencies: kumo_dep)
+endif
