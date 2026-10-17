@@ -236,3 +236,10 @@ if benchmarks_enabled
     'benchmarks/selective_ao_benchmark.cpp',
     dependencies: kumo_dep)
 endif
+
+# Stage 02D.1: validate AO-MO eligibility without changing production contractions.
+test('backend-selection', executable('kumo-backend-selection-test',
+  'tests/backend_selection_test.cpp', include_directories: include_directories('src'),
+  dependencies: kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'])

@@ -63,12 +63,28 @@ struct DensityDerivatives {
     double laplacian = 0.0;
     double tau = 0.0;
 };
+/// Whether the loaded SCF density can be reproduced by occupied MOs.
+enum class OrbitalRepresentationStatus { Valid, Inconsistent, Unavailable };
+/// Immutable diagnostic calculated once while loading the FCHK.
+struct ElectronicStructureInfo {
+    OrbitalRepresentationStatus orbital_status = OrbitalRepresentationStatus::Unavailable;
+    double total_absolute_error = 0.0;
+    double total_relative_error = 0.0;
+    double spin_absolute_error = 0.0;
+    double spin_relative_error = 0.0;
+    std::size_t occupied_alpha = 0;
+    std::size_t occupied_beta = 0;
+    [[nodiscard]] bool ao_mo_eligible() const noexcept {
+        return orbital_status == OrbitalRepresentationStatus::Valid;
+    }
+};
 /// Ground-state SCF density and molecular-orbital evaluator from an FCHK.
 /// Public calculations use the same stored AO basis and Gaussian ordering.
 class Molecule {
 public:
     static Molecule from_fchk(const std::filesystem::path& path);
     const std::vector<Atom>& atoms() const noexcept { return atoms_; }
+    [[nodiscard]] const ElectronicStructureInfo& electronic_structure_info() const noexcept { return electronic_info_; }
     /// Evaluate one density component (default: total) in e/bohr^3.
     Field density(const Grid& grid, Spin spin = Spin::Total) const;
     /// Analytic density, spatial gradient, Hessian, Laplacian and positive
@@ -132,5 +148,6 @@ private:
     std::vector<double> alpha_energies_, beta_energies_;
     int nalpha_ = 0, nbeta_ = 0;
     bool unrestricted_ = false;
+    ElectronicStructureInfo electronic_info_;
 };
 }

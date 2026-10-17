@@ -1,3 +1,4 @@
+#include "backend_selection.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
 #include <algorithm>
@@ -169,6 +170,28 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     if (result.beta_mos_.cols() && !result.beta_energies_.empty() &&
         result.beta_energies_.size() != static_cast<std::size_t>(result.beta_mos_.cols()))
         throw std::runtime_error("beta orbital energy count mismatch");
+    // Validate the orbital representation once, after all electronic data have
+    // been loaded. An ineligible representation never prevents AO-P evaluation.
+    auto& info = result.electronic_info_;
+    info.occupied_alpha = static_cast<std::size_t>(result.nalpha_);
+    info.occupied_beta = static_cast<std::size_t>(result.nbeta_);
+    const bool has_alpha = result.alpha_mos_.cols() >= result.nalpha_ &&
+                           result.alpha_mos_.rows() == static_cast<Eigen::Index>(n);
+    const bool has_beta = !result.unrestricted_ ||
+                          (result.beta_mos_.cols() >= result.nbeta_ &&
+                           result.beta_mos_.rows() == static_cast<Eigen::Index>(n));
+    if (has_alpha && has_beta) {
+        const auto decision = detail::validate_orbital_backend(
+            result.total_, result.spin_, result.alpha_mos_, result.beta_mos_,
+            info.occupied_alpha, info.occupied_beta, result.unrestricted_);
+        info.total_absolute_error = decision.total_absolute_error;
+        info.total_relative_error = decision.total_relative_error;
+        info.spin_absolute_error = decision.spin_absolute_error;
+        info.spin_relative_error = decision.spin_relative_error;
+        info.orbital_status = decision.backend == detail::ElectronicBackend::AoMo
+            ? OrbitalRepresentationStatus::Valid
+            : OrbitalRepresentationStatus::Inconsistent;
+    }
     return result;
 }
 DensityDerivatives Molecule::density_derivatives(
