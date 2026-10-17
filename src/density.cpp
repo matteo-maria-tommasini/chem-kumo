@@ -237,8 +237,19 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
         throw std::length_error("too many derivative blocks for parallel evaluation");
     std::exception_ptr worker_error;
+    // Each OpenMP worker owns a reusable panel workspace. In serial builds
+    // this region executes once, with exactly the same buffer lifetime.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) if(nblocks > 1)
+#pragma omp parallel if(nblocks > 1)
+#endif
+    {
+        const Eigen::Index capacity = static_cast<Eigen::Index>(std::min(block_size, count));
+        Eigen::MatrixXd input(n, 4 * capacity);
+        Eigen::MatrixXd product(n, 4 * capacity);
+        Eigen::MatrixXd hxx(n, capacity), hyy(n, capacity), hzz(n, capacity);
+        Eigen::MatrixXd hxy(n, capacity), hxz(n, capacity), hyz(n, capacity);
+#ifdef _OPENMP
+#pragma omp for schedule(static)
 #endif
     for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
         try {
@@ -248,12 +259,10 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
         // Pack AO values and first derivatives into one column-major panel.
         // A single GEMM applies P to all four panels, avoiding four separate
         // matrix products and improving reuse of the (potentially large) P.
-        Eigen::MatrixXd input(n, 4*b);
         auto phi = input.middleCols(0, b);
         auto dx  = input.middleCols(b, b);
         auto dy  = input.middleCols(2*b, b);
         auto dz  = input.middleCols(3*b, b);
-        Eigen::MatrixXd hxx(n,b), hyy(n,b), hzz(n,b), hxy(n,b), hxz(n,b), hyz(n,b);
         for (Eigen::Index j=0; j<b; ++j) {
             const auto ao = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j));
             phi.col(j) = ao.values;
@@ -267,8 +276,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
             hxz.col(j) = ao.hessian.col(4);
             hyz.col(j) = ao.hessian.col(5);
         }
-        Eigen::MatrixXd product(n, 4*b);
-        product.noalias() = (*p) * input;
+        product.leftCols(4*b).noalias() = (*p) * input.leftCols(4*b);
         const auto y  = product.middleCols(0, b);
         const Eigen::MatrixXd* h[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
         for (Eigen::Index j=0; j<b; ++j) {
@@ -295,6 +303,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
             }
         }
     }
+    } // worker-local workspace lifetime
     if (worker_error) std::rethrow_exception(worker_error);
     return result;
 }
