@@ -212,3 +212,14 @@ test('evaluator-fusion', executable('kumo-evaluator-fusion-test',
 test('evaluation-plan', executable('kumo-evaluation-plan-test',
   ['tests/evaluation_plan_test.cpp'], include_directories: include_directories('src'),
   dependencies: kumo_dep))
+
+# Stage 02C.2c: direct numerical regression against the legacy AO-P derivative kernel.
+test('shared-ao-validation', executable('kumo-shared-ao-validation-test',
+  'tests/shared_ao_validation_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Optional single-thread algorithmic comparison; run manually, not in CI.
+if benchmarks_enabled
+  executable('kumo-shared-ao-benchmark', 'benchmarks/shared_ao_benchmark.cpp', dependencies:kumo_dep)
+endif

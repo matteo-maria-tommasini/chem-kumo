@@ -59,11 +59,17 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                     Eigen::Vector3d(static_cast<double>(i), static_cast<double>(j), static_cast<double>(k));
             }
             const auto block_points = points.leftCols(static_cast<Eigen::Index>(count)).eval();
+            std::vector<Spin> needed;
+            for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
+                                   DensityComponent::Beta, DensityComponent::Spin}) {
+                if (plan.components[detail::EvaluationPlan::index(component)].derivatives())
+                    needed.push_back(spin_of(component));
+            }
+            const auto shared = molecule_->density_derivatives_shared(block_points, needed, options_.block_size);
             for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
                                    DensityComponent::Beta, DensityComponent::Spin}) {
                 if (!plan.components[detail::EvaluationPlan::index(component)].derivatives()) continue;
-                const auto derivatives = molecule_->density_derivatives_blocked(
-                    block_points, spin_of(component), options_.block_size);
+                const auto& derivatives = shared.at(spin_of(component));
                 for (auto& [key, output] : result.fields_) {
                     if (key.component != component || key.kind == PropertyKind::Density ||
                         key.kind == PropertyKind::Orbital) continue;

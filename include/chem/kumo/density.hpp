@@ -119,6 +119,11 @@ public:
                                 const std::vector<std::size_t>& indices_one_based,
                                 Spin channel = Spin::Alpha) const;
 private:
+    friend class Evaluator;
+    // Internal multi-component AO-P contraction; one AO derivative evaluation per point.
+    [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+        const std::vector<Spin>& components, std::size_t block_size) const;
     Molecule(std::vector<Atom> atoms, BasisEvaluator evaluator, Eigen::MatrixXd total, Eigen::MatrixXd spin);
     std::vector<Atom> atoms_;
     BasisEvaluator evaluator_;
