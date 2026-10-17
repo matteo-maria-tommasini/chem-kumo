@@ -83,6 +83,11 @@ if benchmarks_enabled
     'benchmarks/parallel_fields_benchmark.cpp', dependencies:kumo_dep)
 endif
 
+if benchmarks_enabled
+  executable('kumo-backend-comparison',
+    'benchmarks/backend_comparison_benchmark.cpp', dependencies:kumo_dep)
+endif
+
 # The default public path uses blocked Eigen contractions.  The original
 # pointwise implementation is retained as an independent regression oracle.
 test('default-blocked', executable('kumo-default-blocked-test',
@@ -185,3 +190,12 @@ parallel_orbitals_test = executable('kumo-parallel-orbitals-test',
 test('parallel-orbitals', parallel_orbitals_test,
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 01C: AO-P versus AO-MO derivative benchmark.
+if benchmarks_enabled
+  executable(
+    'kumo-derivative-backend-comparison',
+    'benchmarks/derivative_backend_benchmark.cpp',
+    dependencies: kumo_dep
+  )
+endif
