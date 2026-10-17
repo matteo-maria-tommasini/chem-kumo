@@ -243,3 +243,15 @@ test('backend-selection', executable('kumo-backend-selection-test',
   dependencies: kumo_dep),
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'])
+
+# Stage 02D.2a: experimental AO-MO kernel, independent of Evaluator selection.
+test('ao-mo-kernel', executable('kumo-ao-mo-kernel-test',
+  'tests/ao_mo_kernel_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 02D.2a: manual three-way AO-MO numerical diagnostic.
+if benchmarks_enabled
+  executable('kumo-ao-mo-diagnostic',
+    'tests/ao_mo_diagnostic.cpp', dependencies: kumo_dep)
+endif

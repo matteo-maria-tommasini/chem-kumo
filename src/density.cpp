@@ -2,6 +2,7 @@
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <exception>
 #ifdef _OPENMP
@@ -435,6 +436,121 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
 #pragma omp critical(kumo_shared_derivatives_error)
 #endif
                 { if (!worker_error) worker_error = std::current_exception(); }
+            }
+        }
+    }
+    if (worker_error) std::rethrow_exception(worker_error);
+    return result;
+}
+
+// Experimental AO-MO contraction. This kernel is intentionally not selected
+// by Evaluator yet; AO-P remains authoritative until cross-backend validation.
+std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+    const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
+    if (!electronic_info_.ao_mo_eligible())
+        throw std::invalid_argument("AO-MO backend is not eligible for this molecule");
+    if (ao_order != 1 && ao_order != 2)
+        throw std::invalid_argument("AO-MO derivative order must be 1 or 2");
+    if (block_size == 0 || block_size > 65536)
+        throw std::invalid_argument("invalid AO-MO block size");
+    if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
+    const std::size_t count = static_cast<std::size_t>(points.cols());
+    std::map<Spin, std::vector<DensityDerivatives>> result;
+    for (Spin c : components) {
+        switch (c) {
+            case Spin::Total: case Spin::Alpha: case Spin::Beta:
+            case Spin::Difference: break;
+            default: throw std::invalid_argument("invalid AO-MO spin component");
+        }
+        result.try_emplace(c, count);
+    }
+    if (result.empty() || count == 0) return result;
+    const bool need_a = result.contains(Spin::Alpha) || result.contains(Spin::Total) || result.contains(Spin::Difference);
+    const bool need_b = result.contains(Spin::Beta) || result.contains(Spin::Total) || result.contains(Spin::Difference);
+    const auto n = static_cast<Eigen::Index>(basis_size());
+    const auto cap = static_cast<Eigen::Index>(std::min(count, block_size));
+    const auto nblocks = count / block_size + (count % block_size != 0);
+    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
+        throw std::length_error("too many AO-MO blocks");
+    const auto& cb = unrestricted_ ? beta_mos_ : alpha_mos_;
+    const Eigen::MatrixXd ca_occ = alpha_mos_.leftCols(nalpha_);
+    const Eigen::MatrixXd cb_occ = cb.leftCols(nbeta_);
+    constexpr int hindex[3][3] = {{0,3,4},{3,1,5},{4,5,2}};
+    std::exception_ptr worker_error;
+#ifdef _OPENMP
+#pragma omp parallel if(nblocks > 1)
+#endif
+    {
+        Eigen::MatrixXd ao(n, 4*cap);
+        Eigen::MatrixXd hxx(n,ao_order==2 ? cap : 0), hyy(n,ao_order==2 ? cap : 0);
+        Eigen::MatrixXd hzz(n,ao_order==2 ? cap : 0), hxy(n,ao_order==2 ? cap : 0);
+        Eigen::MatrixXd hxz(n,ao_order==2 ? cap : 0), hyz(n,ao_order==2 ? cap : 0);
+        Eigen::MatrixXd* ah[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
+        // Each spin channel is projected once per block, using all occupied MOs.
+        const auto project = [&](const Eigen::MatrixXd& c, Eigen::Index b,
+                                 std::array<Eigen::MatrixXd,10>& projected) {
+            if (c.cols()==0) return;
+            for (int a=0;a<4;++a)
+                projected[a].noalias() = c.transpose()*ao.middleCols(a*b,b);
+            if (ao_order==2) for (int a=0;a<6;++a)
+                projected[a+4].noalias() = c.transpose()*ah[a]->leftCols(b);
+        };
+        const auto contract = [&](const std::array<Eigen::MatrixXd,10>& v, Eigen::Index j) {
+            DensityDerivatives d;
+            if (v[0].size()==0) return d;
+            d.value = v[0].col(j).squaredNorm();
+            for (int a=0;a<3;++a) {
+                d.gradient[a] = 2.0*v[0].col(j).dot(v[a+1].col(j));
+                d.tau += 0.5*v[a+1].col(j).squaredNorm();
+                if (ao_order==2) for (int c=a;c<3;++c) {
+                    const double value = 2.0*(v[0].col(j).dot(v[4+hindex[a][c]].col(j)) +
+                                                v[a+1].col(j).dot(v[c+1].col(j)));
+                    d.hessian(a,c) = d.hessian(c,a) = value;
+                }
+            }
+            d.laplacian = d.hessian.trace();
+            return d;
+        };
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (std::int64_t block=0;block<static_cast<std::int64_t>(nblocks);++block) {
+            try {
+                const std::size_t start = static_cast<std::size_t>(block)*block_size;
+                const auto b = static_cast<Eigen::Index>(std::min(block_size,count-start));
+                for (Eigen::Index j=0;j<b;++j) {
+                    const auto v = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j),ao_order);
+                    ao.col(j) = v.values;
+                    for (int a=0;a<3;++a) ao.col((a+1)*b+j)=v.gradient.col(a);
+                    if (ao_order==2) for (int a=0;a<6;++a) ah[a]->col(j)=v.hessian.col(a);
+                }
+                std::array<Eigen::MatrixXd,10> va, vb;
+                if (need_a) project(ca_occ,b,va);
+                if (need_b) project(cb_occ,b,vb);
+                for (Eigen::Index j=0;j<b;++j) {
+                    const auto a = need_a ? contract(va,j) : DensityDerivatives{};
+                    const auto beta = need_b ? contract(vb,j) : DensityDerivatives{};
+                    const auto combine = [&](double sign) {
+                        DensityDerivatives d;
+                        d.value = a.value + sign*beta.value;
+                        d.gradient = a.gradient + sign*beta.gradient;
+                        d.hessian = a.hessian + sign*beta.hessian;
+                        d.laplacian = d.hessian.trace();
+                        d.tau = a.tau + sign*beta.tau;
+                        return d;
+                    };
+                    const auto slot=start+static_cast<std::size_t>(j);
+                    if (auto it=result.find(Spin::Alpha);it!=result.end()) it->second[slot]=a;
+                    if (auto it=result.find(Spin::Beta);it!=result.end()) it->second[slot]=beta;
+                    if (auto it=result.find(Spin::Total);it!=result.end()) it->second[slot]=combine(1.0);
+                    if (auto it=result.find(Spin::Difference);it!=result.end()) it->second[slot]=combine(-1.0);
+                }
+            } catch (...) {
+#ifdef _OPENMP
+#pragma omp critical(kumo_mo_derivatives_error)
+#endif
+                { if (!worker_error) worker_error=std::current_exception(); }
             }
         }
     }
