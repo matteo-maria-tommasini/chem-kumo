@@ -207,3 +207,8 @@ test('evaluator-fusion', executable('kumo-evaluator-fusion-test',
   'tests/evaluator_fusion_test.cpp', dependencies:kumo_dep),
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 02C.1: internal dependency planning, without changing numerical kernels.
+test('evaluation-plan', executable('kumo-evaluation-plan-test',
+  ['tests/evaluation_plan_test.cpp'], include_directories: include_directories('src'),
+  dependencies: kumo_dep))

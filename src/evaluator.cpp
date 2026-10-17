@@ -1,4 +1,5 @@
 #include "chem/kumo/evaluator.hpp"
+#include "evaluation_plan.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -34,17 +35,13 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
             throw std::invalid_argument("invalid grid size");
         n *= static_cast<std::size_t>(grid.counts[axis]);
     }
+    const auto plan = detail::EvaluationPlan::from(request);
     Results result;
     for (auto key : request.properties()) {
-        if (key.kind == PropertyKind::Orbital && key.orbital_index == 0)
-            throw std::invalid_argument("orbital indices are one-based");
         result.fields_.try_emplace(key, PropertyField{n, std::vector<std::vector<double>>(channels(key.kind), std::vector<double>(n))});
     }
     // Build the Cartesian coordinates only when a derivative is requested.
-    bool needs_derivatives = false;
-    for (const auto& [key, field] : result.fields_)
-        if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital)
-            needs_derivatives = true;
+    const bool needs_derivatives = plan.needs_derivative_points();
     Eigen::Matrix<double, 3, Eigen::Dynamic> points;
     if (needs_derivatives) {
         points.resize(3, static_cast<Eigen::Index>(n));
@@ -59,11 +56,7 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
     // of how many of gradient/Hessian/Laplacian/tau were requested.
     for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
                            DensityComponent::Beta, DensityComponent::Spin}) {
-        bool requested = false;
-        for (const auto& [key, field] : result.fields_)
-            if (key.component == component && key.kind != PropertyKind::Density &&
-                key.kind != PropertyKind::Orbital) requested = true;
-        if (!requested) continue;
+        if (!plan.components[detail::EvaluationPlan::index(component)].derivatives()) continue;
         const auto derivatives = molecule_->density_derivatives_blocked(
             points, spin_of(component), options_.block_size);
         for (auto& [key, output] : result.fields_) {
