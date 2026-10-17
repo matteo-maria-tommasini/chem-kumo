@@ -8,7 +8,7 @@ int main(int argc, char** argv) {
     Grid grid;
     grid.counts = Eigen::Vector3i(2,2,2);
     grid.steps *= 0.25;
-    Evaluator evaluator(molecule, {.threads=1, .block_size=4});
+    Evaluator evaluator(molecule, {.threads=1, .block_size=4, .backend=Backend::AO_P});
     Request request;
     request.add(density::total.value()).add(density::total.gradient()).add(density::total.hessian()).add(density::total.laplacian()).add(density::total.tau());
     const auto results = evaluator.evaluate(grid, request);

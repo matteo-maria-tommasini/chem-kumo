@@ -62,7 +62,7 @@ enum class Backend { AUTO, AO_P, AO_MO };
 struct EvaluationOptions {
     int threads = 0; // 0: runtime default, 1: serial
     std::size_t block_size = 128;
-    Backend backend = Backend::AO_P;
+    Backend backend = Backend::AUTO; // Prefer validated AO_MO; fall back to AO_P.
 };
 // SoA: vector fields use x,y,z planes; symmetric Hessians use xx,xy,xz,yy,yz,zz.
 struct PropertyField {

@@ -43,7 +43,7 @@ void validate(const Molecule& molecule, std::size_t block_size) {
         const DensityDescriptor d{c};
         request.add(d.gradient()).add(d.hessian()).add(d.laplacian()).add(d.tau());
     }
-    Evaluator evaluator(molecule,{.threads=1,.block_size=block_size});
+    Evaluator evaluator(molecule,{.threads=1,.block_size=block_size, .backend=Backend::AO_P});
     const auto fused=evaluator.evaluate(grid,request);
     for (std::size_t c=0;c<components.size();++c) {
         const auto reference=molecule.density_derivatives_blocked(points,spins[c],block_size);

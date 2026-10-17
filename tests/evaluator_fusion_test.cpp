@@ -43,7 +43,7 @@ void check(const Molecule& molecule, std::size_t block_size, bool reversed) {
                 const std::size_t p = (static_cast<std::size_t>(i)*grid.counts[1]+j)*grid.counts[2]+k;
                 points.col(static_cast<Eigen::Index>(p)) = grid.origin + grid.steps * Eigen::Vector3d(i,j,k);
             }
-    Evaluator evaluator(molecule, {.threads=1, .block_size=block_size});
+    Evaluator evaluator(molecule, {.threads=1, .block_size=block_size, .backend=Backend::AO_P});
     Request combined;
     std::vector<Property> all;
     for (auto component : {DensityComponent::Total, DensityComponent::Alpha,

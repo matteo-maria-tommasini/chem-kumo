@@ -35,6 +35,7 @@ void run(const Molecule& m) {
     for (std::size_t block: {std::size_t{1},std::size_t{7},std::size_t{32}}) {
         Evaluator mo(m,{.threads=1,.block_size=block,.backend=Backend::AO_MO});
         Evaluator ao(m,{.threads=1,.block_size=block,.backend=Backend::AO_P});
+        Evaluator default_evaluator(m,{.threads=1,.block_size=block});
         for(int order: {0,1,2}) {
             Request req;
             for(auto d:ds) {
@@ -43,6 +44,9 @@ void run(const Molecule& m) {
                 if(order>=2) req.add(d.hessian()).add(d.laplacian());
             }
             const auto result=mo.evaluate(grid,req);
+            const auto default_result=default_evaluator.evaluate(grid,req);
+            if (default_result.backend_used() != Backend::AO_MO)
+                throw std::runtime_error("default backend did not select eligible AO_MO");
             if (result.backend_used() != Backend::AO_MO)
                 throw std::runtime_error("explicit AO_MO backend metadata mismatch");
             const auto automatic = Evaluator(m,{.threads=1,.block_size=block,.backend=Backend::AUTO}).evaluate(grid,req);
