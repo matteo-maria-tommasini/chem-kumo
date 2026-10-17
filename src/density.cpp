@@ -450,8 +450,8 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
     const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
     if (!electronic_info_.ao_mo_eligible())
         throw std::invalid_argument("AO-MO backend is not eligible for this molecule");
-    if (ao_order != 1 && ao_order != 2)
-        throw std::invalid_argument("AO-MO derivative order must be 1 or 2");
+    if (ao_order < 0 || ao_order > 2)
+        throw std::invalid_argument("AO-MO derivative order must be 0, 1 or 2");
     if (block_size == 0 || block_size > 65536)
         throw std::invalid_argument("invalid AO-MO block size");
     if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
@@ -482,7 +482,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
 #pragma omp parallel if(nblocks > 1)
 #endif
     {
-        Eigen::MatrixXd ao(n, 4*cap);
+        Eigen::MatrixXd ao(n, (ao_order==0 ? 1 : 4)*cap);
         Eigen::MatrixXd hxx(n,ao_order==2 ? cap : 0), hyy(n,ao_order==2 ? cap : 0);
         Eigen::MatrixXd hzz(n,ao_order==2 ? cap : 0), hxy(n,ao_order==2 ? cap : 0);
         Eigen::MatrixXd hxz(n,ao_order==2 ? cap : 0), hyz(n,ao_order==2 ? cap : 0);
@@ -491,7 +491,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
         const auto project = [&](const Eigen::MatrixXd& c, Eigen::Index b,
                                  std::array<Eigen::MatrixXd,10>& projected) {
             if (c.cols()==0) return;
-            for (int a=0;a<4;++a)
+            for (int a=0;a<(ao_order==0 ? 1 : 4);++a)
                 projected[a].noalias() = c.transpose()*ao.middleCols(a*b,b);
             if (ao_order==2) for (int a=0;a<6;++a)
                 projected[a+4].noalias() = c.transpose()*ah[a]->leftCols(b);
@@ -500,6 +500,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
             DensityDerivatives d;
             if (v[0].size()==0) return d;
             d.value = v[0].col(j).squaredNorm();
+            if (ao_order==0) return d;
             for (int a=0;a<3;++a) {
                 d.gradient[a] = 2.0*v[0].col(j).dot(v[a+1].col(j));
                 d.tau += 0.5*v[a+1].col(j).squaredNorm();
@@ -520,10 +521,15 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                 const std::size_t start = static_cast<std::size_t>(block)*block_size;
                 const auto b = static_cast<Eigen::Index>(std::min(block_size,count-start));
                 for (Eigen::Index j=0;j<b;++j) {
-                    const auto v = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j),ao_order);
-                    ao.col(j) = v.values;
-                    for (int a=0;a<3;++a) ao.col((a+1)*b+j)=v.gradient.col(a);
-                    if (ao_order==2) for (int a=0;a<6;++a) ah[a]->col(j)=v.hessian.col(a);
+                    const auto point = points.col(static_cast<Eigen::Index>(start)+j);
+                    if (ao_order==0) {
+                        ao.col(j) = evaluator_.evaluate(point);
+                    } else {
+                        const auto v = evaluator_.evaluate_derivatives(point,ao_order);
+                        ao.col(j) = v.values;
+                        for (int a=0;a<3;++a) ao.col((a+1)*b+j)=v.gradient.col(a);
+                        if (ao_order==2) for (int a=0;a<6;++a) ah[a]->col(j)=v.hessian.col(a);
+                    }
                 }
                 std::array<Eigen::MatrixXd,10> va, vb;
                 if (need_a) project(ca_occ,b,va);

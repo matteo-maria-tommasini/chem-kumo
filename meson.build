@@ -255,3 +255,15 @@ if benchmarks_enabled
   executable('kumo-ao-mo-diagnostic',
     'tests/ao_mo_diagnostic.cpp', dependencies: kumo_dep)
 endif
+
+# Stage 02D.2b: explicit AO_P / AO_MO Evaluator backend selection.
+test('evaluator-backend', executable('kumo-evaluator-backend-test',
+  'tests/evaluator_backend_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 02D.2c: manual end-to-end AO_P vs AO_MO comparison through Evaluator.
+if benchmarks_enabled
+  executable('kumo-evaluator-backend-benchmark',
+    'benchmarks/evaluator_backend_benchmark.cpp', dependencies:kumo_dep)
+endif
