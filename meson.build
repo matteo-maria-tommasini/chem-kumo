@@ -15,7 +15,7 @@ endif
 message('OpenMP support requested: ' + (openmp_enabled ? 'yes' : 'no'))
 benchmarks_enabled = get_option('benchmarks')
 inc = include_directories('include')
-kumo_lib = library('kumo', ['src/fchk.cpp','src/basis.cpp','src/basis_math.cpp','src/basis_evaluator.cpp','src/density.cpp','src/orbitals.cpp'],include_directories:inc,dependencies:[eigen_dep,zlib_dep] + openmp_deps,install:true)
+kumo_lib = library('kumo', ['src/fchk.cpp','src/basis.cpp','src/basis_math.cpp','src/basis_evaluator.cpp','src/density.cpp','src/orbitals.cpp','src/evaluator.cpp'],include_directories:inc,dependencies:[eigen_dep,zlib_dep] + openmp_deps,install:true)
 kumo_dep = declare_dependency(link_with:kumo_lib,include_directories:inc,dependencies:[eigen_dep,zlib_dep] + openmp_deps)
 meson.override_dependency('chem-kumo', kumo_dep)
 # Installed consumers can discover the public headers and shared library.
@@ -31,7 +31,7 @@ pkg.generate(
   requires_private: ['zlib'],
 )
 install_headers('include/chem/kumo.hpp',subdir:'chem')
-install_headers('include/chem/kumo/density.hpp','include/chem/kumo/fchk.hpp','include/chem/kumo/basis.hpp','include/chem/kumo/basis_evaluator.hpp',subdir:'chem/kumo')
+install_headers('include/chem/kumo/density.hpp','include/chem/kumo/fchk.hpp','include/chem/kumo/basis.hpp','include/chem/kumo/basis_evaluator.hpp','include/chem/kumo/evaluator.hpp',subdir:'chem/kumo')
 executable('kumo-example','examples/fchk_to_cube.cpp',dependencies:kumo_dep)
 test('density',executable('kumo-density-test','tests/density_test.cpp',dependencies:kumo_dep),args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',meson.current_source_dir()/'tests/data/acrolein.fchk.gz'])
 
@@ -199,3 +199,5 @@ if benchmarks_enabled
     dependencies: kumo_dep
   )
 endif
+
+test('evaluator-api', executable('kumo-evaluator-api-test', 'tests/evaluator_api_test.cpp', dependencies:kumo_dep), args:[meson.current_source_dir()/'tests/data/o2.fchk.gz'])
