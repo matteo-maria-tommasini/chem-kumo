@@ -43,3 +43,33 @@ kernel-only timings, even though the streaming measurements do not access it.
 The reported times are not directly additive: kernel-only AO cache timings
 include writes that the streaming path avoids. Benchmark runs may vary due to
 CPU frequency, memory contention, and compiler/runtime configuration.
+
+## Stage 01D: component-resolved numerical diagnostics
+
+The derivative benchmark additionally prints `component=` records for each
+computed scalar, gradient component, kinetic-energy density, and Hessian
+component. `max_abs` and `max_rel_floor_1e-10` compare the AO-density-matrix
+and occupied-MO implementations; `worst_point` is the zero-based grid index
+of the largest absolute discrepancy. The relative metric uses the AO-P value
+with a fixed absolute denominator floor of `1e-10`, so it must not be
+interpreted as a meaningful relative error in the density tail.
+
+For `density-hessian`, it constructs symmetric 3x3 Hessians from the six
+components and compares **ordered** eigenvalues. `hessian_eigen_bound_excess`
+checks a conservative Frobenius-norm version of Weyl's eigenvalue bound;
+`eigen_trace_max_abs` checks that the sum of eigenvalues equals the matrix
+trace, and `laplacian_max_abs` compares traces of the two Hessians. These
+trace checks are algebraic consistency diagnostics, **not** an independent
+Laplacian calculation. `lambda2_sign_ambiguous` counts points where the
+middle eigenvalue of either representation lies within the Frobenius-norm
+perturbation bound; these are not reliable sign classifications.
+`lambda2_sign_stable_mismatch` must remain zero.
+
+`low_density_threshold` reports how many sampled points have AO-P density
+magnitude below each diagnostic cutoff (atomic units). These counts do not
+change or truncate any density and are **not** ELF/RDG numerical policies.
+
+This benchmark uses integer occupations and compares representations derived
+from finite-precision FCHK data. It is a diagnostic, not a replacement for
+independent scientific reference tests. The derivative AO evaluator is still
+pointwise, and the benchmark does not measure OpenMP scaling.

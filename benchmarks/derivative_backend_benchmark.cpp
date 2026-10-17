@@ -1,5 +1,6 @@
 #include "chem/kumo.hpp"
 #include <Eigen/Core>
+#include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -189,6 +190,69 @@ int main(int argc, char** argv) {
                 max_abs=std::max(max_abs,std::abs(a-b));
                 max_scaled=std::max(max_scaled,std::abs(a-b)/std::max(1e-10,std::abs(a)));
             }
+        // Stage 01D: property-resolved diagnostics on the same completed grids.
+        // Components use the ordering declared by Output above.
+        constexpr std::array<const char*,11> names={
+            "rho", "grad_x", "grad_y", "grad_z", "tau",
+            "hess_xx", "hess_yy", "hess_zz", "hess_xy", "hess_xz", "hess_yz"};
+        std::array<double,11> component_abs{}, component_scaled{};
+        std::array<std::size_t,11> component_worst{};
+        for (int k=0;k<rows;++k) {
+            for (Eigen::Index j=0;j<static_cast<Eigen::Index>(points);++j) {
+                const double a=result_p(k,j), b=result_mo(k,j);
+                const double err=std::abs(a-b);
+                if (err>component_abs[k]) {
+                    component_abs[k]=err;
+                    component_worst[k]=static_cast<std::size_t>(j);
+                }
+                component_scaled[k]=std::max(component_scaled[k],
+                    err/std::max(1e-10,std::abs(a)));
+            }
+        }
+        // An independent eigenvalue calculation for each Hessian representation.
+        // Weyl's inequality bounds each ordered eigenvalue error by the
+        // spectral norm of the matrix difference.
+        double eigen_max_abs=0.0, eigen_max_bound_excess=0.0;
+        double laplacian_max_abs=0.0, eigen_trace_max_abs=0.0;
+        std::size_t lambda2_sign_ambiguous=0, lambda2_sign_stable_mismatch=0;
+        std::array<std::size_t,3> low_density_counts{};
+        constexpr std::array<double,3> low_density_cutoffs={1e-4,1e-8,1e-12};
+        for (Eigen::Index j=0;j<static_cast<Eigen::Index>(points);++j) {
+            const double rho=result_p(RHO,j);
+            for (std::size_t t=0;t<low_density_cutoffs.size();++t)
+                if (std::abs(rho)<low_density_cutoffs[t]) ++low_density_counts[t];
+            if (mode!=2) continue;
+            const auto make_hessian=[&](const Output& o) {
+                Eigen::Matrix3d h;
+                h << o(5,j),o(8,j),o(9,j),
+                     o(8,j),o(6,j),o(10,j),
+                     o(9,j),o(10,j),o(7,j);
+                return h;
+            };
+            const Eigen::Matrix3d hp=make_hessian(result_p);
+            const Eigen::Matrix3d hm=make_hessian(result_mo);
+            Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> ep(hp), em(hm);
+            if (ep.info()!=Eigen::Success || em.info()!=Eigen::Success)
+                throw std::runtime_error("Hessian diagonalization failed");
+            const double bound=(hp-hm).norm(); // Frobenius >= spectral norm
+            for (int k=0;k<3;++k) {
+                const double err=std::abs(ep.eigenvalues()[k]-em.eigenvalues()[k]);
+                eigen_max_abs=std::max(eigen_max_abs,err);
+                eigen_max_bound_excess=std::max(eigen_max_bound_excess,err-bound);
+            }
+            const double lp=hp.trace(), lm=hm.trace();
+            laplacian_max_abs=std::max(laplacian_max_abs,std::abs(lp-lm));
+            eigen_trace_max_abs=std::max(eigen_trace_max_abs,
+                std::max(std::abs(ep.eigenvalues().sum()-lp),
+                         std::abs(em.eigenvalues().sum()-lm)));
+            const double l2p=ep.eigenvalues()[1], l2m=em.eigenvalues()[1];
+            if (std::abs(l2p)<=bound || std::abs(l2m)<=bound)
+                ++lambda2_sign_ambiguous;
+            else if (std::signbit(l2p)!=std::signbit(l2m))
+                ++lambda2_sign_stable_mismatch;
+        }
+        if (eigen_max_bound_excess>1e-10 || lambda2_sign_stable_mismatch!=0)
+            throw std::runtime_error("Hessian eigenvalue stability invariant failed");
         const double t_ao=time_best(repeats,[&] {
             for (std::size_t start=0;start<points;start+=block_size) {
                 const auto b=static_cast<Eigen::Index>(std::min(block_size,points-start));
@@ -208,6 +272,21 @@ int main(int argc, char** argv) {
                  <<"streaming_speedup_mo_vs_p="<<t_p/t_mo<<'\n'
                  <<"max_abs="<<max_abs<<" max_rel_floor_1e-10="<<max_scaled
                  <<" checksum="<<result_p.row(RHO).sum()<<'\n';
+        for (int k=0;k<rows;++k)
+            std::cout<<"component="<<names[k]
+                     <<" max_abs="<<component_abs[k]
+                     <<" max_rel_floor_1e-10="<<component_scaled[k]
+                     <<" worst_point="<<component_worst[k]<<'\n';
+        for (std::size_t t=0;t<low_density_cutoffs.size();++t)
+            std::cout<<"low_density_threshold="<<low_density_cutoffs[t]
+                     <<" points="<<low_density_counts[t]<<'\n';
+        if (mode==2)
+            std::cout<<"hessian_eigen_max_abs="<<eigen_max_abs
+                     <<" hessian_eigen_bound_excess="<<eigen_max_bound_excess
+                     <<" laplacian_max_abs="<<laplacian_max_abs
+                     <<" eigen_trace_max_abs="<<eigen_trace_max_abs
+                     <<" lambda2_sign_ambiguous="<<lambda2_sign_ambiguous
+                     <<" lambda2_sign_stable_mismatch="<<lambda2_sign_stable_mismatch<<'\n';
         (void)sink;
         return 0;
     } catch (const std::exception& e) {
