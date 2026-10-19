@@ -195,6 +195,16 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     }
     return result;
 }
+Eigen::MatrixXd Molecule::density_matrix(Spin component) const {
+    switch (component) {
+        case Spin::Total: return total_;
+        case Spin::Difference: return spin_;
+        case Spin::Alpha: return Eigen::MatrixXd(0.5 * (total_ + spin_));
+        case Spin::Beta: return Eigen::MatrixXd(0.5 * (total_ - spin_));
+    }
+    throw std::invalid_argument("invalid density matrix spin component");
+}
+
 DensityDerivatives Molecule::density_derivatives(
     const Eigen::Vector3d& point, Spin component) const {
     if (!point.allFinite())

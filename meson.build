@@ -292,3 +292,9 @@ test('analytic-overlap-reference', executable('kumo-analytic-overlap-reference-t
   'tests/analytic_overlap_reference_test.cpp', dependencies: kumo_dep),
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 03B.1: expose the stored spin-resolved FCHK 1-RDM without duplicating state.
+test('one-particle-density', executable('kumo-one-particle-density-test',
+  'tests/one_particle_density_test.cpp', dependencies: kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)

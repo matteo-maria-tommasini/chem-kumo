@@ -109,6 +109,11 @@ public:
     [[nodiscard]] std::map<Spin, Field> densities_blocked(const Grid& grid,
         std::initializer_list<Spin> components, std::size_t block_size = 128) const;
     std::size_t basis_size() const noexcept { return evaluator_.basis_size(); }
+    /// AO coefficient matrix of the FCHK one-particle density operator.
+    /// Total and Difference return the stored SCF matrices; Alpha/Beta are
+    /// derived from them. No occupied-MO reconstruction is performed.
+    /// In a nonorthogonal AO basis, electron count is Tr(P*S).
+    [[nodiscard]] Eigen::MatrixXd density_matrix(Spin component = Spin::Total) const;
     [[nodiscard]] bool unrestricted() const noexcept { return unrestricted_; }
     /// Number of available MOs in the selected alpha/beta channel.
     [[nodiscard]] std::size_t orbital_count(Spin channel = Spin::Alpha) const;
