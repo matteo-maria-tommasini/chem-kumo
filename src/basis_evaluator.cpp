@@ -169,6 +169,75 @@ BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
     }
 }
 
+namespace {
+// Exact Cartesian Gaussian product moments; exponents and centers in bohr.
+double overlap_axis(int a, int b, double alpha, double beta, double A, double B) {
+    const double p = alpha + beta;
+    const double center = (alpha * A + beta * B) / p;
+    const double PA = center - A, PB = center - B;
+    const double prefactor = std::exp(-alpha * beta / p * (A - B) * (A - B));
+    std::vector<double> moments(static_cast<std::size_t>(a + b + 1), 0.0);
+    moments[0] = std::sqrt(std::numbers::pi / p);
+    for (int n = 2; n <= a + b; n += 2)
+        moments[static_cast<std::size_t>(n)] =
+            (n - 1) * moments[static_cast<std::size_t>(n - 2)] / (2.0 * p);
+    double result = 0.0;
+    double bin_a = 1.0;
+    for (int i = 0; i <= a; ++i) {
+        double bin_b = 1.0;
+        for (int j = 0; j <= b; ++j) {
+            result += bin_a * bin_b * integer_power(PA, a - i) *
+                      integer_power(PB, b - j) * moments[static_cast<std::size_t>(i + j)];
+            if (j < b) bin_b *= static_cast<double>(b - j) / (j + 1);
+        }
+        if (i < a) bin_a *= static_cast<double>(a - i) / (i + 1);
+    }
+    return prefactor * result;
+}
+} // namespace
+
+Eigen::MatrixXd BasisEvaluator::overlap_matrix() const {
+    const Eigen::Index n = static_cast<Eigen::Index>(basis_size());
+    Eigen::MatrixXd result = Eigen::MatrixXd::Zero(n, n);
+    for (std::size_t a = 0; a < blocks_.size(); ++a) {
+        const auto& A = blocks_[a];
+        for (std::size_t b = a; b < blocks_.size(); ++b) {
+            const auto& B = blocks_[b];
+            Eigen::MatrixXd cart = Eigen::MatrixXd::Zero(
+                static_cast<Eigen::Index>(A.powers.size()),
+                static_cast<Eigen::Index>(B.powers.size()));
+            for (std::size_t i = 0; i < A.powers.size(); ++i) {
+                const auto& x = A.powers[i];
+                for (std::size_t j = 0; j < B.powers.size(); ++j) {
+                    const auto& y = B.powers[j];
+                    double value = 0.0;
+                    for (std::size_t p = 0; p < A.exponents.size(); ++p)
+                        for (std::size_t q = 0; q < B.exponents.size(); ++q) {
+                            const double alpha = A.exponents[p], beta = B.exponents[q];
+                            const double primitive =
+                                overlap_axis(x.x, y.x, alpha, beta, A.origin.x(), B.origin.x()) *
+                                overlap_axis(x.y, y.y, alpha, beta, A.origin.y(), B.origin.y()) *
+                                overlap_axis(x.z, y.z, alpha, beta, A.origin.z(), B.origin.z());
+                            value += A.primitive_weights(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(p)) *
+                                     B.primitive_weights(static_cast<Eigen::Index>(j), static_cast<Eigen::Index>(q)) * primitive;
+                        }
+                    cart(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) = value;
+                }
+            }
+            Eigen::MatrixXd block = cart;
+            if (A.pure_transform.size()) block = (A.pure_transform * block).eval();
+            if (B.pure_transform.size()) block = (block * B.pure_transform.transpose()).eval();
+            const auto ra = static_cast<Eigen::Index>(A.output_offset);
+            const auto rb = static_cast<Eigen::Index>(B.output_offset);
+            const auto na = static_cast<Eigen::Index>(A.output_count);
+            const auto nb = static_cast<Eigen::Index>(B.output_count);
+            result.block(ra, rb, na, nb) = block;
+            if (a != b) result.block(rb, ra, nb, na) = block.transpose();
+        }
+    }
+    return result;
+}
+
 void BasisEvaluator::evaluate_into_impl_reference(const Eigen::Vector3d& point,
                                         Eigen::Ref<Eigen::VectorXd> output,
                                         std::vector<double>& cartesian_scratch,

@@ -280,3 +280,15 @@ if benchmarks_enabled
     include_directories: include_directories('src'),
     dependencies: kumo_dep)
 endif
+
+# Stage 03A: analytic AO overlaps and Gaussian MO metric regression.
+test('analytic-overlap', executable('kumo-analytic-overlap-test',
+  'tests/analytic_overlap_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 03A.2: independent Gauss-Hermite primitive-product overlap reference.
+test('analytic-overlap-reference', executable('kumo-analytic-overlap-reference-test',
+  'tests/analytic_overlap_reference_test.cpp', dependencies: kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)

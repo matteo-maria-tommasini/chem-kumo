@@ -36,6 +36,8 @@ public:
 
     [[nodiscard]] const BasisSet& basis() const noexcept { return basis_; }
     [[nodiscard]] std::size_t basis_size() const noexcept { return basis_.function_count(); }
+    /// Analytic all-space AO overlap in Gaussian FCHK ordering.
+    [[nodiscard]] Eigen::MatrixXd overlap_matrix() const;
     [[nodiscard]] Eigen::VectorXd evaluate(const Eigen::Vector3d& point) const;
     /// Exact spatial derivatives through second order, including mixed terms.
     [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point) const;
