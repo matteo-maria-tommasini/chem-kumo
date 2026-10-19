@@ -298,3 +298,20 @@ test('one-particle-density', executable('kumo-one-particle-density-test',
   'tests/one_particle_density_test.cpp', dependencies: kumo_dep),
   args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 03B.2: S-metric subspace projectors (factorized representation).
+test('subspace-projector', executable('kumo-subspace-projector-test',
+  'tests/subspace_projector_test.cpp', dependencies: kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 03B.2a: metric projector stress tests.
+test('subspace-projector-stress',
+  executable('kumo-subspace-projector-stress-test',
+    'tests/subspace_projector_stress_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
