@@ -565,3 +565,23 @@ test(
   ],
   timeout: 300
 )
+
+# Stage 03C.13c: shared-quartet multichannel contraction.
+test('local-density-overlap-multichannel',
+  executable('kumo-local-density-overlap-multichannel-test',
+    'tests/local_density_overlap_multichannel_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.13c1: multichannel edge-case regression.
+test('local-density-overlap-multichannel-edge',
+  executable('kumo-local-density-overlap-multichannel-edge-test',
+    'tests/local_density_overlap_multichannel_edge_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
