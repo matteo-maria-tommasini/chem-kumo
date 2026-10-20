@@ -585,3 +585,13 @@ test('local-density-overlap-multichannel-edge',
     meson.current_source_dir()/'tests/data/o2.fchk.gz'
   ],
   timeout: 300)
+
+# Stage 03C.13d: shared-quartet screening with independent budgets.
+test('local-density-overlap-multichannel-screened',
+  executable('kumo-local-density-overlap-multichannel-screened-test',
+    'tests/local_density_overlap_multichannel_screened_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
