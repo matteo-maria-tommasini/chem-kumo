@@ -595,3 +595,18 @@ test('local-density-overlap-multichannel-screened',
     meson.current_source_dir()/'tests/data/o2.fchk.gz'
   ],
   timeout: 300)
+
+# Stage 03C.13e1: multichannel importance-order diagnostic.
+executable('kumo-local-screening-multichannel-importance-test',
+  'tests/local_screening_multichannel_importance_test.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.13e2: importance-ordered multichannel contraction.
+test('local-density-overlap-multichannel-importance',
+  executable('kumo-local-density-overlap-multichannel-importance-test',
+    'tests/local_density_overlap_multichannel_importance_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)

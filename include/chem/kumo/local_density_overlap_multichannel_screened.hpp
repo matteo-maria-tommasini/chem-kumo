@@ -8,10 +8,13 @@
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 #include <vector>
 
 namespace chem::kumo {
+
+enum class MultichannelScreeningOrder { Canonical, MaximumImportance };
 
 struct LocalMultichannelScreeningStatistics {
     std::size_t shell_pairs = 0;
@@ -22,6 +25,7 @@ struct LocalMultichannelScreeningStatistics {
     std::size_t peak_pair_bytes = 0;
     std::size_t active_channels = 0;
     std::vector<double> max_error_bounds;
+    double ordering_seconds = 0.0;
     double norm_seconds = 0.0;
     double contraction_seconds = 0.0;
     double total_seconds = 0.0;
@@ -40,7 +44,8 @@ local_density_overlap_multichannel_screened(
     const BasisSet& basis,
     const std::vector<Eigen::MatrixXd>& densities,
     const std::vector<double>& epsilons,
-    std::size_t memory_limit_bytes) {
+    std::size_t memory_limit_bytes,
+    MultichannelScreeningOrder order = MultichannelScreeningOrder::Canonical) {
     using Clock = std::chrono::steady_clock;
     const auto start = Clock::now();
     if (densities.size() != epsilons.size())
@@ -99,6 +104,29 @@ local_density_overlap_multichannel_screened(
             }
     }
     stats.norm_seconds = std::chrono::duration<double>(Clock::now() - norm_start).count();
+    const auto ordering_start = Clock::now();
+    std::vector<std::size_t> traversal(np);
+    std::iota(traversal.begin(), traversal.end(), std::size_t{0});
+    if (order == MultichannelScreeningOrder::MaximumImportance) {
+        std::vector<long double> scores(np, 0.0L);
+        for (std::size_t i = 0; i < np; ++i) {
+            const auto& pair = pairs[i];
+            const long double multiplicity = pair.a == pair.b ? 1.0L : 2.0L;
+            for (std::size_t k : active) {
+                const long double numerator = multiplicity * pair.bmax * dsum[k][i];
+                const long double term = epsilons[k] == 0.0
+                    ? (numerator == 0.0L ? 0.0L : std::numeric_limits<long double>::infinity())
+                    : numerator / static_cast<long double>(epsilons[k]);
+                scores[i] = std::max(scores[i], term);
+            }
+        }
+        std::sort(traversal.begin(), traversal.end(), [&](std::size_t lhs, std::size_t rhs) {
+            return scores[lhs] < scores[rhs] || (scores[lhs] == scores[rhs] && lhs < rhs);
+        });
+    } else if (order != MultichannelScreeningOrder::Canonical) {
+        throw std::invalid_argument("multichannel screening: invalid traversal order");
+    }
+    stats.ordering_seconds = std::chrono::duration<double>(Clock::now() - ordering_start).count();
     std::vector<std::vector<long double>> spent(densities.size(), std::vector<long double>(np, 0.0L));
 
     const auto pair_bytes = [](const LocalPreparedShellPair& p) {
@@ -132,12 +160,14 @@ local_density_overlap_multichannel_screened(
     };
 
     const auto contraction_start = Clock::now();
-    for (std::size_t i = 0; i < np; ++i) {
+    for (std::size_t ii = 0; ii < np; ++ii) {
+        const std::size_t i = traversal[ii];
         const auto& x = pairs[i];
         const long double mi = x.a == x.b ? 1.0L : 2.0L;
         LocalPreparedShellPair outer;
         bool ready = false;
-        for (std::size_t j = i; j < np; ++j) {
+        for (std::size_t jj = ii; jj < np; ++jj) {
+            const std::size_t j = traversal[jj];
             const auto& y = pairs[j];
             const long double mj = y.a == y.b ? 1.0L : 2.0L;
             bool skip = true;
