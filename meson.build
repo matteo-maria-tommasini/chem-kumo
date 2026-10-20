@@ -315,3 +315,253 @@ test('subspace-projector-stress',
     meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
   ],
   timeout: 300)
+
+# Stage 03C.1: quadrature-weighted AO overlap accumulation (no grid policy).
+test('weighted-overlap', executable('kumo-weighted-overlap-test',
+  'tests/weighted_overlap_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 03C.2: diagnostic convergence of spatial quadrature toward analytic AO overlap.
+test('weighted-overlap-quadrature', executable('kumo-weighted-overlap-quadrature-test',
+  'tests/weighted_overlap_quadrature_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',
+        meson.current_source_dir()/'tests/data/acrolein.fchk.gz'], timeout:300)
+
+# Stage 03C.3: independent atomic quadrature validation.
+test('atomic-radial-angular-quadrature',
+  executable('kumo-atomic-radial-angular-quadrature-test',
+    'tests/atomic_radial_angular_quadrature_test.cpp',
+    dependencies: kumo_dep),
+  timeout:300)
+
+# Stage 03C.4: higher-order single-centre quadrature convergence.
+test('atomic-radial-angular-convergence', executable(
+  'kumo-atomic-radial-angular-convergence-test',
+  'tests/atomic_radial_angular_convergence_test.cpp',
+  dependencies: kumo_dep), timeout:300)
+
+# Stage 03C.5: end-to-end single-center AO overlap quadrature.
+test('weighted-overlap-single-center',
+  executable('kumo-weighted-overlap-single-center-test',
+    'tests/weighted_overlap_single_center_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.6: Becke multicenter overlap diagnostic.
+test('weighted-overlap-multicenter', executable(
+  'kumo-weighted-overlap-multicenter-test',
+  'tests/weighted_overlap_multicenter_test.cpp',
+  dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.8a: analytic local four-Gaussian primitive integrals.
+test('local-four-gaussian-integrals', executable(
+  'kumo-local-four-gaussian-integrals-test',
+  'tests/local_four_gaussian_integral_test.cpp',
+  dependencies: kumo_dep), timeout: 300)
+# Stage 03C.8b: contracted Cartesian/pure local shell quartets.
+test('local-shell-quartet', executable('kumo-local-shell-quartet-test',
+  'tests/local_shell_quartet_test.cpp', dependencies: kumo_dep),
+  args: [meson.current_source_dir()/'tests/data/o2.fchk.gz',
+         meson.current_source_dir()/'tests/data/acrolein.fchk.gz'],
+  timeout: 300)
+
+# Stage 03C.8b.1: independent contracted shell quartet reference.
+test('local-shell-quartet-reference',
+  executable('kumo-local-shell-quartet-reference-test',
+    'tests/local_shell_quartet_reference_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.8c: analytic density-weighted AO overlap.
+test('local-density-overlap',
+  executable('kumo-local-density-overlap-test',
+    'tests/local_density_overlap_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.8d: independent numerical density-overlap reference.
+test('local-density-overlap-reference',
+  executable('kumo-local-density-overlap-reference-test',
+    'tests/local_density_overlap_reference_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.9a: symmetry-reduced analytic density overlap.
+test('local-density-overlap-symmetric',
+  executable('kumo-local-density-overlap-symmetric-test',
+    'tests/local_density_overlap_symmetric_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.9b: Gaussian primitive-pair profiling.
+executable('kumo-local-gaussian-pair-profile',
+  'tests/local_gaussian_pair_profile.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.9d: Gaussian-pair shell quartet validation.
+test('local-shell-pair-integrals',
+  executable('kumo-local-shell-pair-integrals-test',
+    'tests/local_shell_pair_integrals_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.9e: symmetric density overlap with Gaussian-pair intermediates.
+test('local-density-overlap-symmetric-paired',
+  executable('kumo-local-density-overlap-symmetric-paired-test',
+    'tests/local_density_overlap_symmetric_paired_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.10a: analytic AO product norms and Cauchy-Schwarz bounds.
+test('local-pair-bounds',
+  executable('kumo-local-pair-bounds-test',
+    'tests/local_pair_bounds_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.10b: density-aware rigorous screening diagnostic.
+test('local-screening-diagnostic',
+  executable('kumo-local-screening-diagnostic-test',
+    'tests/local_screening_diagnostic_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.10f: contracted shell-pair Gaussian envelopes.
+test('local-shell-pair-envelope',
+  executable('kumo-local-shell-pair-envelope-test',
+    'tests/local_shell_pair_envelope_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.10g: comparison of shell-level Gaussian bounds.
+test('local-shell-bound-comparison',
+  executable('kumo-local-shell-bound-comparison-test',
+    'tests/local_shell_bound_comparison_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.11a: error-budgeted screened density overlap.
+test('local-density-overlap-screened',
+  executable('kumo-local-density-overlap-screened-test',
+    'tests/local_density_overlap_screened_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.11b: reusable density-overlap preparation.
+test('local-density-overlap-plan',
+  executable('kumo-local-density-overlap-plan-test',
+    'tests/local_density_overlap_plan_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.11c: memory and scalability diagnostics.
+executable('kumo-local-density-overlap-memory-test',
+  'tests/local_density_overlap_memory_test.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.11d: streaming CS screening diagnostic.
+executable('kumo-local-screening-streaming-test',
+  'tests/local_screening_streaming_test.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.11e: bounded-memory streaming density overlap.
+test('local-density-overlap-streaming',
+  executable('kumo-local-density-overlap-streaming-test',
+    'tests/local_density_overlap_streaming_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.12a: hierarchical screening diagnostic.
+executable('kumo-local-screening-hierarchical-test',
+  'tests/local_screening_hierarchical_test.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.12b: lazy hierarchical screening diagnostic.
+executable('kumo-local-screening-lazy-test',
+  'tests/local_screening_lazy_test.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.12c: importance-ordered screening diagnostic.
+executable('kumo-local-screening-importance-test',
+  'tests/local_screening_importance_test.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.12d: importance-ordered streaming contraction.
+test('local-density-overlap-importance',
+  executable('kumo-local-density-overlap-importance-test',
+    'tests/local_density_overlap_importance_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.13a: independent AO symmetry regression.
+symmetry_regression_exe = executable(
+  'kumo-local-density-overlap-symmetry-regression-test',
+  'tests/local_density_overlap_symmetry_regression_test.cpp',
+  dependencies: kumo_dep
+)
+
+test(
+  'local-density-overlap-symmetry-regression',
+  symmetry_regression_exe,
+  args: [
+    meson.current_source_dir() / 'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300
+)
