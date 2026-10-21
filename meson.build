@@ -631,3 +631,33 @@ test('local-ao-norm-regression',
     meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
   ],
   timeout: 300)
+
+# Stage 03C.15a: directed aggregate-tail screening diagnostic.
+executable('kumo-local-screening-block-tail-diagnostic',
+  'tests/local_screening_block_tail_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.15b1: bidirectional cutoff diagnostic.
+executable('kumo-local-screening-bidirectional-cutoff-diagnostic',
+  'tests/local_screening_bidirectional_cutoff_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.15b2: hierarchical multichannel contraction.
+test('local-density-overlap-multichannel-hierarchical',
+  executable('kumo-local-density-overlap-multichannel-hierarchical-test',
+    'tests/local_density_overlap_multichannel_hierarchical_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
+
+# Stage 03C.15b3: hierarchical edge regression and benchmark.
+test('local-density-overlap-hierarchical-benchmark',
+  executable('kumo-local-density-overlap-hierarchical-benchmark-test',
+    'tests/local_density_overlap_hierarchical_benchmark_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz'
+  ],
+  timeout: 300)
