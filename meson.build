@@ -610,3 +610,24 @@ test('local-density-overlap-multichannel-importance',
     meson.current_source_dir()/'tests/data/o2.fchk.gz'
   ],
   timeout: 300)
+
+# Stage 03C.14a: large-system screening and AO-norm profile.
+executable('kumo-local-screening-large-system-profile',
+  'tests/local_screening_large_system_profile.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.14c: AO product norm kernel profiling.
+executable('kumo-local-ao-norm-profile',
+  'tests/local_ao_norm_profile.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.14d1-14e: AO norm regression and primitive symmetry.
+test('local-ao-norm-regression',
+  executable('kumo-local-ao-norm-regression-test',
+    'tests/local_ao_norm_regression_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.current_source_dir()/'tests/data/o2.fchk.gz',
+    meson.current_source_dir()/'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 300)

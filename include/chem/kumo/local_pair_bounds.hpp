@@ -1,6 +1,6 @@
 #pragma once
 
-#include "chem/kumo/local_shell_integrals.hpp"
+#include "chem/kumo/local_shell_pair_integrals.hpp"
 #include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
@@ -20,10 +20,17 @@ namespace chem::kumo {
     Eigen::MatrixXd norms = Eigen::MatrixXd::Zero(offsets.back(), offsets.back());
     for (std::size_t a = 0; a < shells.size(); ++a)
         for (std::size_t b = a; b < shells.size(); ++b) {
-            const auto q = local_shell_quartet({&shells[a], &shells[b], &shells[a], &shells[b]});
+            const auto prepared = prepare_local_shell_pair(shells[a], shells[b]);
             for (std::size_t i = 0; i < shells[a].size(); ++i)
                 for (std::size_t j = 0; j < shells[b].size(); ++j) {
-                    const double squared = q.at(i, j, i, j);
+                    double squared = 0.0;
+                    const auto& pairs = prepared.at(i, j);
+                    // J(p,q) == J(q,p): evaluate only the upper triangle.
+                    for (std::size_t p = 0; p < pairs.size(); ++p) {
+                        squared += local_gaussian_pair_integral(pairs[p], pairs[p]);
+                        for (std::size_t q = p + 1; q < pairs.size(); ++q)
+                            squared += 2.0 * local_gaussian_pair_integral(pairs[p], pairs[q]);
+                    }
                     if (!std::isfinite(squared) || squared < -1e-12 * std::max(1.0, std::abs(squared)))
                         throw std::runtime_error("invalid AO product norm squared");
                     const double value = std::sqrt(std::max(0.0, squared));
