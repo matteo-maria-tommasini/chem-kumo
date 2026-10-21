@@ -661,3 +661,60 @@ test('local-density-overlap-hierarchical-benchmark',
     meson.current_source_dir()/'tests/data/o2.fchk.gz'
   ],
   timeout: 300)
+
+# Stage 03C.16a1: spatial Gaussian envelope aggregation.
+executable('kumo-local-spatial-envelope-aggregation-diagnostic',
+  'tests/local_spatial_envelope_aggregation_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16a3: guarded spatial aggregate bound.
+test('local-spatial-aggregate-guard',
+  executable('kumo-local-spatial-aggregate-guard-test',
+    'tests/local_spatial_aggregate_guard_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16b1: adaptive spatial envelope hierarchy.
+test('local-spatial-adaptive',
+  executable('kumo-local-spatial-adaptive-diagnostic',
+    'tests/local_spatial_adaptive_diagnostic.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16b2: persistent spatial envelope hierarchy.
+test('local-spatial-persistent',
+  executable('kumo-local-spatial-persistent-diagnostic',
+    'tests/local_spatial_persistent_diagnostic.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16b3: recursive/persistent tree equivalence.
+test('local-spatial-tree-equivalence',
+  executable('kumo-local-spatial-tree-equivalence-test',
+    'tests/local_spatial_tree_equivalence_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16b4: persistent spatial tree reuse benchmark.
+executable('kumo-local-spatial-tree-reuse-benchmark',
+  'tests/local_spatial_tree_reuse_benchmark.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16b5: persistent spatial tree depth/budget sweep.
+executable('kumo-local-spatial-depth-budget-sweep',
+  'tests/local_spatial_depth_budget_sweep.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16b6: spatial decision and budget safety.
+test('local-spatial-decision-safety',
+  executable('kumo-local-spatial-decision-safety-test',
+    'tests/local_spatial_decision_safety_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16b7: extended spatial decision regression.
+test('local-spatial-decision-extended',
+  executable('kumo-local-spatial-decision-extended-test',
+    'tests/local_spatial_decision_extended_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
