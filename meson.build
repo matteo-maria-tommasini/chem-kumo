@@ -718,3 +718,68 @@ test('local-spatial-decision-extended',
     'tests/local_spatial_decision_extended_test.cpp',
     dependencies: kumo_dep),
   timeout: 120)
+
+# Stage 03C.16c1: hybrid CS/spatial bound diagnostic.
+executable('kumo-local-hybrid-cs-spatial-diagnostic',
+  'tests/local_hybrid_cs_spatial_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16c2: distance-stratified hybrid bound diagnostic.
+executable('kumo-local-hybrid-cs-spatial-distance-diagnostic',
+  'tests/local_hybrid_cs_spatial_distance_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16c3: physical-density-weighted hybrid diagnostic.
+executable('kumo-local-hybrid-density-weighted-diagnostic',
+  'tests/local_hybrid_density_weighted_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16c4: sampled hybrid cumulative-budget regression.
+test('local-hybrid-budget-regression',
+  executable('kumo-local-hybrid-budget-regression-test',
+    'tests/local_hybrid_budget_regression_test.cpp',
+    dependencies: kumo_dep),
+  args: [meson.current_source_dir()/'tests/data/o2.fchk.gz'],
+  timeout: 300)
+
+# Stage 03C.16c5: CS vs hybrid cumulative-budget comparison.
+test('local-hybrid-cs-budget-comparison',
+  executable('kumo-local-hybrid-cs-budget-comparison-test',
+    'tests/local_hybrid_cs_budget_comparison_test.cpp',
+    dependencies: kumo_dep),
+  args: [meson.current_source_dir()/'tests/data/o2.fchk.gz'],
+  timeout: 300)
+
+# Stage 03C.16c6: CS/hybrid screening cost diagnostic.
+executable('kumo-local-hybrid-cost-diagnostic',
+  'tests/local_hybrid_cost_diagnostic.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16c7: local budget accounting.
+test('local-sparse-budget',
+  executable('kumo-local-sparse-budget-test',
+    'tests/local_sparse_budget_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16c7b: budget rejection and transaction atomicity.
+test('local-sparse-budget-rejection',
+  executable('kumo-local-sparse-budget-rejection-test',
+    'tests/local_sparse_budget_rejection_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16c7c: dense/sparse molecular budget equivalence and timings.
+executable('kumo-local-hybrid-dense-sparse-equivalence',
+  'tests/local_hybrid_dense_sparse_equivalence.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16c8: independent CS/hybrid contraction benchmark.
+executable('kumo-local-hybrid-real-contraction-benchmark',
+  'tests/local_hybrid_real_contraction_benchmark.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16c9: repeated CS/hybrid contraction benchmark.
+executable('kumo-local-hybrid-repeated-benchmark',
+  'tests/local_hybrid_repeated_benchmark.cpp',
+  dependencies: kumo_dep)
