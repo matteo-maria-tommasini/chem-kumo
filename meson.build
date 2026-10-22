@@ -829,3 +829,115 @@ test('local-spatial-policy',
     'tests/local_spatial_policy_test.cpp',
     dependencies: kumo_dep),
   timeout: 120)
+
+# Stage 03C.16d6c1: optional MPFR interval prototype.
+mpfr_dep = dependency('mpfr', required: false)
+
+if mpfr_dep.found()
+  test('local-mpfr-interval',
+    executable('kumo-local-mpfr-interval-test',
+      'tests/local_mpfr_interval_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+else
+  message('MPFR not found: optional interval test disabled')
+endif
+
+# Stage 03C.16d6c2: MPFR certified degree-zero pair overlap.
+if mpfr_dep.found()
+  test('local-mpfr-s-pair-bound',
+    executable('kumo-local-mpfr-s-pair-bound-test',
+      'tests/local_mpfr_s_pair_bound_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c3: MPFR s-primitive product construction.
+if mpfr_dep.found()
+  test('local-mpfr-s-product',
+    executable('kumo-local-mpfr-s-product-test',
+      'tests/local_mpfr_s_product_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c4: experimental MPFR s-quartet bound.
+if mpfr_dep.found()
+  test('local-mpfr-s-quartet-bound',
+    executable('kumo-local-mpfr-s-quartet-bound-test',
+      'tests/local_mpfr_s_quartet_bound_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c5: differential MPFR s-quartet regression.
+if mpfr_dep.found()
+  test('local-mpfr-s-quartet-differential',
+    executable('kumo-local-mpfr-s-quartet-differential-test',
+      'tests/local_mpfr_s_quartet_differential_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c6: MPFR fallback classification.
+if mpfr_dep.found()
+  test('local-mpfr-s-quartet-fallback',
+    executable('kumo-local-mpfr-s-quartet-fallback-diagnostic',
+      'tests/local_mpfr_s_quartet_fallback_diagnostic.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c8: MPFR threshold regression.
+if mpfr_dep.found()
+  test('local-mpfr-s-quartet-threshold',
+    executable('kumo-local-mpfr-s-quartet-threshold-test',
+      'tests/local_mpfr_s_quartet_threshold_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c11: MPFR exception diagnostics.
+if mpfr_dep.found()
+  test('local-mpfr-exception-safety',
+    executable('kumo-local-mpfr-exception-safety-test',
+      'tests/local_mpfr_exception_safety_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c12: MPFR exception propagation diagnostic.
+if mpfr_dep.found()
+  test('local-mpfr-exception-propagation',
+    executable('kumo-local-mpfr-exception-propagation-test',
+      'tests/local_mpfr_exception_propagation_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c13: MPFR interval invariants.
+if mpfr_dep.found()
+  test('local-mpfr-interval-invariants',
+    executable('kumo-local-mpfr-interval-invariants-test',
+      'tests/local_mpfr_interval_invariants_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6c14: Gaussian product interval invariants.
+if mpfr_dep.found()
+  test('local-mpfr-s-product-invariants',
+    executable('kumo-local-mpfr-s-product-invariants-test',
+      'tests/local_mpfr_s_product_invariants_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
+
+# Stage 03C.16d6: final fail-closed MPFR adapter.
+if mpfr_dep.found()
+  test('local-mpfr-s-quartet-safe',
+    executable('kumo-local-mpfr-s-quartet-safe-test',
+      'tests/local_mpfr_s_quartet_safe_test.cpp',
+      dependencies: [kumo_dep, mpfr_dep]),
+    timeout: 120)
+endif
