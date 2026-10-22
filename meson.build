@@ -783,3 +783,49 @@ executable('kumo-local-hybrid-real-contraction-benchmark',
 executable('kumo-local-hybrid-repeated-benchmark',
   'tests/local_hybrid_repeated_benchmark.cpp',
   dependencies: kumo_dep)
+
+# Stage 03C.16d1: deterministic distance-stratified quartet sampler.
+executable('kumo-local-extended-quartet-sampler',
+  'tests/local_extended_quartet_sampler.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16d2: extended representative-AO hybrid bound profile.
+executable('kumo-local-extended-hybrid-bound-profile',
+  'tests/local_extended_hybrid_bound_profile.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16d3: full-AO block hybrid bound profile.
+executable('kumo-local-extended-full-ao-bound-profile',
+  'tests/local_extended_full_ao_bound_profile.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16d4: density-weighted sampled full-AO budget diagnostic.
+executable('kumo-local-extended-density-budget-profile',
+  'tests/local_extended_density_budget_profile.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16d5: extended end-to-end error regression.
+executable('kumo-local-extended-end-to-end-error-regression',
+  'tests/local_extended_end_to_end_error_regression.cpp',
+  dependencies: kumo_dep)
+
+# Stage 03C.16d6a: extreme budget regression.
+test('local-sparse-budget-extreme',
+  executable('kumo-local-sparse-budget-extreme-test',
+    'tests/local_sparse_budget_extreme_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16d6b1: bound reliability policy.
+test('local-bound-reliability',
+  executable('kumo-local-bound-reliability-test',
+    'tests/local_bound_reliability_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+# Stage 03C.16d6b2: spatial bound reliability policy.
+test('local-spatial-policy',
+  executable('kumo-local-spatial-policy-test',
+    'tests/local_spatial_policy_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)

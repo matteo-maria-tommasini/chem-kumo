@@ -32,7 +32,7 @@ int main() {
                 require(std::isfinite(full.value)&&full.value>=0.,"invalid full bound");
                 for(const double fraction:fractions) {
                     const double budget=root*fraction;
-                    const auto result=local_spatial_persistent_decision(a,b,depth,budget);
+                    const auto result=local_spatial_persistent_decision(a,b,depth,budget,BoundPolicy::Experimental);
                     ++cases;
                     require(!result.formally_certified,"unexpected formal certification");
                     if(result.decision==SpatialDecision::CertifiedSkip) {
@@ -53,7 +53,7 @@ int main() {
                 for(const double invalid:{-1.,std::numeric_limits<double>::quiet_NaN(),
                                           std::numeric_limits<double>::infinity(),
                                           -std::numeric_limits<double>::infinity()}) {
-                    const auto result=local_spatial_persistent_decision(a,b,depth,invalid);
+                    const auto result=local_spatial_persistent_decision(a,b,depth,invalid,BoundPolicy::Experimental);
                     require(result.decision==SpatialDecision::KeepOrRefine && result.node_visits==0,
                             "invalid budget must not query tree");
                 }
@@ -63,7 +63,7 @@ int main() {
         const SpatialPersistentTree empty(std::vector<GaussianPairEnvelope>{});
         const SpatialPersistentTree nonempty(std::vector<GaussianPairEnvelope>{{1.,{0.,0.,0.},1.}});
         for(double budget:{0.,1.}) {
-            const auto r=local_spatial_persistent_decision(empty,nonempty,8,budget);
+            const auto r=local_spatial_persistent_decision(empty,nonempty,8,budget,BoundPolicy::Experimental);
             require(r.decision==SpatialDecision::CertifiedSkip && r.upper_bound==0.,"empty input not skipped");
         }
         std::cout<<"cases="<<cases<<" skips="<<skips<<" keeps="<<keeps

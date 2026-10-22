@@ -21,7 +21,7 @@ int main() {
                             full.value*2.0,-1.0,
                             std::numeric_limits<double>::quiet_NaN(),
                             std::numeric_limits<double>::infinity()}) {
-            const auto r=local_spatial_persistent_decision(ta,tb,8,budget);
+            const auto r=local_spatial_persistent_decision(ta,tb,8,budget,BoundPolicy::Experimental);
             require(!r.formally_certified,"unexpected formal certification");
             if(r.decision==SpatialDecision::CertifiedSkip) {
                 require(std::isfinite(budget)&&budget>0&&r.upper_bound<=budget,
@@ -34,14 +34,14 @@ int main() {
             ++checks;
         }
         for(double budget: {0.0,1.0}) {
-            const auto r=local_spatial_persistent_decision(empty,tb,8,budget);
+            const auto r=local_spatial_persistent_decision(empty,tb,8,budget,BoundPolicy::Experimental);
             require(r.decision==SpatialDecision::CertifiedSkip && r.upper_bound==0,
                     "empty group should be zero");
             ++checks;
         }
-        const auto strict=local_spatial_persistent_decision(ta,tb,8,0.0);
+        const auto strict=local_spatial_persistent_decision(ta,tb,8,0.0,BoundPolicy::Experimental);
         require(strict.decision==SpatialDecision::KeepOrRefine,"zero budget must keep");
-        const auto easy=local_spatial_persistent_decision(ta,tb,8,full.value*2);
+        const auto easy=local_spatial_persistent_decision(ta,tb,8,full.value*2,BoundPolicy::Experimental);
         require(easy.decision==SpatialDecision::CertifiedSkip,"easy budget must skip");
         std::cout<<"checks="<<checks<<" skips="<<skips
                  <<" zero_budget=keep invalid_budgets=keep empty=skip"
