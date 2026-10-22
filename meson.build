@@ -941,3 +941,15 @@ if mpfr_dep.found()
       dependencies: [kumo_dep, mpfr_dep]),
     timeout: 120)
 endif
+
+# Unified W backend dispatcher.
+test('local-w-dispatch',
+  executable('kumo-local-w-dispatch-test',
+    'tests/local_w_dispatch_test.cpp',
+    dependencies: kumo_dep,
+    cpp_args: []),
+  args: [
+    meson.project_source_root() / 'tests/data/o2.fchk.gz',
+    meson.project_source_root() / 'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 120)
