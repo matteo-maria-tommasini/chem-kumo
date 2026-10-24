@@ -953,3 +953,95 @@ test('local-w-dispatch',
     meson.project_source_root() / 'tests/data/acrolein.fchk.gz'
   ],
   timeout: 120)
+
+# Diagnostic W backend benchmark.
+if get_option('benchmarks')
+  executable('kumo-local-w-backend-benchmark',
+    'benchmarks/local_w_backend_benchmark.cpp',
+    dependencies: kumo_dep)
+endif
+
+# W hierarchical screening-only profile.
+if get_option('benchmarks')
+  executable('kumo-local-w-screening-profile',
+    'benchmarks/local_w_screening_profile.cpp',
+    dependencies: kumo_dep)
+endif
+
+# Atomic on-center W blocks (unscreened reference).
+test('local-atomic-w',
+  executable('kumo-local-atomic-w-test',
+    'tests/local_atomic_w_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.project_source_root() / 'tests/data/o2.fchk.gz',
+    meson.project_source_root() / 'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 120)
+
+# Local atomic hybrid generalized eigenproblem.
+test('local-atomic-hybrids',
+  executable('kumo-local-atomic-hybrids-test',
+    'tests/local_atomic_hybrids_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.project_source_root() / 'tests/data/o2.fchk.gz',
+    meson.project_source_root() / 'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 120)
+
+# Atomic hybrid chemical diagnostics.
+if get_option('benchmarks')
+  executable('kumo-local-atomic-hybrid-diagnostic',
+    'benchmarks/local_atomic_hybrid_diagnostic.cpp',
+    dependencies: kumo_dep)
+endif
+
+# Local W blocks for first-neighbor atomic pairs.
+test('local-neighbor-w',
+  executable('kumo-local-neighbor-w-test',
+    'tests/local_neighbor_w_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.project_source_root() / 'tests/data/o2.fchk.gz',
+    meson.project_source_root() / 'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 120)
+
+# Density-based atomic interaction graph.
+test('local-density-pair-graph',
+  executable('kumo-local-density-pair-graph-test',
+    'tests/local_density_pair_graph_test.cpp',
+    dependencies: kumo_dep),
+  args: [
+    meson.project_source_root() / 'tests/data/o2.fchk.gz',
+    meson.project_source_root() / 'tests/data/acrolein.fchk.gz'
+  ],
+  timeout: 120)
+
+# Exploratory central-atom valence coupling diagnostic.
+if get_option('benchmarks')
+  executable('kumo-local-valence-coupling-diagnostic',
+    'benchmarks/local_valence_coupling_diagnostic.cpp',
+    dependencies: kumo_dep)
+endif
+
+# Approximate joint diagonalization of atomic coupling operators.
+test('local-joint-diagonalization',
+  executable('kumo-local-joint-diagonalization-test',
+    'tests/local_joint_diagonalization_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
+
+if get_option('benchmarks')
+  executable('kumo-local-valence-ajd-diagnostic',
+    'benchmarks/local_valence_ajd_diagnostic.cpp',
+    dependencies: kumo_dep)
+endif
+
+# Geometric sp3 hybrid projection of local C-H coupling matrices.
+if get_option('benchmarks')
+  executable('kumo-tetrahedral-w-diagnostic',
+    'benchmarks/tetrahedral_w_diagnostic.cpp',
+    dependencies: kumo_dep)
+endif

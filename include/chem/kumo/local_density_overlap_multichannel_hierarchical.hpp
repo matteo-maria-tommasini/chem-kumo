@@ -46,7 +46,8 @@ local_density_overlap_multichannel_hierarchical(
     const std::vector<Eigen::MatrixXd>& densities,
     const std::vector<double>& epsilons,
     std::size_t memory_limit_bytes,
-    MultichannelScreeningOrder order = MultichannelScreeningOrder::MaximumImportance) {
+    MultichannelScreeningOrder order = MultichannelScreeningOrder::MaximumImportance,
+    bool screening_only = false) {
     using Clock = std::chrono::steady_clock;
     const auto start = Clock::now();
     if (densities.size() != epsilons.size())
@@ -164,6 +165,48 @@ local_density_overlap_multichannel_hierarchical(
     for (std::size_t j = 0; j < np; ++j)
         if (cut[j] > 0) reciprocal_active.insert(j);
     stats.ordering_seconds = std::chrono::duration<double>(Clock::now() - ordering_start).count();
+    if (screening_only) {
+        // Fenwick tree: count reciprocal-active ranks without enumerating quartets.
+        std::vector<std::size_t> bit(np + 1, 0);
+        const auto add_rank = [&](std::size_t rank, int delta) {
+            for (std::size_t k = rank + 1; k <= np; k += k & (~k + 1)) {
+                if (delta > 0) ++bit[k]; else --bit[k];
+            }
+        };
+        const auto count_below = [&](std::size_t end) {
+            std::size_t n = 0;
+            for (std::size_t k = end; k; k -= k & (~k + 1)) n += bit[k];
+            return n;
+        };
+        for (std::size_t j = 0; j < np; ++j)
+            if (cut[j] > 0) add_rank(j, +1);
+        std::size_t selected = 0;
+        for (std::size_t ii = 0; ii < np; ++ii) {
+            for (std::size_t j : deactivate[ii])
+                if (cut[j] > 0) add_rank(j, -1);
+            const std::size_t prefix_end = std::max(ii, cut[ii]);
+            const std::size_t prefix = prefix_end - ii;
+            const std::size_t reciprocal = count_below(np) - count_below(prefix_end);
+            if (prefix > stats.total_quartets - selected ||
+                reciprocal > stats.total_quartets - selected - prefix)
+                throw std::overflow_error("hierarchical screening: candidate count overflow");
+            selected += prefix + reciprocal;
+        }
+        stats.candidate_visits = selected;
+        stats.evaluated_quartets = 0; // No quartet integrals were evaluated.
+        stats.skipped_quartets = stats.total_quartets - selected;
+        stats.cutoff_skipped_quartets = stats.skipped_quartets;
+        for (std::size_t c = 0; c < active.size(); ++c) {
+            const auto k = active[c];
+            long double maximum = 0.0L;
+            for (std::size_t r = 0; r < np; ++r)
+                maximum = std::max(maximum, pairs[traversal[r]].bmax * suffix[c][cut[r]]);
+            stats.max_error_bounds[k] = static_cast<double>(maximum);
+        }
+        stats.total_seconds = std::chrono::duration<double>(Clock::now() - start).count();
+        return out;
+    }
+
     const auto pair_bytes = [](const LocalPreparedShellPair& p) {
         std::size_t n = p.components.capacity() * sizeof(std::vector<GaussianPairIntermediate>);
         for (const auto& c : p.components) {

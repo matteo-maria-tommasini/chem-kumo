@@ -13,3 +13,6 @@ __MACOSX/
 *.dylib
 *.so
 *.a
+
+# Git repository bundles
+*.bundle
