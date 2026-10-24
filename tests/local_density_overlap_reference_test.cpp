@@ -62,14 +62,6 @@ Eigen::VectorXd becke_weights(const Eigen::Vector3d& point,
     p/=p.sum();
     return p;
 }
-std::vector<std::size_t> ao_centers(const chem::kumo::BasisSet& basis) {
-    std::vector<std::size_t> result;
-    for (const auto& shell : basis.shells())
-        result.insert(result.end(), shell.function_count(), shell.center);
-    if (result.size() != basis.function_count())
-        throw std::runtime_error("AO center map size mismatch");
-    return result;
-}
 // Angular Lebedev rules are pretabulated and independently checked below.
 
 struct NumericalResult {

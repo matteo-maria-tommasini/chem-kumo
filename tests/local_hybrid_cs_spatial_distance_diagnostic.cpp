@@ -15,7 +15,6 @@ int main(int argc, char** argv) {
     using namespace chem::kumo;
     if (argc < 2) { std::cerr << "usage: diagnostic file.fchk[.gz] ...\n"; return 2; }
     try {
-        constexpr std::array<double,4> edges{0.,2.,5.,10.};
         constexpr std::array<double,4> relative_thresholds{1e-2,1e-4,1e-6,1e-8};
         for (int arg=1;arg<argc;++arg) {
             const BasisSet basis{FormattedCheckpoint(argv[arg])};

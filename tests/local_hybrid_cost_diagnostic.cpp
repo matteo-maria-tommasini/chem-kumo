@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
                 cs_spent.emplace_back(Eigen::MatrixXd::Zero(nao,nao));
                 hybrid_spent.emplace_back(Eigen::MatrixXd::Zero(nao,nao));
             }
-            std::size_t cs_skipped=0, hybrid_skipped=0, hybrid_better=0, elements=0, quartets=0;
+            std::size_t cs_skipped=0, hybrid_skipped=0, quartets=0;
             for (std::size_t x=0;x<pairs.size();++x)
                 for (std::size_t y=x;y<pairs.size();++y) {
                     const auto& a=pairs[x];
@@ -89,8 +89,6 @@ int main(int argc, char** argv) {
                                     if (!(cs>=0) || !(spatial>=0) || !std::isfinite(cs) || !std::isfinite(spatial))
                                         throw std::runtime_error("nonfinite or negative bound");
                                     const long double bound=std::min(cs,spatial);
-                                    hybrid_better+=(spatial<cs);
-                                    ++elements;
                                     for (std::size_t k=0;k<densities.size();++k) {
                                         const long double direct=mb*std::abs(static_cast<long double>(densities[k](lambda,sigma)));
                                         cs_charge[k](mu,nu)+=static_cast<double>(direct*cs);
