@@ -31,7 +31,7 @@ pkg.generate(
   requires_private: ['zlib'],
 )
 install_headers('include/chem/kumo.hpp',subdir:'chem')
-install_headers('include/chem/kumo/density.hpp','include/chem/kumo/fchk.hpp','include/chem/kumo/basis.hpp','include/chem/kumo/basis_evaluator.hpp','include/chem/kumo/evaluator.hpp',subdir:'chem/kumo')
+install_headers('include/chem/kumo/density.hpp','include/chem/kumo/fchk.hpp','include/chem/kumo/basis.hpp','include/chem/kumo/basis_evaluator.hpp','include/chem/kumo/evaluator.hpp','include/chem/kumo/field_sampler.hpp',subdir:'chem/kumo')
 executable('kumo-example','examples/fchk_to_cube.cpp',dependencies:kumo_dep)
 test('density',executable('kumo-density-test','tests/density_test.cpp',dependencies:kumo_dep),args:[meson.current_source_dir()/'tests/data/o2.fchk.gz',meson.current_source_dir()/'tests/data/acrolein.fchk.gz'])
 
