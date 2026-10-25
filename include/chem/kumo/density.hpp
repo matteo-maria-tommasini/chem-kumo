@@ -30,6 +30,8 @@ public:
     /// Read a sample at zero-based grid indices.
     double operator()(int i, int j, int k) const;
     std::span<const double> values() const noexcept { return values_; }
+    [[nodiscard]] const Grid& grid() const noexcept { return grid_; }
+    [[nodiscard]] const std::vector<Atom>& atoms() const noexcept { return atoms_; }
     void write_cube(const std::filesystem::path& path, const std::string& comment = "Electron density") const;
     /// Write signed MO amplitudes with Gaussian-style orbital index metadata.
     void write_orbital_cube(const std::filesystem::path& path, std::size_t orbital_index,

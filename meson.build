@@ -361,3 +361,7 @@ test('weighted-overlap-multicenter', executable(
     meson.current_source_dir()/'tests/data/o2.fchk.gz'
   ],
   timeout: 300)
+
+# Generic affine-grid trilinear field sampler.
+test('field-sampler', executable('kumo-field-sampler-test',
+  'tests/field_sampler_test.cpp', dependencies: kumo_dep))
