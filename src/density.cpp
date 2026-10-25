@@ -88,7 +88,7 @@ void Field::write_cube(const std::filesystem::path& path, const std::string& com
         out << '\n';
     }
     for (const auto& a:atoms_) {
-        out << std::setw(5) << a.atomic_number << std::setw(13) << static_cast<double>(a.atomic_number);
+        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
         for (int k=0;k<3;++k) out << std::setw(13) << a.position[k];
         out << '\n';
     }
@@ -113,7 +113,7 @@ void Field::write_orbital_cube(const std::filesystem::path& path, std::size_t or
         out << '\n';
     }
     for (const auto& a:atoms_) {
-        out << std::setw(5) << a.atomic_number << std::setw(13) << static_cast<double>(a.atomic_number);
+        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
         for (int k=0;k<3;++k) out << std::setw(13) << a.position[k];
         out << '\n';
     }
@@ -133,11 +133,26 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     const auto& zs=f.integers("Atomic numbers");
     const auto& xyz=f.reals("Current cartesian coordinates");
     if (zs.size() > std::numeric_limits<std::size_t>::max()/3 || xyz.size()!=3*zs.size() || zs.empty()) throw std::runtime_error("invalid FCHK geometry");
+    const std::vector<double>* nuclear_charges = nullptr;
+    if (f.contains("Nuclear charges")) {
+        const auto& charges = f.reals("Nuclear charges");
+        if (charges.size() != zs.size())
+            throw std::runtime_error("invalid FCHK nuclear charge count");
+        nuclear_charges = &charges;
+    }
     std::vector<Atom> atoms;
     for (std::size_t i=0;i<zs.size();++i) {
         if (zs[i] <= 0 || zs[i] > 118 || !std::isfinite(xyz[3*i]) || !std::isfinite(xyz[3*i+1]) || !std::isfinite(xyz[3*i+2]))
             throw std::runtime_error("invalid FCHK atom or coordinates");
-        atoms.push_back({static_cast<int>(zs[i]), Eigen::Vector3d(xyz[3*i],xyz[3*i+1],xyz[3*i+2])});
+        // FCHK atomic numbers identify the element. Use an explicit nuclear-charge
+        // record when present; otherwise retain the historical all-electron Z
+        // convention. An ECP-specific effective charge cannot be inferred here.
+        const double charge = nuclear_charges == nullptr
+            ? static_cast<double>(zs[i]) : (*nuclear_charges)[i];
+        if (!std::isfinite(charge) || charge < 0.0)
+            throw std::runtime_error("invalid FCHK nuclear charge");
+        atoms.push_back({static_cast<int>(zs[i]), charge,
+            Eigen::Vector3d(xyz[3*i],xyz[3*i+1],xyz[3*i+2])});
     }
     BasisEvaluator evaluator{BasisSet(f)};
     const auto n=evaluator.basis_size();

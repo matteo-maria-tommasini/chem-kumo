@@ -12,8 +12,13 @@ namespace detail { struct AoMoTestAccess; }
 /// SCF density component. Difference means alpha minus beta.
 /// For MO evaluation only Alpha and Beta are meaningful channels.
 enum class Spin { Total, Alpha, Beta, Difference };
-/// Atomic number and Cartesian nuclear position (bohr).
-struct Atom { int atomic_number; Eigen::Vector3d position; };
+/// Atomic identity, explicit center charge (in units of e), and Cartesian position (bohr).
+/// The center charge is not an atomic partial charge and need not equal Z.
+struct Atom {
+    int atomic_number = 0;
+    double nuclear_charge = 0.0;
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+};
 /// Regular 3D grid: r(i,j,k) = origin + steps * [i,j,k].
 /// All lengths are in bohr; columns of steps are the grid-axis increments.
 struct Grid {

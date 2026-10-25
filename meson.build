@@ -376,3 +376,10 @@ test('grid-geometry',
 # Mutable field samples preserve geometry and sampler consistency.
 test('field-mutability', executable('kumo-field-mutability-test',
   'tests/field_mutability_test.cpp', dependencies: kumo_dep))
+
+# Preserve distinct atomic number and explicit center charge in Cube output.
+test('atom-charge-cube',
+  executable('kumo-atom-charge-cube-test',
+    'tests/atom_charge_cube_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
