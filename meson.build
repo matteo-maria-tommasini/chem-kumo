@@ -372,3 +372,7 @@ test('grid-geometry',
     'tests/grid_geometry_test.cpp',
     dependencies: kumo_dep),
   timeout: 120)
+
+# Mutable field samples preserve geometry and sampler consistency.
+test('field-mutability', executable('kumo-field-mutability-test',
+  'tests/field_mutability_test.cpp', dependencies: kumo_dep))

@@ -30,6 +30,9 @@ public:
     /// Read a sample at zero-based grid indices.
     double operator()(int i, int j, int k) const;
     std::span<const double> values() const noexcept { return values_; }
+    /// Mutable samples without access to vector size or capacity.
+    /// The returned view is invalidated by Field destruction or reassignment.
+    [[nodiscard]] std::span<double> mutable_values() noexcept { return values_; }
     [[nodiscard]] const Grid& grid() const noexcept { return grid_; }
     [[nodiscard]] const std::vector<Atom>& atoms() const noexcept { return atoms_; }
     void write_cube(const std::filesystem::path& path, const std::string& comment = "Electron density") const;
