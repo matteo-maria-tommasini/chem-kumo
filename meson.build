@@ -387,3 +387,8 @@ test('atom-charge-cube',
 # General scalar Cube I/O and metadata round-trip.
 test('cube-io', executable('kumo-cube-io-test',
   'tests/cube_io_test.cpp', dependencies: kumo_dep), timeout: 120)
+
+# Read independently supplied Gaussian Cube reference files.
+test('cube-real-reference', executable('kumo-cube-real-reference-test',
+  'tests/cube_real_reference_test.cpp', dependencies: kumo_dep),
+  args: [meson.current_source_dir() / 'tests/data'], timeout: 120)
