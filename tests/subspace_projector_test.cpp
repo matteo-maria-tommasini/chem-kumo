@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 using namespace chem::kumo;
@@ -46,6 +47,66 @@ static void validate(const Eigen::MatrixXd& s, const Eigen::MatrixXd& a,
     }
 }
 
+static void validate_invalid_inputs() {
+    const Eigen::MatrixXd identity = Eigen::MatrixXd::Identity(4, 4);
+    const Eigen::MatrixXd columns = identity.leftCols(2);
+
+    auto rejected = [](const Eigen::MatrixXd& metric,
+                       const Eigen::MatrixXd& subspace) {
+        try {
+            const SubspaceProjector projector(metric, subspace);
+            (void)projector;
+        } catch (const std::invalid_argument&) {
+            return true;
+        }
+        return false;
+    };
+
+    Eigen::MatrixXd nonsymmetric = identity;
+    nonsymmetric(0, 1) = 0.1;
+    require(rejected(nonsymmetric, columns), "nonsymmetric metric accepted");
+
+    Eigen::MatrixXd indefinite = identity;
+    indefinite(0, 0) = -1.0;
+    require(rejected(indefinite, columns), "indefinite metric accepted");
+
+    Eigen::MatrixXd singular = identity;
+    singular(0, 0) = 0.0;
+    require(rejected(singular, columns), "singular metric accepted");
+
+    Eigen::MatrixXd nonfinite_metric = identity;
+    nonfinite_metric(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    require(rejected(nonfinite_metric, columns), "nonfinite metric accepted");
+
+    Eigen::MatrixXd nonfinite_columns = columns;
+    nonfinite_columns(0, 0) = std::numeric_limits<double>::infinity();
+    require(rejected(identity, nonfinite_columns), "nonfinite columns accepted");
+
+    const SubspaceProjector projector(identity, columns);
+    Eigen::MatrixXd vectors = Eigen::MatrixXd::Ones(4, 2);
+    vectors(0, 0) = std::numeric_limits<double>::quiet_NaN();
+    bool failed = false;
+    try { (void)projector.apply(vectors); }
+    catch (const std::invalid_argument&) { failed = true; }
+    require(failed, "NaN projection input accepted");
+
+    vectors(0, 0) = std::numeric_limits<double>::infinity();
+    failed = false;
+    try { (void)projector.apply(vectors); }
+    catch (const std::invalid_argument&) { failed = true; }
+    require(failed, "infinite projection input accepted");
+
+    failed = false;
+    try { (void)projector.apply(Eigen::MatrixXd::Ones(3, 2)); }
+    catch (const std::invalid_argument&) { failed = true; }
+    require(failed, "wrong projection dimensions accepted");
+
+    failed = false;
+    try { (void)SubspaceProjector(identity, columns, 0.0); }
+    catch (const std::invalid_argument&) { failed = true; }
+    require(failed, "invalid rank tolerance accepted");
+}
+
 int main(int argc, char** argv) {
     try {
         Eigen::MatrixXd s(4,4);
@@ -56,6 +117,7 @@ int main(int argc, char** argv) {
         Eigen::MatrixXd a(4,2);
         a << 1.0,0.0, 0.2,0.3, 0.0,1.0, 0.1,0.2;
         validate(s,a,1e-11);
+        validate_invalid_inputs();
         if (argc < 2) return 2;
         for (int arg = 1; arg < argc; ++arg) {
             FormattedCheckpoint fchk(argv[arg]);

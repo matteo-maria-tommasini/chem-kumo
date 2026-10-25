@@ -58,6 +58,8 @@ public:
     [[nodiscard]] Eigen::MatrixXd apply(const Eigen::Ref<const Eigen::MatrixXd>& vectors) const {
         if (vectors.rows() != metric_.rows())
             throw std::invalid_argument("SubspaceProjector: vector dimension mismatch");
+        if (!vectors.allFinite())
+            throw std::invalid_argument("SubspaceProjector: non-finite projection input");
         return basis_ * (basis_.transpose() * (metric_ * vectors));
     }
 
