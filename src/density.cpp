@@ -24,7 +24,18 @@ std::size_t checked_size(const Grid& g) {
             throw std::invalid_argument("invalid or oversized grid");
         n *= static_cast<std::size_t>(g.counts[k]);
     }
-    if (!g.origin.allFinite() || !g.steps.allFinite() || std::abs(g.steps.determinant()) < 1e-16)
+    if (!g.origin.allFinite() || !g.steps.allFinite())
+        throw std::invalid_argument("invalid grid geometry");
+
+    Eigen::Matrix3d normalized_steps;
+    for (int axis = 0; axis < 3; ++axis) {
+        const double norm = g.steps.col(axis).norm();
+        if (!std::isfinite(norm) || norm <= 0.0)
+            throw std::invalid_argument("invalid grid geometry");
+        normalized_steps.col(axis) = g.steps.col(axis) / norm;
+    }
+
+    if (std::abs(normalized_steps.determinant()) < 1e-12)
         throw std::invalid_argument("invalid grid geometry");
     return n;
 }

@@ -365,3 +365,10 @@ test('weighted-overlap-multicenter', executable(
 # Generic affine-grid trilinear field sampler.
 test('field-sampler', executable('kumo-field-sampler-test',
   'tests/field_sampler_test.cpp', dependencies: kumo_dep))
+
+# Validate grid geometry independently of physical scale.
+test('grid-geometry',
+  executable('kumo-grid-geometry-test',
+    'tests/grid_geometry_test.cpp',
+    dependencies: kumo_dep),
+  timeout: 120)
