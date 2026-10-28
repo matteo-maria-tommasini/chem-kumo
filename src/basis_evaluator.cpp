@@ -238,6 +238,87 @@ Eigen::MatrixXd BasisEvaluator::overlap_matrix() const {
     return result;
 }
 
+CartesianAOMoments BasisEvaluator::cartesian_moments() const {
+    const auto n = static_cast<Eigen::Index>(basis_size());
+    CartesianAOMoments result;
+    result.overlap = Eigen::MatrixXd::Zero(n, n);
+    for (auto& m : result.first) m = Eigen::MatrixXd::Zero(n, n);
+    for (auto& m : result.second) m = Eigen::MatrixXd::Zero(n, n);
+
+    for (std::size_t ia = 0; ia < blocks_.size(); ++ia) {
+        const auto& A = blocks_[ia];
+        for (std::size_t ib = ia; ib < blocks_.size(); ++ib) {
+            const auto& B = blocks_[ib];
+            const auto nc = static_cast<Eigen::Index>(A.powers.size());
+            const auto mc = static_cast<Eigen::Index>(B.powers.size());
+            std::array<Eigen::MatrixXd, 10> cart;
+            for (auto& m : cart) m = Eigen::MatrixXd::Zero(nc, mc);
+
+            for (Eigen::Index i = 0; i < nc; ++i) {
+                const auto& x = A.powers[static_cast<std::size_t>(i)];
+                const int ap[3] = {x.x, x.y, x.z};
+                for (Eigen::Index j = 0; j < mc; ++j) {
+                    const auto& y = B.powers[static_cast<std::size_t>(j)];
+                    const int bp[3] = {y.x, y.y, y.z};
+                    double sums[10] = {};
+                    for (std::size_t p = 0; p < A.exponents.size(); ++p) {
+                        for (std::size_t q = 0; q < B.exponents.size(); ++q) {
+                            const double alpha = A.exponents[p], beta = B.exponents[q];
+                            // The primitive moments are obtained by shifting the
+                            // angular momentum of the ket: r_i=(r_i-B_i)+B_i.
+                            double v[3][3];
+                            for (int d = 0; d < 3; ++d) {
+                                const double c = B.origin[d];
+                                const double s0 = overlap_axis(ap[d], bp[d], alpha, beta,
+                                                               A.origin[d], c);
+                                const double s1 = overlap_axis(ap[d], bp[d] + 1, alpha, beta,
+                                                               A.origin[d], c);
+                                const double s2 = overlap_axis(ap[d], bp[d] + 2, alpha, beta,
+                                                               A.origin[d], c);
+                                v[d][0] = s0;
+                                v[d][1] = s1 + c * s0;
+                                v[d][2] = s2 + 2.0 * c * s1 + c * c * s0;
+                            }
+                            const double weight =
+                                A.primitive_weights(i, static_cast<Eigen::Index>(p)) *
+                                B.primitive_weights(j, static_cast<Eigen::Index>(q));
+                            const double values[10] = {
+                                v[0][0] * v[1][0] * v[2][0],
+                                v[0][1] * v[1][0] * v[2][0],
+                                v[0][0] * v[1][1] * v[2][0],
+                                v[0][0] * v[1][0] * v[2][1],
+                                v[0][2] * v[1][0] * v[2][0],
+                                v[0][0] * v[1][2] * v[2][0],
+                                v[0][0] * v[1][0] * v[2][2],
+                                v[0][1] * v[1][1] * v[2][0],
+                                v[0][1] * v[1][0] * v[2][1],
+                                v[0][0] * v[1][1] * v[2][1]
+                            };
+                            for (int k = 0; k < 10; ++k) sums[k] += weight * values[k];
+                        }
+                    }
+                    for (int k = 0; k < 10; ++k) cart[k](i, j) = sums[k];
+                }
+            }
+            const auto ra = static_cast<Eigen::Index>(A.output_offset);
+            const auto rb = static_cast<Eigen::Index>(B.output_offset);
+            const auto na = static_cast<Eigen::Index>(A.output_count);
+            const auto nb = static_cast<Eigen::Index>(B.output_count);
+            for (int k = 0; k < 10; ++k) {
+                Eigen::MatrixXd block = std::move(cart[k]);
+                if (A.pure_transform.size()) block = (A.pure_transform * block).eval();
+                if (B.pure_transform.size()) block = (block * B.pure_transform.transpose()).eval();
+                Eigen::MatrixXd* out = k == 0 ? &result.overlap :
+                    (k <= 3 ? &result.first[static_cast<std::size_t>(k - 1)] :
+                              &result.second[static_cast<std::size_t>(k - 4)]);
+                out->block(ra, rb, na, nb) = block;
+                if (ia != ib) out->block(rb, ra, nb, na) = block.transpose();
+            }
+        }
+    }
+    return result;
+}
+
 void BasisEvaluator::evaluate_into_impl_reference(const Eigen::Vector3d& point,
                                         Eigen::Ref<Eigen::VectorXd> output,
                                         std::vector<double>& cartesian_scratch,

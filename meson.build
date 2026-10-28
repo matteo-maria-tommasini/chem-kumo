@@ -396,3 +396,27 @@ test('cube-real-reference', executable('kumo-cube-real-reference-test',
 # Generic scalar-field integration, independent of trilinear interpolation.
 test('field-integrals', executable('kumo-field-integrals-test',
   'tests/field_integrals_test.cpp', dependencies:kumo_dep))
+
+# Analytic AO Cartesian moments: s/p/d, pure shells, translations, and FCHK ordering.
+test('cartesian-ao-moments', executable('kumo-cartesian-ao-moments-test',
+  'tests/cartesian_ao_moments_test.cpp', dependencies:kumo_dep),
+  args:[meson.current_source_dir()/'tests/data/o2.fchk.gz'], timeout:120)
+
+# Independent molecular dipole benchmark from Gaussian FCHK records.
+# Reference values come from Gaussian, not from a second KUMO integration.
+gaussian_dipole_reference = executable('kumo-gaussian-dipole-reference-test',
+  'tests/gaussian_dipole_reference_test.cpp', dependencies:kumo_dep)
+test('gaussian-dipole-reference', gaussian_dipole_reference,
+  args:[meson.current_source_dir()/'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir()/'tests/data/hybrids/nh3_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir()/'tests/data/hybrids/ch4_b3lyp_def2tzvp.fchk.gz'],
+  timeout:120)
+
+# Independent Gaussian FCHK quadrupole reference; test all six tensor components.
+gaussian_quadrupole_reference = executable('kumo-gaussian-quadrupole-reference-test',
+  'tests/gaussian_quadrupole_reference_test.cpp', dependencies:kumo_dep)
+test('gaussian-quadrupole-reference', gaussian_quadrupole_reference,
+  args:[meson.current_source_dir()/'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir()/'tests/data/hybrids/nh3_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir()/'tests/data/hybrids/ch4_b3lyp_def2tzvp.fchk.gz'],
+  timeout:120)
