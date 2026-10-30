@@ -11,12 +11,16 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <array>
+#include <memory>
+#include <streambuf>
+#include <zlib.h>
 
 namespace chem::kumo {
 namespace {
 constexpr double angstrom_to_bohr = 1.8897261246257702;
 
-std::istringstream header_row(std::ifstream& input) {
+std::istringstream header_row(std::istream& input) {
     std::string line;
     if (!std::getline(input, line)) throw std::runtime_error("truncated Cube header");
     std::replace(line.begin(), line.end(), 'D', 'E');
@@ -45,11 +49,90 @@ void check_comments(const CubeMetadata& metadata) {
         metadata.second_comment.find_first_of("\r\n") != std::string::npos)
         throw std::invalid_argument("Cube comments must be single lines");
 }
+// A bounded streaming gzip decoder. Errors are retained separately because
+// formatted iostream extraction may translate streambuf exceptions into EOF.
+class GzipBuffer final : public std::streambuf {
+public:
+    explicit GzipBuffer(const std::filesystem::path& path) : source_(path, std::ios::binary) {
+        if (!source_) throw std::runtime_error("cannot open Cube input: " + path.string());
+        if (inflateInit2(&z_, MAX_WBITS + 16) != Z_OK)
+            throw std::runtime_error("cannot initialize Cube gzip decoder");
+        initialized_ = true;
+        setg(output_.data(), output_.data(), output_.data());
+    }
+    ~GzipBuffer() override { if (initialized_) inflateEnd(&z_); }
+    GzipBuffer(const GzipBuffer&) = delete;
+    GzipBuffer& operator=(const GzipBuffer&) = delete;
+    void validate() const {
+        if (!error_.empty()) throw std::runtime_error(error_);
+        if (!finished_) throw std::runtime_error("truncated gzip Cube stream");
+    }
+protected:
+    int_type underflow() override {
+        if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
+        if (finished_ || !error_.empty()) return traits_type::eof();
+        for (;;) {
+            if (!z_.avail_in) {
+                source_.read(reinterpret_cast<char*>(input_.data()), input_.size());
+                const auto n = source_.gcount();
+                if (n == 0) { error_ = "truncated gzip Cube stream"; return traits_type::eof(); }
+                z_.next_in = input_.data();
+                z_.avail_in = static_cast<uInt>(n);
+            }
+            z_.next_out = reinterpret_cast<Bytef*>(output_.data());
+            z_.avail_out = static_cast<uInt>(output_.size());
+            const int status = inflate(&z_, Z_NO_FLUSH);
+            const auto produced = output_.size() - z_.avail_out;
+            if (status == Z_STREAM_END) {
+                finished_ = true;
+                if (z_.avail_in || source_.peek() != std::char_traits<char>::eof())
+                    error_ = "trailing data after gzip Cube member";
+            } else if (status != Z_OK) {
+                error_ = "invalid gzip Cube stream or checksum";
+            }
+            if (produced) {
+                setg(output_.data(), output_.data(), output_.data() + produced);
+                return traits_type::to_int_type(*gptr());
+            }
+            if (finished_ || !error_.empty()) return traits_type::eof();
+        }
+    }
+private:
+    std::ifstream source_;
+    z_stream z_{};
+    bool initialized_ = false;
+    bool finished_ = false;
+    std::string error_;
+    std::array<unsigned char, 65536> input_{};
+    std::array<char, 65536> output_{};
+};
+
+CubeData parse_cube(std::istream& input);
 } // namespace
 
 CubeData read_cube(const std::filesystem::path& path) {
-    std::ifstream input(path);
-    if (!input) throw std::runtime_error("cannot open Cube input: " + path.string());
+    std::ifstream probe(path, std::ios::binary);
+    if (!probe) throw std::runtime_error("cannot open Cube input: " + path.string());
+    unsigned char signature[2]{};
+    probe.read(reinterpret_cast<char*>(signature), 2);
+    const bool gzip = probe.gcount() == 2 && signature[0] == 0x1f && signature[1] == 0x8b;
+    probe.clear();
+    probe.seekg(0);
+    if (!gzip) return parse_cube(probe);
+    probe.close();
+    GzipBuffer buffer(path);
+    std::istream decoded(&buffer);
+    CubeData result = parse_cube(decoded);
+    // Consume to the physical gzip end to verify trailer CRC32/ISIZE.
+    decoded.clear();
+    std::array<char, 4096> discard{};
+    while (decoded.read(discard.data(), discard.size()) || decoded.gcount()) {}
+    buffer.validate();
+    return result;
+}
+
+namespace {
+CubeData parse_cube(std::istream& input) {
     CubeMetadata metadata;
     if (!std::getline(input, metadata.first_comment) ||
         !std::getline(input, metadata.second_comment))
@@ -124,6 +207,7 @@ CubeData read_cube(const std::filesystem::path& path) {
     return {Field(std::move(grid), std::move(atoms), std::move(values)),
             std::move(metadata)};
 }
+} // namespace
 
 void write_cube(const CubeData& cube, const std::filesystem::path& path) {
     check_comments(cube.metadata);
