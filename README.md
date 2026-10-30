@@ -1,4 +1,4 @@
-# chem-kumo 1.3.0
+# chem-kumo 1.4.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -6,8 +6,10 @@
 
 **chem-kumo** is a lightweight C++20 library and command-line application for
 reconstructing ground-state SCF electron densities and molecular orbitals from
-Gaussian formatted checkpoint (`.fchk` or gzip-compressed `.fchk.gz`) files. It supports restricted and
-unrestricted calculations, with Eigen for numerical operations and zlib for gzip input.
+Gaussian formatted checkpoint (`.fchk` or gzip-compressed `.fchk.gz`) files.
+It supports restricted and unrestricted calculations, with Eigen for numerical
+operations and zlib for gzip input. The C++ library also reads scalar Gaussian
+Cube files, including gzip-compressed Cube input.
 
 ## Requirements and build
 
@@ -159,15 +161,61 @@ For numerical organization and performance measurements, see
 [Spatial derivative benchmark](benchmarks/SPATIAL_DERIVATIVES.md).
 For a method-by-method guide and contracts, see [docs/API.md](docs/API.md).
 
+### Typed Evaluator and electronic backends (1.4.0)
+
+The C++ `chem::kumo::Evaluator` provides typed requests for total, alpha, beta,
+and spin-difference electron density, gradients, Hessians, Laplacians and
+positive kinetic-energy density (`tau`), as well as orbital amplitudes. It
+returns component arrays on the requested grid. This API is separate from the
+existing `Molecule` convenience methods and is not a new CLI mode.
+
+`EvaluationOptions::backend` selects `Backend::AUTO` (default), `Backend::AO_P`
+or `Backend::AO_MO`. `AUTO` prefers occupied-orbital AO-MO contractions when
+orbital representation checks permit them; otherwise it uses the AO density
+matrix (AO-P). An explicitly requested ineligible AO-MO backend is rejected.
+`Results::backend_used()` reports the selected density backend. The AO-MO
+performance advantage is workload-dependent, not a universal guarantee.
+
+The Evaluator's `threads` option currently accepts `0` (runtime default) and
+`1`; explicit values above one are rejected. For OpenMP-enabled builds, use
+the runtime environment such as `OMP_NUM_THREADS` to control parallelism.
+The grid evaluation uses bounded coordinate blocks controlled by `block_size`.
+
+### Additional numerical APIs (1.4.0)
+
+The library also provides analytic AO overlap integrals, spin-resolved
+one-particle density matrices, metric subspace projectors, Cartesian AO moments,
+trilinear sampling of scalar fields, and scalar-field integration. These
+facilities have dedicated regression tests. See the installed public headers
+in `include/chem/kumo/` for their exact types and contracts; not all are
+available as command-line operations.
+
+### Scalar Cube input (1.4.0)
+
+`chem::kumo::read_cube(path)` reads uncompressed or gzip-compressed **scalar**
+Gaussian Cube files. Compression is detected from the gzip signature rather
+than the filename extension. The reader uses a common Cube parser, performs
+incremental decompression without a temporary decompressed file, and rejects
+invalid or truncated gzip streams. Its returned field uses bohr coordinates,
+regardless of the coordinate convention in the Cube header.
+
+The current Cube reader accepts nonnegative atom counts and one scalar dataset
+(`NVAL` absent or equal to one); orbital Cube variants with negative atom counts
+or multiple datasets are not supported by this reader. `write_cube()` writes
+plain-text Cube output; gzip-compressed **output** is not part of this feature.
+The `kumo` command-line application generates density and orbital Cube files
+from FCHK input; it is not a general Cube inspection CLI.
+
 ## Validation and supported scope
 
-The Meson suite on the spatial-derivatives development branch registers
-**30 tests**. The new tests cover AO, MO and density spatial derivatives
-against centered finite differences; independent MO versus density-matrix
-reconstruction; and blocked versus pointwise density derivatives. The 30
-regression tests passed on macOS ARM64 (Apple Clang) on 2026-10-13 after
-the fused Eigen optimization. Gaussian 09 Cubegen reference comparisons
-for signed MO amplitudes and density components remain in the suite.
+The 1.4.0 candidate registers **64 Meson tests**, all passing in the
+reported macOS ARM64 build on 2026-10-30. Coverage includes AO, MO and density
+spatial derivatives against finite differences; independent MO versus
+AO-density-matrix reconstruction; backend selection; blocked and pointwise
+evaluation; analytic overlaps and moments; scalar-field operations; and Cube
+and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
+input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
+density components remain in the suite.
 See [tests/REFERENCE_CUBES.md](tests/REFERENCE_CUBES.md) for reference details.
 
 The reference tests account for the rounding of the **known** Gaussian grid
@@ -191,19 +239,7 @@ executable('myapp', 'main.cpp', dependencies: kumo_dep)
 For a separate installation smoke test, run
 `./tests/check-installed-consumer.sh`.
 
-## Development
-
-chem-kumo was developed by Matteo Tommasini in collaboration with OpenAI's
-ChatGPT, through an iterative process of scientific design, C++20
-implementation, numerical optimization, and validation against Gaussian
-reference calculations. Scientific direction, testing, and final review were
-carried out by Matteo Tommasini, with ChatGPT contributing to code development,
-debugging, and documentation.
-
-## License
-
-MIT License; see [LICENSE](LICENSE). Eigen is an external dependency and is not
-bundled. Reference Cube and FCHK files are provided for numerical regression.
+## Compressed input and reference data
 
 ### Compressed formatted checkpoints
 
@@ -222,9 +258,23 @@ gzip -t tests/data/o2.fchk.gz
 
 ### Compressed reference data
 
-The repository stores its five Gaussian formatted checkpoints as `.fchk.gz`
-files: O2 and acrolein for numerical regression, and three HBC basis-set
-variants in `tests/data/hbc/` for reproducible performance measurements.
-KUMO reads them directly without temporary decompression. The `fchk-gzip`
-regression test materializes plain-text copies in a temporary directory to
-check exact numerical equivalence and rejects corrupted gzip trailers.
+The test data include compressed Gaussian formatted checkpoints for O2,
+acrolein, HBC basis-set variants and additional molecular validation cases.
+The exact inventory is maintained under `tests/data/`. KUMO reads FCHK gzip
+files directly without temporary decompression; the `fchk-gzip` regression
+test compares compressed and plain-text inputs and rejects corrupted gzip
+trailers. The scalar Cube I/O tests separately validate compressed Cube input.
+
+## Development
+
+chem-kumo was developed by Matteo Tommasini in collaboration with OpenAI's
+ChatGPT, through an iterative process of scientific design, C++20
+implementation, numerical optimization, and validation against Gaussian
+reference calculations. Scientific direction, testing, and final review were
+carried out by Matteo Tommasini, with ChatGPT contributing to code development,
+debugging, and documentation.
+
+## License
+
+MIT License; see [LICENSE](LICENSE). Eigen is an external dependency and is not
+bundled. Reference Cube and FCHK files are provided for numerical regression.
