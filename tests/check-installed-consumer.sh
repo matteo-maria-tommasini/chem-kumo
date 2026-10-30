@@ -18,13 +18,29 @@ else
   LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$TMP/build-consumer/installed-kumo-consumer"
 fi
 
-# Verify that the installed CLI is present and linked against the installed library.
+# Verify the installed CLI against the version declared by Meson.
 if [ ! -x "$PREFIX/bin/kumo" ]; then
-  echo 'ERROR: installed kumo CLI not found' >&2; exit 1
+  echo 'ERROR: installed kumo CLI not found' >&2
+  exit 1
 fi
+
+EXPECTED_VERSION=$(meson introspect "$TMP/build-kumo" --projectinfo |
+  python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
+
 if [ "$(uname -s)" = Darwin ]; then
-  DYLD_LIBRARY_PATH="$LIBDIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version | grep -q '1.3.0'
+  ACTUAL_VERSION=$(DYLD_LIBRARY_PATH="$LIBDIR${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version)
 else
-  LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version | grep -q '1.3.0'
+  ACTUAL_VERSION=$(LD_LIBRARY_PATH="$LIBDIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$PREFIX/bin/kumo" --version)
 fi
+
+case "$ACTUAL_VERSION" in
+  *"$EXPECTED_VERSION"*) ;;
+  *)
+    echo "ERROR: installed CLI version mismatch" >&2
+    echo "Expected: $EXPECTED_VERSION" >&2
+    echo "Actual: $ACTUAL_VERSION" >&2
+    exit 1
+    ;;
+esac
+
 echo 'installed KUMO CLI OK'

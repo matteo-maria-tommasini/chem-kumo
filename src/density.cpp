@@ -1,6 +1,8 @@
+#include "backend_selection.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <exception>
 #ifdef _OPENMP
@@ -22,7 +24,18 @@ std::size_t checked_size(const Grid& g) {
             throw std::invalid_argument("invalid or oversized grid");
         n *= static_cast<std::size_t>(g.counts[k]);
     }
-    if (!g.origin.allFinite() || !g.steps.allFinite() || std::abs(g.steps.determinant()) < 1e-16)
+    if (!g.origin.allFinite() || !g.steps.allFinite())
+        throw std::invalid_argument("invalid grid geometry");
+
+    Eigen::Matrix3d normalized_steps;
+    for (int axis = 0; axis < 3; ++axis) {
+        const double norm = g.steps.col(axis).norm();
+        if (!std::isfinite(norm) || norm <= 0.0)
+            throw std::invalid_argument("invalid grid geometry");
+        normalized_steps.col(axis) = g.steps.col(axis) / norm;
+    }
+
+    if (std::abs(normalized_steps.determinant()) < 1e-12)
         throw std::invalid_argument("invalid grid geometry");
     return n;
 }
@@ -75,7 +88,7 @@ void Field::write_cube(const std::filesystem::path& path, const std::string& com
         out << '\n';
     }
     for (const auto& a:atoms_) {
-        out << std::setw(5) << a.atomic_number << std::setw(13) << static_cast<double>(a.atomic_number);
+        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
         for (int k=0;k<3;++k) out << std::setw(13) << a.position[k];
         out << '\n';
     }
@@ -100,7 +113,7 @@ void Field::write_orbital_cube(const std::filesystem::path& path, std::size_t or
         out << '\n';
     }
     for (const auto& a:atoms_) {
-        out << std::setw(5) << a.atomic_number << std::setw(13) << static_cast<double>(a.atomic_number);
+        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
         for (int k=0;k<3;++k) out << std::setw(13) << a.position[k];
         out << '\n';
     }
@@ -120,11 +133,26 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     const auto& zs=f.integers("Atomic numbers");
     const auto& xyz=f.reals("Current cartesian coordinates");
     if (zs.size() > std::numeric_limits<std::size_t>::max()/3 || xyz.size()!=3*zs.size() || zs.empty()) throw std::runtime_error("invalid FCHK geometry");
+    const std::vector<double>* nuclear_charges = nullptr;
+    if (f.contains("Nuclear charges")) {
+        const auto& charges = f.reals("Nuclear charges");
+        if (charges.size() != zs.size())
+            throw std::runtime_error("invalid FCHK nuclear charge count");
+        nuclear_charges = &charges;
+    }
     std::vector<Atom> atoms;
     for (std::size_t i=0;i<zs.size();++i) {
         if (zs[i] <= 0 || zs[i] > 118 || !std::isfinite(xyz[3*i]) || !std::isfinite(xyz[3*i+1]) || !std::isfinite(xyz[3*i+2]))
             throw std::runtime_error("invalid FCHK atom or coordinates");
-        atoms.push_back({static_cast<int>(zs[i]), Eigen::Vector3d(xyz[3*i],xyz[3*i+1],xyz[3*i+2])});
+        // FCHK atomic numbers identify the element. Use an explicit nuclear-charge
+        // record when present; otherwise retain the historical all-electron Z
+        // convention. An ECP-specific effective charge cannot be inferred here.
+        const double charge = nuclear_charges == nullptr
+            ? static_cast<double>(zs[i]) : (*nuclear_charges)[i];
+        if (!std::isfinite(charge) || charge < 0.0)
+            throw std::runtime_error("invalid FCHK nuclear charge");
+        atoms.push_back({static_cast<int>(zs[i]), charge,
+            Eigen::Vector3d(xyz[3*i],xyz[3*i+1],xyz[3*i+2])});
     }
     BasisEvaluator evaluator{BasisSet(f)};
     const auto n=evaluator.basis_size();
@@ -169,8 +197,40 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     if (result.beta_mos_.cols() && !result.beta_energies_.empty() &&
         result.beta_energies_.size() != static_cast<std::size_t>(result.beta_mos_.cols()))
         throw std::runtime_error("beta orbital energy count mismatch");
+    // Validate the orbital representation once, after all electronic data have
+    // been loaded. An ineligible representation never prevents AO-P evaluation.
+    auto& info = result.electronic_info_;
+    info.occupied_alpha = static_cast<std::size_t>(result.nalpha_);
+    info.occupied_beta = static_cast<std::size_t>(result.nbeta_);
+    const bool has_alpha = result.alpha_mos_.cols() >= result.nalpha_ &&
+                           result.alpha_mos_.rows() == static_cast<Eigen::Index>(n);
+    const bool has_beta = !result.unrestricted_ ||
+                          (result.beta_mos_.cols() >= result.nbeta_ &&
+                           result.beta_mos_.rows() == static_cast<Eigen::Index>(n));
+    if (has_alpha && has_beta) {
+        const auto decision = detail::validate_orbital_backend(
+            result.total_, result.spin_, result.alpha_mos_, result.beta_mos_,
+            info.occupied_alpha, info.occupied_beta, result.unrestricted_);
+        info.total_absolute_error = decision.total_absolute_error;
+        info.total_relative_error = decision.total_relative_error;
+        info.spin_absolute_error = decision.spin_absolute_error;
+        info.spin_relative_error = decision.spin_relative_error;
+        info.orbital_status = decision.backend == detail::ElectronicBackend::AoMo
+            ? OrbitalRepresentationStatus::Valid
+            : OrbitalRepresentationStatus::Inconsistent;
+    }
     return result;
 }
+Eigen::MatrixXd Molecule::density_matrix(Spin component) const {
+    switch (component) {
+        case Spin::Total: return total_;
+        case Spin::Difference: return spin_;
+        case Spin::Alpha: return Eigen::MatrixXd(0.5 * (total_ + spin_));
+        case Spin::Beta: return Eigen::MatrixXd(0.5 * (total_ - spin_));
+    }
+    throw std::invalid_argument("invalid density matrix spin component");
+}
+
 DensityDerivatives Molecule::density_derivatives(
     const Eigen::Vector3d& point, Spin component) const {
     if (!point.allFinite())
@@ -237,8 +297,19 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
         throw std::length_error("too many derivative blocks for parallel evaluation");
     std::exception_ptr worker_error;
+    // Each OpenMP worker owns a reusable panel workspace. In serial builds
+    // this region executes once, with exactly the same buffer lifetime.
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) if(nblocks > 1)
+#pragma omp parallel if(nblocks > 1)
+#endif
+    {
+        const Eigen::Index capacity = static_cast<Eigen::Index>(std::min(block_size, count));
+        Eigen::MatrixXd input(n, 4 * capacity);
+        Eigen::MatrixXd product(n, 4 * capacity);
+        Eigen::MatrixXd hxx(n, capacity), hyy(n, capacity), hzz(n, capacity);
+        Eigen::MatrixXd hxy(n, capacity), hxz(n, capacity), hyz(n, capacity);
+#ifdef _OPENMP
+#pragma omp for schedule(static)
 #endif
     for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
         try {
@@ -248,12 +319,10 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
         // Pack AO values and first derivatives into one column-major panel.
         // A single GEMM applies P to all four panels, avoiding four separate
         // matrix products and improving reuse of the (potentially large) P.
-        Eigen::MatrixXd input(n, 4*b);
         auto phi = input.middleCols(0, b);
         auto dx  = input.middleCols(b, b);
         auto dy  = input.middleCols(2*b, b);
         auto dz  = input.middleCols(3*b, b);
-        Eigen::MatrixXd hxx(n,b), hyy(n,b), hzz(n,b), hxy(n,b), hxz(n,b), hyz(n,b);
         for (Eigen::Index j=0; j<b; ++j) {
             const auto ao = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j));
             phi.col(j) = ao.values;
@@ -267,8 +336,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
             hxz.col(j) = ao.hessian.col(4);
             hyz.col(j) = ao.hessian.col(5);
         }
-        Eigen::MatrixXd product(n, 4*b);
-        product.noalias() = (*p) * input;
+        product.leftCols(4*b).noalias() = (*p) * input.leftCols(4*b);
         const auto y  = product.middleCols(0, b);
         const Eigen::MatrixXd* h[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
         for (Eigen::Index j=0; j<b; ++j) {
@@ -295,9 +363,244 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
             }
         }
     }
+    } // worker-local workspace lifetime
     if (worker_error) std::rethrow_exception(worker_error);
     return result;
 }
+// Stage 02C.2c: shared AO evaluation for all requested SCF spin components.
+// Total and spin are the canonical FCHK matrices; alpha/beta are linear
+// combinations of their contractions, never reconstructed from MO occupations.
+std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+    const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
+    if (ao_order != 1 && ao_order != 2) throw std::invalid_argument("shared AO derivative order must be 1 or 2");
+    if (block_size == 0) throw std::invalid_argument("block size must be positive");
+    if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
+    const std::size_t count = static_cast<std::size_t>(points.cols());
+    std::map<Spin, std::vector<DensityDerivatives>> result;
+    bool total_needed = false, spin_needed = false;
+    for (Spin component : components) {
+        switch (component) {
+            case Spin::Total: total_needed = true; break;
+            case Spin::Difference: spin_needed = true; break;
+            case Spin::Alpha: case Spin::Beta: total_needed = spin_needed = true; break;
+            default: throw std::invalid_argument("invalid density spin component");
+        }
+        result.try_emplace(component, count);
+    }
+    if (result.empty() || count == 0) return result;
+    const auto n = static_cast<Eigen::Index>(basis_size());
+    const std::size_t nblocks = count / block_size + (count % block_size != 0);
+    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
+        throw std::length_error("too many derivative blocks for parallel evaluation");
+    constexpr int index[3][3] = {{0,3,4},{3,1,5},{4,5,2}};
+    std::exception_ptr worker_error;
+#ifdef _OPENMP
+#pragma omp parallel if(nblocks > 1)
+#endif
+    {
+        const Eigen::Index capacity = static_cast<Eigen::Index>(std::min(block_size, count));
+        Eigen::MatrixXd input(n, 4*capacity);
+        Eigen::MatrixXd product_total, product_spin;
+        if (total_needed) product_total.resize(n, 4*capacity);
+        if (spin_needed) product_spin.resize(n, 4*capacity);
+        const Eigen::Index hcapacity = ao_order == 2 ? capacity : 0;
+        Eigen::MatrixXd hxx(n,hcapacity), hyy(n,hcapacity), hzz(n,hcapacity);
+        Eigen::MatrixXd hxy(n,hcapacity), hxz(n,hcapacity), hyz(n,hcapacity);
+        const Eigen::MatrixXd* h[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+            try {
+                const std::size_t start = static_cast<std::size_t>(block)*block_size;
+                const Eigen::Index b = static_cast<Eigen::Index>(std::min(block_size, count-start));
+                auto phi = input.middleCols(0,b);
+                for (Eigen::Index j=0; j<b; ++j) {
+                    const auto ao = evaluator_.evaluate_derivatives(points.col(static_cast<Eigen::Index>(start)+j), ao_order);
+                    phi.col(j) = ao.values;
+                    for (int a=0; a<3; ++a) input.col((a+1)*b+j) = ao.gradient.col(a);
+                    if (ao_order == 2) {
+                        hxx.col(j) = ao.hessian.col(0);
+                        hyy.col(j) = ao.hessian.col(1);
+                        hzz.col(j) = ao.hessian.col(2);
+                        hxy.col(j) = ao.hessian.col(3);
+                        hxz.col(j) = ao.hessian.col(4);
+                        hyz.col(j) = ao.hessian.col(5);
+                    }
+                }
+                if (total_needed) product_total.leftCols(4*b).noalias() = total_*input.leftCols(4*b);
+                if (spin_needed) product_spin.leftCols(4*b).noalias() = spin_*input.leftCols(4*b);
+                // Construct the canonical contractions once, then combine their
+                // linear primitive properties for alpha/beta as needed.
+                for (Eigen::Index j=0; j<b; ++j) {
+                    DensityDerivatives t, s;
+                    const auto contract = [&](const Eigen::MatrixXd& product, DensityDerivatives& out) {
+                        const auto y = product.col(j);
+                        out.value = phi.col(j).dot(y);
+                        for (int a=0; a<3; ++a) {
+                            const auto ga = input.col((a+1)*b+j);
+                            out.gradient[a] = 2.0*ga.dot(y);
+                            out.tau += 0.5*ga.dot(product.col((a+1)*b+j));
+                            if (ao_order == 2) for (int c=a; c<3; ++c) {
+                                const double v = 2.0*(h[index[a][c]]->col(j).dot(y) +
+                                                       ga.dot(product.col((c+1)*b+j)));
+                                out.hessian(a,c) = out.hessian(c,a) = v;
+                            }
+                        }
+                        out.laplacian = out.hessian.trace();
+                    };
+                    if (total_needed) contract(product_total,t);
+                    if (spin_needed) contract(product_spin,s);
+                    const auto combine = [&](double sign) {
+                        DensityDerivatives d;
+                        d.value = 0.5*(t.value + sign*s.value);
+                        d.gradient = 0.5*(t.gradient + sign*s.gradient);
+                        d.hessian = 0.5*(t.hessian + sign*s.hessian);
+                        d.laplacian = d.hessian.trace();
+                        d.tau = 0.5*(t.tau + sign*s.tau);
+                        return d;
+                    };
+                    const auto slot = start + static_cast<std::size_t>(j);
+                    if (auto it=result.find(Spin::Total); it!=result.end()) it->second[slot]=t;
+                    if (auto it=result.find(Spin::Difference); it!=result.end()) it->second[slot]=s;
+                    if (auto it=result.find(Spin::Alpha); it!=result.end()) it->second[slot]=combine(1.0);
+                    if (auto it=result.find(Spin::Beta); it!=result.end()) it->second[slot]=combine(-1.0);
+                }
+            } catch (...) {
+#ifdef _OPENMP
+#pragma omp critical(kumo_shared_derivatives_error)
+#endif
+                { if (!worker_error) worker_error = std::current_exception(); }
+            }
+        }
+    }
+    if (worker_error) std::rethrow_exception(worker_error);
+    return result;
+}
+
+// Validated occupied-MO contraction for electron-density derivatives.
+// Evaluator selects this backend when the orbital representation is eligible;
+// AO-P remains available as the general density-matrix reference.
+std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+    const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
+    if (!electronic_info_.ao_mo_eligible())
+        throw std::invalid_argument("AO-MO backend is not eligible for this molecule");
+    if (ao_order < 0 || ao_order > 2)
+        throw std::invalid_argument("AO-MO derivative order must be 0, 1 or 2");
+    if (block_size == 0 || block_size > 65536)
+        throw std::invalid_argument("invalid AO-MO block size");
+    if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
+    const std::size_t count = static_cast<std::size_t>(points.cols());
+    std::map<Spin, std::vector<DensityDerivatives>> result;
+    for (Spin c : components) {
+        switch (c) {
+            case Spin::Total: case Spin::Alpha: case Spin::Beta:
+            case Spin::Difference: break;
+            default: throw std::invalid_argument("invalid AO-MO spin component");
+        }
+        result.try_emplace(c, count);
+    }
+    if (result.empty() || count == 0) return result;
+    const bool need_a = result.contains(Spin::Alpha) || result.contains(Spin::Total) || result.contains(Spin::Difference);
+    const bool need_b = result.contains(Spin::Beta) || result.contains(Spin::Total) || result.contains(Spin::Difference);
+    const auto n = static_cast<Eigen::Index>(basis_size());
+    const auto cap = static_cast<Eigen::Index>(std::min(count, block_size));
+    const auto nblocks = count / block_size + (count % block_size != 0);
+    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
+        throw std::length_error("too many AO-MO blocks");
+    const auto& cb = unrestricted_ ? beta_mos_ : alpha_mos_;
+    const Eigen::MatrixXd ca_occ = alpha_mos_.leftCols(nalpha_);
+    const Eigen::MatrixXd cb_occ = cb.leftCols(nbeta_);
+    constexpr int hindex[3][3] = {{0,3,4},{3,1,5},{4,5,2}};
+    std::exception_ptr worker_error;
+#ifdef _OPENMP
+#pragma omp parallel if(nblocks > 1)
+#endif
+    {
+        Eigen::MatrixXd ao(n, (ao_order==0 ? 1 : 4)*cap);
+        Eigen::MatrixXd hxx(n,ao_order==2 ? cap : 0), hyy(n,ao_order==2 ? cap : 0);
+        Eigen::MatrixXd hzz(n,ao_order==2 ? cap : 0), hxy(n,ao_order==2 ? cap : 0);
+        Eigen::MatrixXd hxz(n,ao_order==2 ? cap : 0), hyz(n,ao_order==2 ? cap : 0);
+        Eigen::MatrixXd* ah[6] = {&hxx,&hyy,&hzz,&hxy,&hxz,&hyz};
+        // Each spin channel is projected once per block, using all occupied MOs.
+        const auto project = [&](const Eigen::MatrixXd& c, Eigen::Index b,
+                                 std::array<Eigen::MatrixXd,10>& projected) {
+            if (c.cols()==0) return;
+            for (int a=0;a<(ao_order==0 ? 1 : 4);++a)
+                projected[a].noalias() = c.transpose()*ao.middleCols(a*b,b);
+            if (ao_order==2) for (int a=0;a<6;++a)
+                projected[a+4].noalias() = c.transpose()*ah[a]->leftCols(b);
+        };
+        const auto contract = [&](const std::array<Eigen::MatrixXd,10>& v, Eigen::Index j) {
+            DensityDerivatives d;
+            if (v[0].size()==0) return d;
+            d.value = v[0].col(j).squaredNorm();
+            if (ao_order==0) return d;
+            for (int a=0;a<3;++a) {
+                d.gradient[a] = 2.0*v[0].col(j).dot(v[a+1].col(j));
+                d.tau += 0.5*v[a+1].col(j).squaredNorm();
+                if (ao_order==2) for (int c=a;c<3;++c) {
+                    const double value = 2.0*(v[0].col(j).dot(v[4+hindex[a][c]].col(j)) +
+                                                v[a+1].col(j).dot(v[c+1].col(j)));
+                    d.hessian(a,c) = d.hessian(c,a) = value;
+                }
+            }
+            d.laplacian = d.hessian.trace();
+            return d;
+        };
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (std::int64_t block=0;block<static_cast<std::int64_t>(nblocks);++block) {
+            try {
+                const std::size_t start = static_cast<std::size_t>(block)*block_size;
+                const auto b = static_cast<Eigen::Index>(std::min(block_size,count-start));
+                for (Eigen::Index j=0;j<b;++j) {
+                    const auto point = points.col(static_cast<Eigen::Index>(start)+j);
+                    if (ao_order==0) {
+                        ao.col(j) = evaluator_.evaluate(point);
+                    } else {
+                        const auto v = evaluator_.evaluate_derivatives(point,ao_order);
+                        ao.col(j) = v.values;
+                        for (int a=0;a<3;++a) ao.col((a+1)*b+j)=v.gradient.col(a);
+                        if (ao_order==2) for (int a=0;a<6;++a) ah[a]->col(j)=v.hessian.col(a);
+                    }
+                }
+                std::array<Eigen::MatrixXd,10> va, vb;
+                if (need_a) project(ca_occ,b,va);
+                if (need_b) project(cb_occ,b,vb);
+                for (Eigen::Index j=0;j<b;++j) {
+                    const auto a = need_a ? contract(va,j) : DensityDerivatives{};
+                    const auto beta = need_b ? contract(vb,j) : DensityDerivatives{};
+                    const auto combine = [&](double sign) {
+                        DensityDerivatives d;
+                        d.value = a.value + sign*beta.value;
+                        d.gradient = a.gradient + sign*beta.gradient;
+                        d.hessian = a.hessian + sign*beta.hessian;
+                        d.laplacian = d.hessian.trace();
+                        d.tau = a.tau + sign*beta.tau;
+                        return d;
+                    };
+                    const auto slot=start+static_cast<std::size_t>(j);
+                    if (auto it=result.find(Spin::Alpha);it!=result.end()) it->second[slot]=a;
+                    if (auto it=result.find(Spin::Beta);it!=result.end()) it->second[slot]=beta;
+                    if (auto it=result.find(Spin::Total);it!=result.end()) it->second[slot]=combine(1.0);
+                    if (auto it=result.find(Spin::Difference);it!=result.end()) it->second[slot]=combine(-1.0);
+                }
+            } catch (...) {
+#ifdef _OPENMP
+#pragma omp critical(kumo_mo_derivatives_error)
+#endif
+                { if (!worker_error) worker_error=std::current_exception(); }
+            }
+        }
+    }
+    if (worker_error) std::rethrow_exception(worker_error);
+    return result;
+}
+
 Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {
     const auto count=checked_size(grid);
     std::vector<double> values(count);

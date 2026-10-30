@@ -5,6 +5,7 @@
 
 #include <Eigen/Core>
 
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -28,6 +29,15 @@ struct AODerivatives {
     Eigen::Matrix<double, Eigen::Dynamic, 6> hessian;
 };
 
+/// Raw Cartesian AO moments about the global origin, in atomic units.
+/// first: x,y,z; second: xx,yy,zz,xy,xz,yz.
+/// Matrices follow the Gaussian FCHK AO ordering, including pure shells.
+struct CartesianAOMoments {
+    Eigen::MatrixXd overlap;
+    std::array<Eigen::MatrixXd, 3> first;
+    std::array<Eigen::MatrixXd, 6> second;
+};
+
 /// Evaluate AO basis functions at points in FCHK AO ordering.
 /// Batch output stores one AO vector per column.
 class BasisEvaluator {
@@ -36,9 +46,15 @@ public:
 
     [[nodiscard]] const BasisSet& basis() const noexcept { return basis_; }
     [[nodiscard]] std::size_t basis_size() const noexcept { return basis_.function_count(); }
+    /// Analytic all-space AO overlap in Gaussian FCHK ordering.
+    [[nodiscard]] Eigen::MatrixXd overlap_matrix() const;
+    /// Analytic Cartesian moments through order two, computed in one shell-pair traversal.
+    [[nodiscard]] CartesianAOMoments cartesian_moments() const;
     [[nodiscard]] Eigen::VectorXd evaluate(const Eigen::Vector3d& point) const;
     /// Exact spatial derivatives through second order, including mixed terms.
     [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point) const;
+    /// Compute only derivatives up to order 1 or 2; omitted Hessians are zero.
+    [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point, int order) const;
     void evaluate_into(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
     /// Original pointwise evaluator retained as a regression oracle.
     void evaluate_into_reference(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;

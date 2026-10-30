@@ -8,11 +8,17 @@
 #include <vector>
 
 namespace chem::kumo {
+namespace detail { struct AoMoTestAccess; }
 /// SCF density component. Difference means alpha minus beta.
 /// For MO evaluation only Alpha and Beta are meaningful channels.
 enum class Spin { Total, Alpha, Beta, Difference };
-/// Atomic number and Cartesian nuclear position (bohr).
-struct Atom { int atomic_number; Eigen::Vector3d position; };
+/// Atomic identity, explicit center charge (in units of e), and Cartesian position (bohr).
+/// The center charge is not an atomic partial charge and need not equal Z.
+struct Atom {
+    int atomic_number = 0;
+    double nuclear_charge = 0.0;
+    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+};
 /// Regular 3D grid: r(i,j,k) = origin + steps * [i,j,k].
 /// All lengths are in bohr; columns of steps are the grid-axis increments.
 struct Grid {
@@ -29,6 +35,11 @@ public:
     /// Read a sample at zero-based grid indices.
     double operator()(int i, int j, int k) const;
     std::span<const double> values() const noexcept { return values_; }
+    /// Mutable samples without access to vector size or capacity.
+    /// The returned view is invalidated by Field destruction or reassignment.
+    [[nodiscard]] std::span<double> mutable_values() noexcept { return values_; }
+    [[nodiscard]] const Grid& grid() const noexcept { return grid_; }
+    [[nodiscard]] const std::vector<Atom>& atoms() const noexcept { return atoms_; }
     void write_cube(const std::filesystem::path& path, const std::string& comment = "Electron density") const;
     /// Write signed MO amplitudes with Gaussian-style orbital index metadata.
     void write_orbital_cube(const std::filesystem::path& path, std::size_t orbital_index,
@@ -63,12 +74,28 @@ struct DensityDerivatives {
     double laplacian = 0.0;
     double tau = 0.0;
 };
+/// Whether the loaded SCF density can be reproduced by occupied MOs.
+enum class OrbitalRepresentationStatus { Valid, Inconsistent, Unavailable };
+/// Immutable diagnostic calculated once while loading the FCHK.
+struct ElectronicStructureInfo {
+    OrbitalRepresentationStatus orbital_status = OrbitalRepresentationStatus::Unavailable;
+    double total_absolute_error = 0.0;
+    double total_relative_error = 0.0;
+    double spin_absolute_error = 0.0;
+    double spin_relative_error = 0.0;
+    std::size_t occupied_alpha = 0;
+    std::size_t occupied_beta = 0;
+    [[nodiscard]] bool ao_mo_eligible() const noexcept {
+        return orbital_status == OrbitalRepresentationStatus::Valid;
+    }
+};
 /// Ground-state SCF density and molecular-orbital evaluator from an FCHK.
 /// Public calculations use the same stored AO basis and Gaussian ordering.
 class Molecule {
 public:
     static Molecule from_fchk(const std::filesystem::path& path);
     const std::vector<Atom>& atoms() const noexcept { return atoms_; }
+    [[nodiscard]] const ElectronicStructureInfo& electronic_structure_info() const noexcept { return electronic_info_; }
     /// Evaluate one density component (default: total) in e/bohr^3.
     Field density(const Grid& grid, Spin spin = Spin::Total) const;
     /// Analytic density, spatial gradient, Hessian, Laplacian and positive
@@ -92,6 +119,11 @@ public:
     [[nodiscard]] std::map<Spin, Field> densities_blocked(const Grid& grid,
         std::initializer_list<Spin> components, std::size_t block_size = 128) const;
     std::size_t basis_size() const noexcept { return evaluator_.basis_size(); }
+    /// AO coefficient matrix of the FCHK one-particle density operator.
+    /// Total and Difference return the stored SCF matrices; Alpha/Beta are
+    /// derived from them. No occupied-MO reconstruction is performed.
+    /// In a nonorthogonal AO basis, electron count is Tr(P*S).
+    [[nodiscard]] Eigen::MatrixXd density_matrix(Spin component = Spin::Total) const;
     [[nodiscard]] bool unrestricted() const noexcept { return unrestricted_; }
     /// Number of available MOs in the selected alpha/beta channel.
     [[nodiscard]] std::size_t orbital_count(Spin channel = Spin::Alpha) const;
@@ -119,6 +151,15 @@ public:
                                 const std::vector<std::size_t>& indices_one_based,
                                 Spin channel = Spin::Alpha) const;
 private:
+    friend class Evaluator;
+    friend struct detail::AoMoTestAccess;
+    // Internal multi-component AO-P contraction; one AO derivative evaluation per point.
+    [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+        const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2) const;
+    [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_mo(
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+        const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2) const;
     Molecule(std::vector<Atom> atoms, BasisEvaluator evaluator, Eigen::MatrixXd total, Eigen::MatrixXd spin);
     std::vector<Atom> atoms_;
     BasisEvaluator evaluator_;
@@ -127,5 +168,6 @@ private:
     std::vector<double> alpha_energies_, beta_energies_;
     int nalpha_ = 0, nbeta_ = 0;
     bool unrestricted_ = false;
+    ElectronicStructureInfo electronic_info_;
 };
 }
