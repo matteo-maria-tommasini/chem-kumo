@@ -479,8 +479,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
     return result;
 }
 
-// Experimental AO-MO contraction. This kernel is intentionally not selected
-// by Evaluator yet; AO-P remains authoritative until cross-backend validation.
+// Validated occupied-MO contraction for electron-density derivatives.
+// Evaluator selects this backend when the orbital representation is eligible;
+// AO-P remains available as the general density-matrix reference.
 std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
