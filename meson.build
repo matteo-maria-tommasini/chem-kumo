@@ -1,4 +1,4 @@
-project('chem-kumo','cpp',version:'1.3.0',meson_version:'>=0.63',default_options:['cpp_std=c++20','warning_level=2'])
+project('chem-kumo','cpp',version:'1.4.0',meson_version:'>=0.63',default_options:['cpp_std=c++20','warning_level=2'])
 # Single source of truth for version strings in the CLI and Cube headers.
 add_project_arguments('-DCHEM_KUMO_VERSION="' + meson.project_version() + '"', language: 'cpp')
 eigen_dep = dependency('eigen3', required: true)
@@ -131,7 +131,7 @@ test('cli-list-unrestricted', kumo_cli_test, args:[kumo_cli, meson.current_sourc
 # Exercise the installed command-line interface on a real FCHK file.
 kumo_cli_e2e = find_program('tests/cli_end_to_end.sh')
 test('cli-end-to-end', kumo_cli_e2e,
-  args:[kumo_cli, meson.current_source_dir()/'tests/data/o2.fchk.gz'], timeout:300)
+  args:[kumo_cli, meson.current_source_dir()/'tests/data/o2.fchk.gz', meson.project_version()], timeout:300)
 
 # Spatial AO derivatives (analytic implementation versus numerical oracle).
 test('ao-spatial-derivatives', executable('kumo-ao-spatial-derivatives-test',
