@@ -445,6 +445,16 @@ test(
     timeout: 300,
 )
 
+test(
+    'parallel-blocks',
+    executable(
+        'kumo-parallel-blocks-test',
+        ['tests/parallel_blocks_test.cpp'],
+        include_directories: include_directories('src'),
+        dependencies: kumo_dep,
+    ),
+)
+
 # Internal dependency planning, without changing numerical kernels.
 test(
     'evaluation-plan',
