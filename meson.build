@@ -32,6 +32,7 @@ kumo_lib = library(
         'src/cube.cpp',
         'src/orbitals.cpp',
         'src/evaluator.cpp',
+        'src/gzip_input.cpp',
     ],
     include_directories: inc,
     dependencies: [eigen_dep, zlib_dep] + openmp_deps,

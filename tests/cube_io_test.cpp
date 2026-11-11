@@ -15,14 +15,18 @@ void require(bool condition) {
     if (!condition) throw std::runtime_error("Cube I/O regression failed");
 }
 
-void expect_failure(const std::filesystem::path& path) {
-    bool failed = false;
+// Reading `path` must fail; for gzip damage, the message must name the gzip
+// problem rather than a Cube format error caused by the missing data.
+void expect_failure(const std::filesystem::path& path, const std::string& expected = "") {
     try {
         (void)chem::kumo::read_cube(path);
-    } catch (const std::exception&) {
-        failed = true;
+    } catch (const std::exception& e) {
+        if (std::string(e.what()).find(expected) == std::string::npos)
+            throw std::runtime_error("expected an error containing '" + expected + "' for " +
+                                     path.string() + ", got: " + e.what());
+        return;
     }
-    require(failed);
+    throw std::runtime_error("invalid Cube accepted: " + path.string());
 }
 } // namespace
 
@@ -75,20 +79,29 @@ int main() {
             std::ofstream out(corrupt, std::ios::binary);
             out.write(bytes.data(), bytes.size());
         }
-        expect_failure(corrupt);
+        expect_failure(corrupt, "invalid gzip data or checksum");
         {
             std::ifstream in(zipped, std::ios::binary);
             std::vector<char> bytes((std::istreambuf_iterator<char>(in)), {});
             std::ofstream out(corrupt, std::ios::binary | std::ios::trunc);
             out.write(bytes.data(), bytes.size() - 6);
         }
-        expect_failure(corrupt);
+        expect_failure(corrupt, "truncated gzip");
+        {
+            // Truncation inside the compressed data: the parser sees a short
+            // Cube, but the reported cause must be the truncated gzip stream.
+            std::ifstream in(zipped, std::ios::binary);
+            std::vector<char> bytes((std::istreambuf_iterator<char>(in)), {});
+            std::ofstream out(corrupt, std::ios::binary | std::ios::trunc);
+            out.write(bytes.data(), static_cast<std::streamsize>(bytes.size() / 2));
+        }
+        expect_failure(corrupt, "truncated gzip");
         {
             std::ifstream in(zipped, std::ios::binary);
             std::ofstream out(corrupt, std::ios::binary | std::ios::trunc);
             out << in.rdbuf() << "garbage";
         }
-        expect_failure(corrupt);
+        expect_failure(corrupt, "trailing data after gzip member");
         require(loaded.metadata.first_comment == "first comment");
         require(loaded.metadata.second_comment == "second comment");
         require(loaded.metadata.coordinates_in_angstrom);
