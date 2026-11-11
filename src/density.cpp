@@ -725,12 +725,12 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
             // block; if all of them are, use the full matrices as they are.
             const auto kept = detail::significant_aos(phi, screening_threshold);
             const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
-            if (screened) phi = Eigen::MatrixXd(phi(kept, Eigen::all));
+            if (screened) phi = detail::select_rows(phi, kept);
             std::map<Spin, Eigen::VectorXd> rho;
             for (std::size_t i = 0; i < contracted.size(); ++i) {
-                const Eigen::MatrixXd y = screened
-                                              ? Eigen::MatrixXd((*matrices[i])(kept, kept) * phi)
-                                              : Eigen::MatrixXd(*matrices[i] * phi);
+                const Eigen::MatrixXd y =
+                    screened ? Eigen::MatrixXd(detail::select_submatrix(*matrices[i], kept) * phi)
+                             : Eigen::MatrixXd(*matrices[i] * phi);
                 rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
             }
             for (auto& [spin, values] : buffers) {
