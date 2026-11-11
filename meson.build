@@ -419,6 +419,16 @@ test(
     args: [meson.current_source_dir() / 'tests/data/o2.fchk.gz'],
 )
 
+test(
+    'grid-validation',
+    executable(
+        'kumo-grid-validation-test',
+        'tests/grid_validation_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [meson.current_source_dir() / 'tests/data/o2.fchk.gz'],
+)
+
 # Stage 02B.1: fused/individual evaluator requests against validated 1.3 kernels.
 test(
     'evaluator-fusion',

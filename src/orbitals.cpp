@@ -1,5 +1,6 @@
 #include <Eigen/LU>
 #include "chem/kumo/density.hpp"
+#include "grid_validation.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -16,20 +17,6 @@ namespace {
 void check_channel(Spin s) {
     if (s != Spin::Alpha && s != Spin::Beta)
         throw std::invalid_argument("MO spin channel must be alpha or beta");
-}
-
-std::size_t grid_size(const Grid& grid) {
-    std::size_t size = 1;
-    for (int k = 0; k < 3; ++k) {
-        if (grid.counts[k] <= 0 || static_cast<std::size_t>(grid.counts[k]) >
-                                       std::numeric_limits<std::size_t>::max() / size)
-            throw std::invalid_argument("invalid orbital grid size");
-        size *= static_cast<std::size_t>(grid.counts[k]);
-    }
-    if (!grid.origin.allFinite() || !grid.steps.allFinite() ||
-        std::abs(grid.steps.determinant()) < 1e-16)
-        throw std::invalid_argument("invalid orbital grid geometry");
-    return size;
 }
 } // namespace
 
@@ -124,7 +111,7 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
         if (i == 0 || i > static_cast<std::size_t>(coeff.cols()))
             throw std::out_of_range("MO index outside available coefficient range");
     if (indices.empty()) return {};
-    const auto count = grid_size(grid);
+    const auto count = detail::validated_point_count(grid);
     std::vector<std::vector<double>> buffers(indices.size(), std::vector<double>(count));
     Eigen::MatrixXd selected(coeff.rows(), static_cast<Eigen::Index>(indices.size()));
     for (std::size_t i = 0; i < indices.size(); ++i)
