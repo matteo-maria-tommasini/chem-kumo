@@ -1,4 +1,4 @@
-# chem-kumo 1.4.0
+# chem-kumo 1.4.1
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -208,12 +208,13 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.4.0 candidate registers **64 Meson tests**, all passing in the
-reported macOS ARM64 build on 2026-10-30. Coverage includes AO, MO and density
-spatial derivatives against finite differences; independent MO versus
-AO-density-matrix reconstruction; backend selection; blocked and pointwise
-evaluation; analytic overlaps and moments; scalar-field operations; and Cube
-and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
+The 1.4.1 release registers **66 Meson tests**, all passing in the
+serial and OpenMP builds reported on macOS ARM64 on 2026-11-11. Coverage
+includes AO, MO and density spatial derivatives against finite differences;
+independent MO versus AO-density-matrix reconstruction; backend selection;
+grid validation at every evaluation entry point; blocked and pointwise
+evaluation, including error propagation from OpenMP workers; analytic
+overlaps and moments; scalar-field operations; and Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
 density components remain in the suite.
 See [tests/REFERENCE_CUBES.md](tests/REFERENCE_CUBES.md) for reference details.
