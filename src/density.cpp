@@ -1,7 +1,9 @@
 #include "backend_selection.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
-#include "grid_validation.hpp"
+#include "derivative_layout.hpp"
+#include "grid_geometry.hpp"
+#include "mo_coefficients.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -31,6 +33,62 @@ Eigen::MatrixXd unpack(const std::vector<double>& packed, std::size_t n) {
         }
     if (!p.allFinite()) throw std::runtime_error("nonfinite AO density matrix");
     return p;
+}
+
+// AO density matrix of one spin component. Total and spin difference are the
+// canonical FCHK matrices and are returned by reference; alpha and beta are
+// built in `storage` as (P_total +/- P_spin) / 2, never from MO occupations.
+const Eigen::MatrixXd& select_density_matrix(const Eigen::MatrixXd& total,
+                                             const Eigen::MatrixXd& spin, Spin component,
+                                             Eigen::MatrixXd& storage) {
+    switch (component) {
+    case Spin::Total: return total;
+    case Spin::Difference: return spin;
+    case Spin::Alpha: storage = 0.5 * (total + spin); return storage;
+    case Spin::Beta: storage = 0.5 * (total - spin); return storage;
+    }
+    throw std::invalid_argument("invalid density spin component");
+}
+
+// Write a Gaussian Cube file. With an orbital index, follow the Gaussian MO
+// convention: negative atom count, then a line with NMO = 1 and the MO label.
+void write_field_cube(const std::filesystem::path& path, const std::string& comment,
+                      const Grid& grid, const std::vector<Atom>& atoms,
+                      const std::vector<double>& values, std::size_t orbital_index = 0) {
+    const bool orbital = orbital_index != 0;
+    std::ofstream out(path);
+    if (!out)
+        throw std::runtime_error(orbital ? "cannot open orbital cube output"
+                                         : "cannot open cube output");
+    out << "chem-kumo " CHEM_KUMO_VERSION "\n"
+        << comment << "\n"
+        << std::fixed << std::setprecision(6);
+    const auto natoms = static_cast<long long>(atoms.size());
+    out << std::setw(5) << (orbital ? -natoms : natoms);
+    for (int k = 0; k < 3; ++k)
+        out << std::setw(13) << grid.origin[k];
+    out << '\n';
+    for (int a = 0; a < 3; ++a) {
+        out << std::setw(5) << grid.counts[a];
+        for (int k = 0; k < 3; ++k)
+            out << std::setw(13) << grid.steps(k, a);
+        out << '\n';
+    }
+    for (const auto& a : atoms) {
+        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
+        for (int k = 0; k < 3; ++k)
+            out << std::setw(13) << a.position[k];
+        out << '\n';
+    }
+    if (orbital) out << std::setw(5) << 1 << std::setw(5) << orbital_index << '\n';
+    // Six values per line, and a new line at the end of every k column.
+    out << std::scientific << std::setprecision(5);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        out << std::setw(13) << values[i];
+        if ((i + 1) % 6 == 0 || (i + 1) % static_cast<std::size_t>(grid.counts[2]) == 0)
+            out << '\n';
+    }
+    if (!out) throw std::runtime_error(orbital ? "orbital cube write failed" : "cube write failed");
 }
 } // namespace
 
@@ -73,70 +131,14 @@ double Field::operator()(int i, int j, int k) const {
 }
 
 void Field::write_cube(const std::filesystem::path& path, const std::string& comment) const {
-    std::ofstream out(path);
-    if (!out) throw std::runtime_error("cannot open cube output");
-    out << "chem-kumo " CHEM_KUMO_VERSION "\n"
-        << comment << "\n"
-        << std::fixed << std::setprecision(6);
-    out << std::setw(5) << atoms_.size();
-    for (int k = 0; k < 3; ++k)
-        out << std::setw(13) << grid_.origin[k];
-    out << '\n';
-    for (int a = 0; a < 3; ++a) {
-        out << std::setw(5) << grid_.counts[a];
-        for (int k = 0; k < 3; ++k)
-            out << std::setw(13) << grid_.steps(k, a);
-        out << '\n';
-    }
-    for (const auto& a : atoms_) {
-        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
-        for (int k = 0; k < 3; ++k)
-            out << std::setw(13) << a.position[k];
-        out << '\n';
-    }
-    out << std::scientific << std::setprecision(5);
-    for (std::size_t i = 0; i < values_.size(); ++i) {
-        out << std::setw(13) << values_[i];
-        if ((i + 1) % 6 == 0 || (i + 1) % static_cast<std::size_t>(grid_.counts[2]) == 0)
-            out << '\n';
-    }
-    if (!out) throw std::runtime_error("cube write failed");
+    write_field_cube(path, comment, grid_, atoms_, values_);
 }
 
 void Field::write_orbital_cube(const std::filesystem::path& path, std::size_t orbital_index,
                                const std::string& comment) const {
     if (orbital_index == 0 || orbital_index > 9999)
         throw std::invalid_argument("invalid orbital index for Cube");
-    std::ofstream out(path);
-    if (!out) throw std::runtime_error("cannot open orbital cube output");
-    out << "chem-kumo " CHEM_KUMO_VERSION "\n"
-        << comment << "\n"
-        << std::fixed << std::setprecision(6);
-    out << std::setw(5) << -static_cast<long long>(atoms_.size());
-    for (int k = 0; k < 3; ++k)
-        out << std::setw(13) << grid_.origin[k];
-    out << '\n';
-    for (int a = 0; a < 3; ++a) {
-        out << std::setw(5) << grid_.counts[a];
-        for (int k = 0; k < 3; ++k)
-            out << std::setw(13) << grid_.steps(k, a);
-        out << '\n';
-    }
-    for (const auto& a : atoms_) {
-        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
-        for (int k = 0; k < 3; ++k)
-            out << std::setw(13) << a.position[k];
-        out << '\n';
-    }
-    // Gaussian MO Cube convention: negative atom count, then NMO and MO labels.
-    out << std::setw(5) << 1 << std::setw(5) << orbital_index << '\n';
-    out << std::scientific << std::setprecision(5);
-    for (std::size_t i = 0; i < values_.size(); ++i) {
-        out << std::setw(13) << values_[i];
-        if ((i + 1) % 6 == 0 || (i + 1) % static_cast<std::size_t>(grid_.counts[2]) == 0)
-            out << '\n';
-    }
-    if (!out) throw std::runtime_error("orbital cube write failed");
+    write_field_cube(path, comment, grid_, atoms_, values_, orbital_index);
 }
 
 Molecule::Molecule(std::vector<Atom> a, BasisEvaluator b, Eigen::MatrixXd t, Eigen::MatrixXd s)
@@ -189,22 +191,11 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
         throw std::runtime_error("invalid electron counts in FCHK");
     result.nalpha_ = static_cast<int>(na);
     result.nbeta_ = static_cast<int>(nb);
-    const auto load_mos = [&](const std::string& label, Eigen::MatrixXd& dest) {
-        if (!f.contains(label)) return;
-        const auto& coefficients = f.reals(label);
-        if (n == 0 || coefficients.size() % n != 0 || coefficients.size() / n > n)
-            throw std::runtime_error("invalid MO coefficient dimensions: " + label);
-        const std::size_t count = coefficients.size() / n;
-        dest.resize(static_cast<Eigen::Index>(n), static_cast<Eigen::Index>(count));
-        // Gaussian FCHK: consecutive coefficients for each MO, AO index fastest.
-        for (std::size_t i = 0; i < count; ++i)
-            for (std::size_t mu = 0; mu < n; ++mu)
-                dest(static_cast<Eigen::Index>(mu), static_cast<Eigen::Index>(i)) =
-                    coefficients[i * n + mu];
-        if (!dest.allFinite()) throw std::runtime_error("nonfinite MO coefficients");
-    };
-    load_mos("Alpha MO coefficients", result.alpha_mos_);
-    load_mos("Beta MO coefficients", result.beta_mos_);
+    // MO coefficients are optional here: densities only need the AO matrices.
+    if (f.contains("Alpha MO coefficients"))
+        result.alpha_mos_ = detail::read_mo_coefficients(f, "Alpha MO coefficients", n);
+    if (f.contains("Beta MO coefficients"))
+        result.beta_mos_ = detail::read_mo_coefficients(f, "Beta MO coefficients", n);
     result.unrestricted_ = result.beta_mos_.cols() != 0;
     if (result.nalpha_ != result.nbeta_ && !result.unrestricted_)
         throw std::runtime_error("open-shell FCHK lacks Beta MO coefficients");
@@ -244,13 +235,8 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
 }
 
 Eigen::MatrixXd Molecule::density_matrix(Spin component) const {
-    switch (component) {
-    case Spin::Total: return total_;
-    case Spin::Difference: return spin_;
-    case Spin::Alpha: return Eigen::MatrixXd(0.5 * (total_ + spin_));
-    case Spin::Beta: return Eigen::MatrixXd(0.5 * (total_ - spin_));
-    }
-    throw std::invalid_argument("invalid density matrix spin component");
+    Eigen::MatrixXd storage;
+    return select_density_matrix(total_, spin_, component, storage);
 }
 
 DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
@@ -258,33 +244,18 @@ DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
     if (!point.allFinite()) throw std::invalid_argument("density evaluation point must be finite");
     // P is symmetric. The alpha/beta split preserves the FCHK density
     // convention and permits the same contractions for all four fields.
-    const Eigen::MatrixXd* p = &total_;
-    Eigen::MatrixXd selected;
-    switch (component) {
-    case Spin::Total: break;
-    case Spin::Difference: p = &spin_; break;
-    case Spin::Alpha:
-        selected = 0.5 * (total_ + spin_);
-        p = &selected;
-        break;
-    case Spin::Beta:
-        selected = 0.5 * (total_ - spin_);
-        p = &selected;
-        break;
-    default: throw std::invalid_argument("invalid density spin component");
-    }
+    Eigen::MatrixXd storage;
+    const Eigen::MatrixXd& p = select_density_matrix(total_, spin_, component, storage);
     const auto ao = evaluator_.evaluate_derivatives(point);
-    const Eigen::VectorXd y = (*p) * ao.values;
-    const Eigen::Matrix<double, Eigen::Dynamic, 3> pg = (*p) * ao.gradient;
+    const Eigen::VectorXd y = p * ao.values;
+    const Eigen::Matrix<double, Eigen::Dynamic, 3> pg = p * ao.gradient;
     DensityDerivatives result;
     result.value = ao.values.dot(y);
     result.gradient = 2.0 * ao.gradient.transpose() * y;
-    // AO Hessian storage order: xx, yy, zz, xy, xz, yz.
-    constexpr int indices[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
     for (int a = 0; a < 3; ++a) {
         for (int b = a; b < 3; ++b) {
-            const double value =
-                2.0 * (ao.hessian.col(indices[a][b]).dot(y) + ao.gradient.col(a).dot(pg.col(b)));
+            const double value = 2.0 * (ao.hessian.col(detail::ao_hessian_column[a][b]).dot(y) +
+                                        ao.gradient.col(a).dot(pg.col(b)));
             result.hessian(a, b) = value;
             result.hessian(b, a) = value;
         }
@@ -299,25 +270,11 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     std::size_t block_size) const {
     if (block_size == 0) throw std::invalid_argument("block size must be positive");
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
-    Eigen::MatrixXd selected;
-    const Eigen::MatrixXd* p = &total_;
-    switch (component) {
-    case Spin::Total: break;
-    case Spin::Difference: p = &spin_; break;
-    case Spin::Alpha:
-        selected = 0.5 * (total_ + spin_);
-        p = &selected;
-        break;
-    case Spin::Beta:
-        selected = 0.5 * (total_ - spin_);
-        p = &selected;
-        break;
-    default: throw std::invalid_argument("invalid density spin component");
-    }
+    Eigen::MatrixXd storage;
+    const Eigen::MatrixXd& p = select_density_matrix(total_, spin_, component, storage);
     const auto n = static_cast<Eigen::Index>(basis_size());
     const auto count = static_cast<std::size_t>(points.cols());
     std::vector<DensityDerivatives> result(count);
-    constexpr int index[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
     // Independent blocks write to disjoint output slots. All Eigen panels
     // and AO derivative buffers are private to each iteration.
     const std::size_t nblocks = count / block_size + (count % block_size != 0);
@@ -364,7 +321,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                     hxz.col(j) = ao.hessian.col(4);
                     hyz.col(j) = ao.hessian.col(5);
                 }
-                product.leftCols(4 * b).noalias() = (*p) * input.leftCols(4 * b);
+                product.leftCols(4 * b).noalias() = p * input.leftCols(4 * b);
                 const auto y = product.middleCols(0, b);
                 const Eigen::MatrixXd* h[6] = {&hxx, &hyy, &hzz, &hxy, &hxz, &hyz};
                 for (Eigen::Index j = 0; j < b; ++j) {
@@ -375,8 +332,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                         out.gradient[a] = 2.0 * ga.dot(y.col(j));
                         out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
                         for (int c = a; c < 3; ++c) {
-                            const double v = 2.0 * (h[index[a][c]]->col(j).dot(y.col(j)) +
-                                                    ga.dot(product.col((c + 1) * b + j)));
+                            const double v =
+                                2.0 * (h[detail::ao_hessian_column[a][c]]->col(j).dot(y.col(j)) +
+                                       ga.dot(product.col((c + 1) * b + j)));
                             out.hessian(a, c) = out.hessian(c, a) = v;
                         }
                     }
@@ -424,7 +382,6 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
     const std::size_t nblocks = count / block_size + (count % block_size != 0);
     if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
         throw std::length_error("too many derivative blocks for parallel evaluation");
-    constexpr int index[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
     std::exception_ptr worker_error;
 #ifdef _OPENMP
 #pragma omp parallel if (nblocks > 1)
@@ -481,8 +438,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                             out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
                             if (ao_order == 2)
                                 for (int c = a; c < 3; ++c) {
-                                    const double v = 2.0 * (h[index[a][c]]->col(j).dot(y) +
-                                                            ga.dot(product.col((c + 1) * b + j)));
+                                    const double v =
+                                        2.0 * (h[detail::ao_hessian_column[a][c]]->col(j).dot(y) +
+                                               ga.dot(product.col((c + 1) * b + j)));
                                     out.hessian(a, c) = out.hessian(c, a) = v;
                                 }
                         }
@@ -561,7 +519,6 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
     const auto& cb = unrestricted_ ? beta_mos_ : alpha_mos_;
     const Eigen::MatrixXd ca_occ = alpha_mos_.leftCols(nalpha_);
     const Eigen::MatrixXd cb_occ = cb.leftCols(nbeta_);
-    constexpr int hindex[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
     std::exception_ptr worker_error;
 #ifdef _OPENMP
 #pragma omp parallel if (nblocks > 1)
@@ -592,8 +549,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                 d.tau += 0.5 * v[a + 1].col(j).squaredNorm();
                 if (ao_order == 2)
                     for (int c = a; c < 3; ++c) {
-                        const double value = 2.0 * (v[0].col(j).dot(v[4 + hindex[a][c]].col(j)) +
-                                                    v[a + 1].col(j).dot(v[c + 1].col(j)));
+                        const double value =
+                            2.0 * (v[0].col(j).dot(v[4 + detail::ao_hessian_column[a][c]].col(j)) +
+                                   v[a + 1].col(j).dot(v[c + 1].col(j)));
                         d.hessian(a, c) = d.hessian(c, a) = value;
                     }
             }
@@ -663,27 +621,15 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
 Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {
     const auto count = detail::validated_point_count(grid);
     std::vector<double> values(count);
-    Eigen::MatrixXd p;
-    switch (spin) {
-    case Spin::Total: p = total_; break;
-    case Spin::Alpha: p = 0.5 * (total_ + spin_); break;
-    case Spin::Beta: p = 0.5 * (total_ - spin_); break;
-    case Spin::Difference: p = spin_; break;
-    }
-    const int ny = grid.counts[1], nz = grid.counts[2];
+    Eigen::MatrixXd storage;
+    const Eigen::MatrixXd& p = select_density_matrix(total_, spin_, spin, storage);
     for (std::size_t q = 0; q < count; ++q) {
-        const auto k = static_cast<int>(q % nz);
-        const auto j = static_cast<int>((q / nz) % ny);
-        const auto i = static_cast<int>(q / (static_cast<std::size_t>(ny) * nz));
-        Eigen::Vector3d r = grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
-        Eigen::VectorXd ao = evaluator_.evaluate(r);
+        const Eigen::VectorXd ao = evaluator_.evaluate(detail::grid_point(grid, q));
         values[q] = ao.dot(p * ao);
     }
     return Field(grid, atoms_, std::move(values));
 }
-} // namespace chem::kumo
 
-namespace chem::kumo {
 Field Molecule::density(const Grid& grid, Spin spin) const {
     auto fields = densities_blocked(grid, {spin});
     return std::move(fields.at(spin));
@@ -694,16 +640,12 @@ SpinDensities Molecule::spin_densities(const Grid& grid) const {
     return {std::move(fields.at(Spin::Total)), std::move(fields.at(Spin::Alpha)),
             std::move(fields.at(Spin::Beta)), std::move(fields.at(Spin::Difference))};
 }
-} // namespace chem::kumo
 
-namespace chem::kumo {
 std::map<Spin, Field> Molecule::densities(const Grid& grid,
                                           std::initializer_list<Spin> components) const {
     return densities_blocked(grid, components);
 }
-} // namespace chem::kumo
 
-namespace chem::kumo {
 std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                                                   std::initializer_list<Spin> components,
                                                   std::size_t block_size) const {
@@ -721,7 +663,6 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     const Eigen::MatrixXd pa = need_a ? Eigen::MatrixXd(0.5 * (total_ + spin_)) : Eigen::MatrixXd();
     const Eigen::MatrixXd pb = need_b ? Eigen::MatrixXd(0.5 * (total_ - spin_)) : Eigen::MatrixXd();
     const Eigen::Index m = static_cast<Eigen::Index>(basis_size());
-    const int ny = grid.counts[1], nz = grid.counts[2];
     // Each block owns its AO panels and writes to disjoint output indices.
     // Keep the same arithmetic and point ordering in serial and OpenMP builds.
     const std::size_t nblocks = count / block_size + (count % block_size != 0);
@@ -739,13 +680,8 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
             const std::size_t start = static_cast<std::size_t>(block) * block_size;
             const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
             Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, b);
-            for (Eigen::Index t = 0; t < b; ++t) {
-                const std::size_t q = start + static_cast<std::size_t>(t);
-                const int k = static_cast<int>(q % nz);
-                const int j = static_cast<int>((q / nz) % ny);
-                const int i = static_cast<int>(q / (static_cast<std::size_t>(ny) * nz));
-                points.col(t) = grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
-            }
+            for (Eigen::Index t = 0; t < b; ++t)
+                points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
             Eigen::MatrixXd phi(m, b);
             evaluator_.evaluate_batch(points, phi);
             Eigen::VectorXd a = Eigen::VectorXd::Zero(b), bb = Eigen::VectorXd::Zero(b);

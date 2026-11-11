@@ -1,7 +1,7 @@
 #include "chem/kumo/evaluator.hpp"
 #include "evaluation_plan.hpp"
 #include "automatic_backend.hpp"
-#include "grid_validation.hpp"
+#include "grid_geometry.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -66,20 +66,11 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
         const std::size_t block_capacity = std::min(n, options_.block_size);
         Eigen::Matrix<double, 3, Eigen::Dynamic> points(3,
                                                         static_cast<Eigen::Index>(block_capacity));
-        const std::size_t ny = static_cast<std::size_t>(grid.counts[1]);
-        const std::size_t nz = static_cast<std::size_t>(grid.counts[2]);
         for (std::size_t start = 0; start < n; start += block_capacity) {
             const std::size_t count = std::min(block_capacity, n - start);
-            for (std::size_t local = 0; local < count; ++local) {
-                const std::size_t linear = start + local;
-                const std::size_t i = linear / (ny * nz);
-                const std::size_t j = (linear / nz) % ny;
-                const std::size_t k = linear % nz;
+            for (std::size_t local = 0; local < count; ++local)
                 points.col(static_cast<Eigen::Index>(local)) =
-                    grid.origin + grid.steps * Eigen::Vector3d(static_cast<double>(i),
-                                                               static_cast<double>(j),
-                                                               static_cast<double>(k));
-            }
+                    detail::grid_point(grid, start + local);
             const auto block_points = points.leftCols(static_cast<Eigen::Index>(count)).eval();
             std::vector<Spin> needed;
             for (auto component : {DensityComponent::Total, DensityComponent::Alpha,

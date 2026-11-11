@@ -50,4 +50,20 @@ inline std::size_t validated_point_count(const Grid& grid) {
     return count;
 }
 
+/// Cartesian position (bohr) of grid point number `linear`.
+///
+/// Points are numbered with k (the third axis) fastest, then j, then i:
+/// linear = (i * ny + j) * nz + k. This is the storage order of Field values
+/// and of Cube files. The grid must already be validated.
+inline Eigen::Vector3d grid_point(const Grid& grid, std::size_t linear) {
+    const auto ny = static_cast<std::size_t>(grid.counts[1]);
+    const auto nz = static_cast<std::size_t>(grid.counts[2]);
+    const std::size_t i = linear / (ny * nz);
+    const std::size_t j = (linear / nz) % ny;
+    const std::size_t k = linear % nz;
+    return grid.origin + grid.steps * Eigen::Vector3d(static_cast<double>(i),
+                                                      static_cast<double>(j),
+                                                      static_cast<double>(k));
+}
+
 } // namespace chem::kumo::detail
