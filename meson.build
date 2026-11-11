@@ -136,6 +136,21 @@ test(
         meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
     ],
 )
+
+test(
+    'density-screening',
+    executable(
+        'kumo-density-screening-test',
+        'tests/density_screening_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz',
+    ],
+    timeout: 120,
+)
 if benchmarks_enabled
     executable('kumo-benchmark', 'benchmarks/density_benchmark.cpp', dependencies: kumo_dep)
 endif

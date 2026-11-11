@@ -15,6 +15,13 @@ struct AoMoTestAccess;
 /// For MO evaluation only Alpha and Beta are meaningful channels.
 enum class Spin { Total, Alpha, Beta, Difference };
 
+/// Default AO screening threshold for grid densities. In each block of grid
+/// points, AOs whose absolute value is at most this at every point are left
+/// out of the density-matrix contraction. The resulting change in the density
+/// is at rounding level (about 1e-13 e/bohr^3 in the tested systems).
+/// A threshold of 0 disables screening and gives the exact contraction.
+inline constexpr double default_screening_threshold = 1e-12;
+
 /// Atomic identity, explicit center charge (in units of e), and Cartesian position (bohr).
 /// The center charge is not an atomic partial charge and need not equal Z.
 struct Atom {
@@ -144,10 +151,13 @@ public:
     /// Evaluate only requested density components, sharing AO work.
     [[nodiscard]] std::map<Spin, Field> densities(const Grid& grid,
                                                   std::initializer_list<Spin> components) const;
-    /// Explicit blocked Eigen path; block_size is in grid points.
-    [[nodiscard]] std::map<Spin, Field> densities_blocked(const Grid& grid,
-                                                          std::initializer_list<Spin> components,
-                                                          std::size_t block_size = 128) const;
+    /// Explicit blocked Eigen path; block_size is in grid points (1 to 65536).
+    /// screening_threshold must be finite and >= 0; 0 disables AO screening
+    /// (see default_screening_threshold).
+    [[nodiscard]] std::map<Spin, Field>
+    densities_blocked(const Grid& grid, std::initializer_list<Spin> components,
+                      std::size_t block_size = 128,
+                      double screening_threshold = default_screening_threshold) const;
 
     std::size_t basis_size() const noexcept { return evaluator_.basis_size(); }
 

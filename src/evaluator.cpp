@@ -1,6 +1,7 @@
 #include "chem/kumo/evaluator.hpp"
 #include "evaluation_plan.hpp"
 #include "automatic_backend.hpp"
+#include "ao_screening.hpp"
 #include "grid_geometry.hpp"
 #include <algorithm>
 #include <limits>
@@ -118,6 +119,7 @@ Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
     : molecule_(&molecule), options_(options) {
     if (!options.block_size || options.threads < 0)
         throw std::invalid_argument("invalid evaluation options");
+    detail::validate_screening_threshold(options.screening_threshold);
     if (options.backend != Backend::AUTO && options.backend != Backend::AO_P &&
         options.backend != Backend::AO_MO)
         throw std::invalid_argument("unknown evaluation backend");
@@ -166,9 +168,13 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
     for (auto& [key, output] : result.fields_) {
         if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital) continue;
         if (key.kind == PropertyKind::Density && backend == Backend::AO_MO) continue;
-        const Field field = key.kind == PropertyKind::Density
-                                ? molecule_->density(grid, spin_of(key.component))
-                                : molecule_->orbital(grid, key.orbital_index, spin_of(key.channel));
+        const Field field =
+            key.kind == PropertyKind::Density
+                ? molecule_
+                      ->densities_blocked(grid, {spin_of(key.component)}, options_.block_size,
+                                          options_.screening_threshold)
+                      .at(spin_of(key.component))
+                : molecule_->orbital(grid, key.orbital_index, spin_of(key.channel));
         std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
     }
     return result;
