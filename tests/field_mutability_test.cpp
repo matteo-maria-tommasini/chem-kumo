@@ -11,8 +11,7 @@
 namespace {
 
 void require(bool condition) {
-    if (!condition)
-        throw std::runtime_error("mutable field test failed");
+    if (!condition) throw std::runtime_error("mutable field test failed");
 }
 
 chem::kumo::Field make_field() {

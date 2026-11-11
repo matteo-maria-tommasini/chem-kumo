@@ -24,9 +24,13 @@
 #include <array>
 #include <span>
 #include <stdexcept>
+
 namespace lebedev_reference {
-struct Point { double x,y,z,w; };
-inline constexpr std::array<Point,194> grid_194{{
+struct Point {
+    double x, y, z, w;
+};
+
+inline constexpr std::array<Point, 194> grid_194{{
     {1, 0, 0, 0.022397550621038466},
     {-1, 0, 0, 0.022397550621038466},
     {0, 1, 0, 0.022397550621038466},
@@ -222,7 +226,7 @@ inline constexpr std::array<Point,194> grid_194{{
     {-0.83603601548245887, 0.52511857244364202, -0.159041710538353, 0.06949515747104322},
     {-0.83603601548245887, -0.52511857244364202, -0.159041710538353, 0.06949515747104322},
 }};
-inline constexpr std::array<Point,302> grid_302{{
+inline constexpr std::array<Point, 302> grid_302{{
     {1, 0, 0, 0.010739109397555787},
     {-1, 0, 0, 0.010739109397555787},
     {0, 1, 0, 0.010739109397555787},
@@ -526,7 +530,7 @@ inline constexpr std::array<Point,302> grid_302{{
     {-0.41277240831685308, 0.90244252953300041, -0.1233548532583327, 0.042629052407721503},
     {-0.41277240831685308, -0.90244252953300041, -0.1233548532583327, 0.042629052407721503},
 }};
-inline constexpr std::array<Point,434> grid_434{{
+inline constexpr std::array<Point, 434> grid_434{{
     {1, 0, 0, 0.0066173225486109225},
     {-1, 0, 0, 0.0066173225486109225},
     {0, 1, 0, 0.0066173225486109225},
@@ -962,7 +966,7 @@ inline constexpr std::array<Point,434> grid_434{{
     {-0.33443631453434552, 0.099217696364292479, -0.93718098585537224, 0.028106042036613862},
     {-0.33443631453434552, -0.099217696364292479, -0.93718098585537224, 0.028106042036613862},
 }};
-inline constexpr std::array<Point,590> grid_590{{
+inline constexpr std::array<Point, 590> grid_590{{
     {1, 0, 0, 0.0038894441293212969},
     {-1, 0, 0, 0.0038894441293212969},
     {0, 1, 0, 0.0038894441293212969},
@@ -1554,7 +1558,7 @@ inline constexpr std::array<Point,590> grid_590{{
     {-0.089992058420748755, 0.85937985589072119, -0.50335642710751172, 0.022647604818254626},
     {-0.089992058420748755, -0.85937985589072119, -0.50335642710751172, 0.022647604818254626},
 }};
-inline constexpr std::array<Point,770> grid_770{{
+inline constexpr std::array<Point, 770> grid_770{{
     {1, 0, 0, 0.0027557323015911473},
     {-1, 0, 0, 0.0027557323015911473},
     {0, 1, 0, 0.0027557323015911473},
@@ -2326,14 +2330,15 @@ inline constexpr std::array<Point,770> grid_770{{
     {-0.56487681490995001, 0.73130079365976575, -0.38224773795247868, 0.017792909600669947},
     {-0.56487681490995001, -0.73130079365976575, -0.38224773795247868, 0.017792909600669947},
 }};
+
 inline std::span<const Point> grid(int n) {
- switch(n) {
- case 194: return grid_194;
- case 302: return grid_302;
- case 434: return grid_434;
- case 590: return grid_590;
- case 770: return grid_770;
- default: throw std::invalid_argument("unsupported Lebedev grid size");
- }
+    switch (n) {
+    case 194: return grid_194;
+    case 302: return grid_302;
+    case 434: return grid_434;
+    case 590: return grid_590;
+    case 770: return grid_770;
+    default: throw std::invalid_argument("unsupported Lebedev grid size");
+    }
 }
-}
+} // namespace lebedev_reference

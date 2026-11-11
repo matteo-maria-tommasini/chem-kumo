@@ -10,10 +10,11 @@ namespace {
 void check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
+
 double error(const Eigen::MatrixXd& a, const Eigen::MatrixXd& b) {
     return (a - b).cwiseAbs().maxCoeff();
 }
-}
+} // namespace
 
 int main(int argc, char** argv) {
     if (argc != 2) return 2;
@@ -25,15 +26,13 @@ int main(int argc, char** argv) {
               "moment overlap differs from established overlap implementation");
         const auto n = static_cast<Eigen::Index>(ao.basis_size());
         std::array<const Eigen::MatrixXd*, 10> matrices = {
-            &m.overlap, &m.first[0], &m.first[1], &m.first[2],
-            &m.second[0], &m.second[1], &m.second[2],
-            &m.second[3], &m.second[4], &m.second[5]};
+            &m.overlap,   &m.first[0],  &m.first[1],  &m.first[2],  &m.second[0],
+            &m.second[1], &m.second[2], &m.second[3], &m.second[4], &m.second[5]};
         for (const auto* matrix : matrices) {
             check(matrix->rows() == n && matrix->cols() == n,
                   "unexpected moment matrix dimensions");
             check(matrix->allFinite(), "nonfinite moment matrix");
-            check(error(*matrix, matrix->transpose()) < 2e-12,
-                  "AO moment matrix is not symmetric");
+            check(error(*matrix, matrix->transpose()) < 2e-12, "AO moment matrix is not symmetric");
         }
 
         // Every normalized Cartesian or pure AO centered at R has an even
@@ -58,9 +57,10 @@ int main(int argc, char** argv) {
             for (Eigen::Index i = offset; i < offset + count; ++i) {
                 for (int d = 0; d < 3; ++d) {
                     const double center = shell.origin[d];
-                    const double variance = m.second[static_cast<std::size_t>(d)](i, i)
-                        - 2 * center * m.first[static_cast<std::size_t>(d)](i, i)
-                        + center * center * m.overlap(i, i);
+                    const double variance =
+                        m.second[static_cast<std::size_t>(d)](i, i) -
+                        2 * center * m.first[static_cast<std::size_t>(d)](i, i) +
+                        center * center * m.overlap(i, i);
                     check(variance > 0, "nonpositive AO spatial variance");
                 }
             }

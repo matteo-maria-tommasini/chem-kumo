@@ -20,13 +20,11 @@ namespace chem::kumo {
     const double volume = grid_cell_volume(field);
     long double sum = 0.0L;
     for (const double value : field.values()) {
-        if (!std::isfinite(value))
-            throw std::invalid_argument("nonfinite field sample");
+        if (!std::isfinite(value)) throw std::invalid_argument("nonfinite field sample");
         sum += value;
     }
     const double result = static_cast<double>(sum * volume);
-    if (!std::isfinite(result))
-        throw std::overflow_error("field integral overflow");
+    if (!std::isfinite(result)) throw std::overflow_error("field integral overflow");
     return result;
 }
 
@@ -40,16 +38,17 @@ namespace chem::kumo {
         for (int j = 0; j < counts[1]; ++j)
             for (int k = 0; k < counts[2]; ++k) {
                 const double value = field(i, j, k);
-                if (!std::isfinite(value))
-                    throw std::invalid_argument("nonfinite field sample");
-                const double wi = counts[0] == 1 ? 1.0 : ((i == 0 || i == counts[0]-1) ? 0.5 : 1.0);
-                const double wj = counts[1] == 1 ? 1.0 : ((j == 0 || j == counts[1]-1) ? 0.5 : 1.0);
-                const double wk = counts[2] == 1 ? 1.0 : ((k == 0 || k == counts[2]-1) ? 0.5 : 1.0);
+                if (!std::isfinite(value)) throw std::invalid_argument("nonfinite field sample");
+                const double wi =
+                    counts[0] == 1 ? 1.0 : ((i == 0 || i == counts[0] - 1) ? 0.5 : 1.0);
+                const double wj =
+                    counts[1] == 1 ? 1.0 : ((j == 0 || j == counts[1] - 1) ? 0.5 : 1.0);
+                const double wk =
+                    counts[2] == 1 ? 1.0 : ((k == 0 || k == counts[2] - 1) ? 0.5 : 1.0);
                 sum += wi * wj * wk * value;
             }
     const double result = static_cast<double>(sum * volume);
-    if (!std::isfinite(result))
-        throw std::overflow_error("field integral overflow");
+    if (!std::isfinite(result)) throw std::overflow_error("field integral overflow");
     return result;
 }
 

@@ -28,17 +28,16 @@ namespace chem::kumo::detail {
  * Orbital-amplitude-only or empty requests do not involve a density
  * contraction; report AO_P as the neutral selection for those requests.
  */
-inline Backend choose_backend(Backend requested, bool eligible,
-                              std::size_t /*nao*/, std::size_t /*nalpha*/,
-                              std::size_t /*nbeta*/, const EvaluationPlan& plan) {
+inline Backend choose_backend(Backend requested, bool eligible, std::size_t /*nao*/,
+                              std::size_t /*nalpha*/, std::size_t /*nbeta*/,
+                              const EvaluationPlan& plan) {
     if (requested == Backend::AO_P) return Backend::AO_P;
     if (requested == Backend::AO_MO) {
         if (!eligible)
             throw std::invalid_argument("AO_MO requested for ineligible orbital representation");
         return Backend::AO_MO;
     }
-    if (requested != Backend::AUTO)
-        throw std::invalid_argument("unknown evaluation backend");
+    if (requested != Backend::AUTO) throw std::invalid_argument("unknown evaluation backend");
     if (!eligible) return Backend::AO_P;
     for (const auto& component : plan.components)
         if (component.ao_order() >= 0) return Backend::AO_MO;

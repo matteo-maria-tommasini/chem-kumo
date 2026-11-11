@@ -54,6 +54,11 @@ make a test pass without explicit approval.
 - Validate inputs strictly and fail with clear exceptions (fail-closed);
   keep serial and OpenMP results numerically identical in point ordering.
 - Compiler warnings are enabled (`warning_level=2`); keep the build warning-free.
+- Formatting is defined by `.clang-format` (C++) and `meson.format` (Meson).
+  Before committing, run
+  `clang-format-mp-22 -i $(git ls-files '*.cpp' '*.hpp')` (MacPorts name;
+  plain `clang-format` elsewhere, version 22) and `meson format -i -r`.
+  Keep formatting-only changes in separate commits from logic changes.
 
 ## Git and GitHub workflow
 

@@ -19,18 +19,17 @@ namespace chem::kumo {
 class WeightedOverlapAccumulator {
 public:
     explicit WeightedOverlapAccumulator(const BasisEvaluator& evaluator)
-        : evaluator_(evaluator), matrix_(Eigen::MatrixXd::Zero(
-              static_cast<Eigen::Index>(evaluator.basis_size()),
-              static_cast<Eigen::Index>(evaluator.basis_size()))) {}
+        : evaluator_(evaluator),
+          matrix_(Eigen::MatrixXd::Zero(static_cast<Eigen::Index>(evaluator.basis_size()),
+                                        static_cast<Eigen::Index>(evaluator.basis_size()))) {}
 
     /// Add one point block. Empty blocks are allowed.
     void add(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
              const Eigen::Ref<const Eigen::VectorXd>& quadrature_weights,
              const Eigen::Ref<const Eigen::VectorXd>& field_values) {
         const Eigen::Index n = points.cols();
-        if (quadrature_weights.size() != n || field_values.size() != n ||
-            !points.allFinite() || !quadrature_weights.allFinite() ||
-            !field_values.allFinite())
+        if (quadrature_weights.size() != n || field_values.size() != n || !points.allFinite() ||
+            !quadrature_weights.allFinite() || !field_values.allFinite())
             throw std::invalid_argument("WeightedOverlapAccumulator: invalid quadrature data");
         if (n == 0) return;
         Eigen::MatrixXd ao(static_cast<Eigen::Index>(evaluator_.basis_size()), n);
@@ -44,6 +43,7 @@ public:
     }
 
     [[nodiscard]] const Eigen::MatrixXd& matrix() const noexcept { return matrix_; }
+
     void reset() noexcept { matrix_.setZero(); }
 
 private:
@@ -52,12 +52,12 @@ private:
 };
 
 /// Convenience blocked integration for an externally supplied quadrature.
-[[nodiscard]] inline Eigen::MatrixXd weighted_overlap_matrix(
-    const BasisEvaluator& evaluator,
-    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-    const Eigen::Ref<const Eigen::VectorXd>& quadrature_weights,
-    const Eigen::Ref<const Eigen::VectorXd>& field_values,
-    std::size_t block_size = 128) {
+[[nodiscard]] inline Eigen::MatrixXd
+weighted_overlap_matrix(const BasisEvaluator& evaluator,
+                        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+                        const Eigen::Ref<const Eigen::VectorXd>& quadrature_weights,
+                        const Eigen::Ref<const Eigen::VectorXd>& field_values,
+                        std::size_t block_size = 128) {
     if (block_size == 0) throw std::invalid_argument("weighted_overlap_matrix: zero block size");
     if (quadrature_weights.size() != points.cols() || field_values.size() != points.cols())
         throw std::invalid_argument("weighted_overlap_matrix: inconsistent quadrature sizes");
@@ -66,8 +66,7 @@ private:
         std::min(block_size, static_cast<std::size_t>(std::numeric_limits<Eigen::Index>::max())));
     for (Eigen::Index first = 0; first < points.cols();) {
         const Eigen::Index count = std::min(chunk, points.cols() - first);
-        accumulator.add(points.middleCols(first, count),
-                        quadrature_weights.segment(first, count),
+        accumulator.add(points.middleCols(first, count), quadrature_weights.segment(first, count),
                         field_values.segment(first, count));
         first += count;
     }

@@ -44,15 +44,13 @@ void check_reference(const std::filesystem::path& directory, const Reference& re
         require(grid.counts[axis] == reference.counts[axis], "grid count mismatch");
         near(grid.origin[axis], reference.origin[axis], 1e-12, "grid origin mismatch");
         for (int component = 0; component < 3; ++component)
-            near(grid.steps(component, axis), axis == component ? 0.166667 : 0.0,
-                 1e-12, "grid step mismatch");
-        near(atoms.front().position[axis], reference.first_position[axis],
-             1e-12, "atom position mismatch");
+            near(grid.steps(component, axis), axis == component ? 0.166667 : 0.0, 1e-12,
+                 "grid step mismatch");
+        near(atoms.front().position[axis], reference.first_position[axis], 1e-12,
+             "atom position mismatch");
     }
-    require(atoms.front().atomic_number == reference.first_atomic_number,
-            "atomic number mismatch");
-    near(atoms.front().nuclear_charge, reference.first_charge, 1e-12,
-         "nuclear charge mismatch");
+    require(atoms.front().atomic_number == reference.first_atomic_number, "atomic number mismatch");
+    near(atoms.front().nuclear_charge, reference.first_charge, 1e-12, "nuclear charge mismatch");
 
     const std::size_t expected_count = static_cast<std::size_t>(reference.counts[0]) *
                                        static_cast<std::size_t>(reference.counts[1]) *
@@ -76,20 +74,36 @@ int main(int argc, char** argv) {
     try {
         // Literal reference values come from independently supplied Gaussian Cube files,
         // not from chem-kumo's Cube writer or a second parser in this test.
-        const std::array<Reference, 3> references{{
-            {"o2_density.cube", "O2 ground-state SCF density reference",
-             " Electron density from Total SCF Density", {61, 61, 74}, 2,
-             8, 8.0, {0.0, 0.0, 1.143284}, {-4.970736, -4.970736, -6.114020},
-             {5.94950e-18, 0.52465, 4.44573e-18}},
-            {"o2_spin.cube", "O2 ground-state SCF spin reference",
-             " Electron density from Spin SCF Density", {61, 61, 74}, 2,
-             8, 8.0, {0.0, 0.0, 1.143284}, {-4.970736, -4.970736, -6.114020},
-             {1.92726e-18, -0.00166261, 1.45692e-18}},
-            {"acrolein_density.cube", "Acrolein ground-state SCF density reference",
-             " Electron density from Total SCF Density", {97, 102, 79}, 8,
-             6, 6.0, {2.272099, 2.443678, 0.0}, {-7.278292, -7.954711, -6.512752},
-             {3.08107e-21, 1.53016e-07, 2.85068e-17}}
-        }};
+        const std::array<Reference, 3> references{{{"o2_density.cube",
+                                                    "O2 ground-state SCF density reference",
+                                                    " Electron density from Total SCF Density",
+                                                    {61, 61, 74},
+                                                    2,
+                                                    8,
+                                                    8.0,
+                                                    {0.0, 0.0, 1.143284},
+                                                    {-4.970736, -4.970736, -6.114020},
+                                                    {5.94950e-18, 0.52465, 4.44573e-18}},
+                                                   {"o2_spin.cube",
+                                                    "O2 ground-state SCF spin reference",
+                                                    " Electron density from Spin SCF Density",
+                                                    {61, 61, 74},
+                                                    2,
+                                                    8,
+                                                    8.0,
+                                                    {0.0, 0.0, 1.143284},
+                                                    {-4.970736, -4.970736, -6.114020},
+                                                    {1.92726e-18, -0.00166261, 1.45692e-18}},
+                                                   {"acrolein_density.cube",
+                                                    "Acrolein ground-state SCF density reference",
+                                                    " Electron density from Total SCF Density",
+                                                    {97, 102, 79},
+                                                    8,
+                                                    6,
+                                                    6.0,
+                                                    {2.272099, 2.443678, 0.0},
+                                                    {-7.278292, -7.954711, -6.512752},
+                                                    {3.08107e-21, 1.53016e-07, 2.85068e-17}}}};
         for (const auto& reference : references)
             check_reference(argv[1], reference);
     } catch (const std::exception& error) {

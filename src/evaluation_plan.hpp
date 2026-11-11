@@ -12,26 +12,32 @@ struct ComponentPlan {
     bool hessian = false;
     bool laplacian = false;
     bool tau = false;
+
     [[nodiscard]] bool derivatives() const noexcept {
         return gradient || hessian || laplacian || tau;
     }
+
     [[nodiscard]] int ao_order() const noexcept {
         if (hessian || laplacian) return 2;
         if (gradient || tau) return 1;
         return density ? 0 : -1;
     }
 };
+
 struct EvaluationPlan {
     std::array<ComponentPlan, 4> components{};
     bool orbitals = false;
     int maximum_ao_order = -1;
+
     [[nodiscard]] bool needs_derivative_points() const noexcept {
         return std::any_of(components.begin(), components.end(),
                            [](const ComponentPlan& c) { return c.derivatives(); });
     }
+
     [[nodiscard]] static constexpr std::size_t index(DensityComponent component) noexcept {
         return static_cast<std::size_t>(component);
     }
+
     [[nodiscard]] static EvaluationPlan from(const Request& request) {
         EvaluationPlan plan;
         for (const Property& property : request.properties()) {
@@ -44,12 +50,12 @@ struct EvaluationPlan {
             }
             auto& c = plan.components.at(index(property.component));
             switch (property.kind) {
-                case PropertyKind::Density: c.density = true; break;
-                case PropertyKind::Gradient: c.gradient = true; break;
-                case PropertyKind::Hessian: c.hessian = true; break;
-                case PropertyKind::Laplacian: c.laplacian = true; break;
-                case PropertyKind::Tau: c.tau = true; break;
-                case PropertyKind::Orbital: break;
+            case PropertyKind::Density: c.density = true; break;
+            case PropertyKind::Gradient: c.gradient = true; break;
+            case PropertyKind::Hessian: c.hessian = true; break;
+            case PropertyKind::Laplacian: c.laplacian = true; break;
+            case PropertyKind::Tau: c.tau = true; break;
+            case PropertyKind::Orbital: break;
             }
         }
         for (const auto& c : plan.components)

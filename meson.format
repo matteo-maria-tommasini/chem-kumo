@@ -1,0 +1,3 @@
+# Meson build-file formatting. Apply with: meson format -i -r
+indent_by = '    '
+max_line_length = 100

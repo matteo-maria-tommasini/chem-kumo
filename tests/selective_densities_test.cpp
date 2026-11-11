@@ -3,6 +3,7 @@
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+
 int main(int argc, char** argv) {
     if (argc != 3) return 2;
     using namespace chem::kumo;
@@ -13,8 +14,8 @@ int main(int argc, char** argv) {
         auto selected = molecule.densities(grid, {Spin::Total, Spin::Difference, Spin::Total});
         if (selected.size() != 2 || !molecule.densities(grid, {}).empty()) return 1;
         double error = 0;
-        for (auto [key, expected] : {std::pair{Spin::Total, &all.total},
-                                      std::pair{Spin::Difference, &all.spin}}) {
+        for (auto [key, expected] :
+             {std::pair{Spin::Total, &all.total}, std::pair{Spin::Difference, &all.spin}}) {
             const auto actual = selected.at(key).values();
             for (std::size_t i = 0; i < actual.size(); ++i)
                 error = std::max(error, std::abs(actual[i] - expected->values()[i]));
