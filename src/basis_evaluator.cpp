@@ -2,6 +2,7 @@
 
 #include "checked_math.hpp"
 #include "basis_math.hpp"
+#include "mo_coefficients.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -552,17 +553,7 @@ MolecularOrbitals::MolecularOrbitals(const FormattedCheckpoint& fchk, OrbitalSpi
     if (!fchk.contains(label)) {
         throw std::runtime_error(std::string("missing fchk record: ") + label);
     }
-    const auto& flat = fchk.reals(label);
-    if (flat.size() % nbasis != 0U)
-        throw std::runtime_error(std::string("invalid ") + label + " array size");
-    const auto nmo = flat.size() / nbasis;
-    coefficients_.resize(static_cast<Eigen::Index>(nbasis), static_cast<Eigen::Index>(nmo));
-    for (std::size_t mo = 0; mo < nmo; ++mo) {
-        for (std::size_t ao = 0; ao < nbasis; ++ao) {
-            coefficients_(static_cast<Eigen::Index>(ao), static_cast<Eigen::Index>(mo)) =
-                flat[mo * nbasis + ao];
-        }
-    }
+    coefficients_ = detail::read_mo_coefficients(fchk, label, nbasis);
 }
 
 std::size_t MolecularOrbitals::basis_size() const noexcept {

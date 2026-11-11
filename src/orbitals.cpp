@@ -1,6 +1,6 @@
 #include <Eigen/LU>
 #include "chem/kumo/density.hpp"
-#include "grid_validation.hpp"
+#include "grid_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -117,7 +117,6 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
     for (std::size_t i = 0; i < indices.size(); ++i)
         selected.col(static_cast<Eigen::Index>(i)) =
             coeff.col(static_cast<Eigen::Index>(indices[i] - 1));
-    const int ny = grid.counts[1], nz = grid.counts[2];
     constexpr std::size_t block_size = 128;
     const std::size_t nblocks = count / block_size + (count % block_size != 0);
     if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
@@ -132,13 +131,8 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
             const auto size = std::min(block_size, count - start);
             const auto b = static_cast<Eigen::Index>(size);
             Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, b);
-            for (Eigen::Index t = 0; t < b; ++t) {
-                const auto q = start + static_cast<std::size_t>(t);
-                const int k = static_cast<int>(q % nz);
-                const int j = static_cast<int>((q / nz) % ny);
-                const int i = static_cast<int>(q / (static_cast<std::size_t>(ny) * nz));
-                points.col(t) = grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
-            }
+            for (Eigen::Index t = 0; t < b; ++t)
+                points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
             Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
             evaluator_.evaluate_batch(points, phi);
             const Eigen::MatrixXd psi = selected.transpose() * phi;
