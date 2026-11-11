@@ -45,7 +45,9 @@ public:
     explicit BasisEvaluator(BasisSet basis);
 
     [[nodiscard]] const BasisSet& basis() const noexcept { return basis_; }
+
     [[nodiscard]] std::size_t basis_size() const noexcept { return basis_.function_count(); }
+
     /// Analytic all-space AO overlap in Gaussian FCHK ordering.
     [[nodiscard]] Eigen::MatrixXd overlap_matrix() const;
     /// Analytic Cartesian moments through order two, computed in one shell-pair traversal.
@@ -57,7 +59,8 @@ public:
     [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point, int order) const;
     void evaluate_into(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
     /// Original pointwise evaluator retained as a regression oracle.
-    void evaluate_into_reference(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
+    void evaluate_into_reference(const Eigen::Vector3d& point,
+                                 Eigen::Ref<Eigen::VectorXd> output) const;
     /// Input: 3 x N point columns; output: nAO x N AO values.
     void evaluate_batch(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                         Eigen::Ref<Eigen::MatrixXd> output) const;
@@ -74,11 +77,10 @@ private:
     };
 
     void evaluate_into_impl_reference(const Eigen::Vector3d& point,
-                            Eigen::Ref<Eigen::VectorXd> output,
-                            std::vector<double>& cartesian_scratch,
-                            std::vector<double>& radial_scratch) const;
-    void evaluate_into_impl(const Eigen::Vector3d& point,
-                            Eigen::Ref<Eigen::VectorXd> output,
+                                      Eigen::Ref<Eigen::VectorXd> output,
+                                      std::vector<double>& cartesian_scratch,
+                                      std::vector<double>& radial_scratch) const;
+    void evaluate_into_impl(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output,
                             std::vector<double>& cartesian_scratch,
                             std::vector<double>& radial_scratch) const;
 
@@ -101,9 +103,9 @@ public:
 
     [[nodiscard]] std::size_t basis_size() const noexcept;
     [[nodiscard]] std::size_t orbital_count() const noexcept;
-    [[nodiscard]] double evaluate(std::size_t orbital,
-                                  const Eigen::VectorXd& ao_values) const;
+    [[nodiscard]] double evaluate(std::size_t orbital, const Eigen::VectorXd& ao_values) const;
     [[nodiscard]] Eigen::VectorXd evaluate_all(const Eigen::VectorXd& ao_values) const;
+
     [[nodiscard]] const Eigen::MatrixXd& coefficients() const noexcept { return coefficients_; }
 
 private:

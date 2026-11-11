@@ -40,45 +40,52 @@ static void check(const Eigen::MatrixXd& s, Eigen::Index k, const std::string& n
     Eigen::MatrixXd x(n, 3);
     for (Eigen::Index i = 0; i < n; ++i)
         for (Eigen::Index j = 0; j < 3; ++j)
-            x(i,j) = std::sin(0.013 * double(i+1) * double(j+2));
+            x(i, j) = std::sin(0.013 * double(i + 1) * double(j + 2));
     const Eigen::MatrixXd projected = projector.apply(x);
     const double idem = max_abs(projector.apply(projected) - projected);
     const double residual_orth = max_abs(q.transpose() * s * (x - projected));
 
     // Nonorthogonal but well-conditioned change of basis within the subspace.
     Eigen::MatrixXd transform = identity;
-    for (Eigen::Index i = 0; i + 1 < k; ++i) transform(i,i+1) = 0.05;
+    for (Eigen::Index i = 0; i + 1 < k; ++i)
+        transform(i, i + 1) = 0.05;
     SubspaceProjector changed(s, (a * transform).eval());
     const double invariant = max_abs(changed.apply(x) - projected);
 
     const double tolerance = 2e-7;
-    require(orth < tolerance && span < tolerance && idem < tolerance &&
-            residual_orth < tolerance && invariant < tolerance,
+    require(orth < tolerance && span < tolerance && idem < tolerance && residual_orth < tolerance &&
+                invariant < tolerance,
             "projector residual exceeds tolerance for " + name + " k=" + std::to_string(k));
 
     // Exactly dependent input must be rejected without silently dropping columns.
     if (k < n) {
-        Eigen::MatrixXd dependent(n, k+1);
+        Eigen::MatrixXd dependent(n, k + 1);
         dependent.leftCols(k) = a;
         dependent.col(k) = a.col(0);
         bool rejected = false;
-        try { SubspaceProjector bad(s, dependent); (void)bad; }
-        catch (const std::invalid_argument&) { rejected = true; }
+        try {
+            SubspaceProjector bad(s, dependent);
+            (void)bad;
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
         require(rejected, "exact linear dependence accepted");
 
         // Nearly dependent input: make the last column a tiny independent perturbation.
         dependent.col(k) = a.col(0);
-        dependent(k,k) = 1e-9;
+        dependent(k, k) = 1e-9;
         rejected = false;
-        try { SubspaceProjector bad(s, dependent); (void)bad; }
-        catch (const std::invalid_argument&) { rejected = true; }
+        try {
+            SubspaceProjector bad(s, dependent);
+            (void)bad;
+        } catch (const std::invalid_argument&) {
+            rejected = true;
+        }
         require(rejected, "near-linear dependence accepted");
     }
 
-    std::cout << std::scientific << std::setprecision(8)
-              << name << " nAO=" << n << " k=" << k
-              << " gram_condition=" << condition
-              << " orth=" << orth << " span=" << span
+    std::cout << std::scientific << std::setprecision(8) << name << " nAO=" << n << " k=" << k
+              << " gram_condition=" << condition << " orth=" << orth << " span=" << span
               << " idem=" << idem << " residual_orth=" << residual_orth
               << " invariant=" << invariant << '\n';
 }
@@ -90,8 +97,8 @@ int main(int argc, char** argv) {
             FormattedCheckpoint fchk(argv[arg]);
             BasisEvaluator evaluator{BasisSet(fchk)};
             const Eigen::MatrixXd s = evaluator.overlap_matrix();
-            for (Eigen::Index k : {Eigen::Index{2}, Eigen::Index{10},
-                                   Eigen::Index{50}, Eigen::Index{100}})
+            for (Eigen::Index k :
+                 {Eigen::Index{2}, Eigen::Index{10}, Eigen::Index{50}, Eigen::Index{100}})
                 check(s, k, argv[arg]);
         }
     } catch (const std::exception& e) {

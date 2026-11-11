@@ -67,15 +67,16 @@ void verify(const std::filesystem::path& zipped, const std::filesystem::path& di
         const auto x = mol_a.density_derivatives(point, spin);
         const auto y = mol_b.density_derivatives(point, spin);
         require(x.value == y.value && x.laplacian == y.laplacian && x.tau == y.tau &&
-                (x.gradient - y.gradient).norm() == 0.0 &&
-                (x.hessian - y.hessian).norm() == 0.0,
+                    (x.gradient - y.gradient).norm() == 0.0 &&
+                    (x.hessian - y.hessian).norm() == 0.0,
                 "compressed density derivatives mismatch");
     }
     // Compression detection uses magic bytes rather than filename suffix.
     const auto renamed = directory / (zipped.stem().string() + ".dat");
     std::filesystem::copy_file(zipped, renamed, std::filesystem::copy_options::overwrite_existing);
     require(chem::kumo::FormattedCheckpoint(renamed).integer("Number of atoms") ==
-            plain.integer("Number of atoms"), "gzip magic detection failed");
+                plain.integer("Number of atoms"),
+            "gzip magic detection failed");
 
     // Deliberately damage the gzip trailer (CRC32/ISIZE) and truncate the file.
     const auto corrupt = directory / (zipped.stem().string() + ".bad.gz");
@@ -105,8 +106,9 @@ void verify_large_reference(const std::filesystem::path& zipped) {
     require(fchk.integer("Number of alpha electrons") == 135, "HBC alpha count mismatch");
     require(fchk.integer("Number of beta electrons") == 135, "HBC beta count mismatch");
     const auto name = zipped.filename().string();
-    const int expected_basis = name.find("def2tzvp") != std::string::npos ? 1410 :
-                               name.find("def2svp") != std::string::npos ? 678 : 720;
+    const int expected_basis = name.find("def2tzvp") != std::string::npos  ? 1410
+                               : name.find("def2svp") != std::string::npos ? 678
+                                                                           : 720;
     require(fchk.integer("Number of basis functions") == expected_basis,
             "HBC basis count mismatch");
     std::cout << name << " compressed reference OK\n";
@@ -116,13 +118,16 @@ void verify_large_reference(const std::filesystem::path& zipped) {
 
 int main(int argc, char** argv) {
     if (argc != 6) return 2;
-    const auto directory = std::filesystem::temp_directory_path() /
-        ("kumo-gzip-test-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const auto directory =
+        std::filesystem::temp_directory_path() /
+        ("kumo-gzip-test-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(directory);
     try {
         verify(argv[1], directory);
         verify(argv[2], directory);
-        for (int i = 3; i < argc; ++i) verify_large_reference(argv[i]);
+        for (int i = 3; i < argc; ++i)
+            verify_large_reference(argv[i]);
         std::filesystem::remove_all(directory);
         return 0;
     } catch (const std::exception& e) {

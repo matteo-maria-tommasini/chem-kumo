@@ -34,7 +34,8 @@ long long parse_integer_token(const std::string& token, const std::string& label
         throw std::runtime_error("invalid integer token in fchk record " + label + ": " + token);
     }
     if (consumed != token.size()) {
-        throw std::runtime_error("trailing characters in integer token in fchk record " + label + ": " + token);
+        throw std::runtime_error("trailing characters in integer token in fchk record " + label +
+                                 ": " + token);
     }
     return value;
 }
@@ -55,9 +56,7 @@ double parse_real_token(const std::string& raw_token, const std::string& label) 
 }
 
 template <typename Parse>
-void read_array_tokens(std::istream& input,
-                       std::size_t count,
-                       const std::string& label,
+void read_array_tokens(std::istream& input, std::size_t count, const std::string& label,
                        Parse&& parse) {
     for (std::size_t i = 0; i < count; ++i) {
         std::string token;
@@ -77,7 +76,8 @@ void read_array_tokens(std::istream& input,
 // physical end of the file is not sufficient to validate CRC32 and ISIZE.
 std::string decompress_gzip(const std::filesystem::path& path) {
     std::ifstream source(path, std::ios::binary);
-    if (!source) throw std::runtime_error("cannot open gzip formatted checkpoint: " + path.string());
+    if (!source)
+        throw std::runtime_error("cannot open gzip formatted checkpoint: " + path.string());
 
     z_stream stream{};
     if (inflateInit2(&stream, MAX_WBITS + 16) != Z_OK) {
@@ -94,7 +94,8 @@ std::string decompress_gzip(const std::filesystem::path& path) {
                             static_cast<std::streamsize>(input_buffer.size()));
                 const auto count = source.gcount();
                 if (count == 0) {
-                    throw std::runtime_error("truncated gzip formatted checkpoint: " + path.string());
+                    throw std::runtime_error("truncated gzip formatted checkpoint: " +
+                                             path.string());
                 }
                 stream.next_in = input_buffer.data();
                 stream.avail_in = static_cast<uInt>(count);
@@ -112,7 +113,8 @@ std::string decompress_gzip(const std::filesystem::path& path) {
         }
         // Do not silently accept garbage or additional data after the member.
         if (stream.avail_in != 0 || source.peek() != std::char_traits<char>::eof()) {
-            throw std::runtime_error("trailing data in gzip formatted checkpoint: " + path.string());
+            throw std::runtime_error("trailing data in gzip formatted checkpoint: " +
+                                     path.string());
         }
     } catch (...) {
         inflateEnd(&stream);
@@ -136,8 +138,7 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
     }
     unsigned char signature[2]{};
     source.read(reinterpret_cast<char*>(signature), 2);
-    const bool compressed = source.gcount() == 2 &&
-                            signature[0] == 0x1f && signature[1] == 0x8b;
+    const bool compressed = source.gcount() == 2 && signature[0] == 0x1f && signature[1] == 0x8b;
     source.clear();
     source.seekg(0);
 
@@ -158,7 +159,8 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
 
     std::string line;
     if (!std::getline(input, line) || !std::getline(input, line)) {
-        throw std::runtime_error("formatted checkpoint is missing its two-line header: " + path.string());
+        throw std::runtime_error("formatted checkpoint is missing its two-line header: " +
+                                 path.string());
     }
 
     while (std::getline(input, line)) {
@@ -183,7 +185,8 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
                 throw std::runtime_error("invalid array size in fchk: " + label);
             }
             const auto count_unsigned = static_cast<unsigned long long>(count_raw);
-            if (count_unsigned > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max()) ||
+            if (count_unsigned >
+                    static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max()) ||
                 count_unsigned > static_cast<unsigned long long>(logical_size)) {
                 throw std::runtime_error("unreasonable array size in fchk: " + label);
             }
@@ -218,18 +221,10 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
             bool identical = a.kind == b.kind;
             if (identical) {
                 switch (a.kind) {
-                case Kind::IntegerScalar:
-                    identical = a.integer_scalar == b.integer_scalar;
-                    break;
-                case Kind::RealScalar:
-                    identical = a.real_scalar == b.real_scalar;
-                    break;
-                case Kind::IntegerArray:
-                    identical = a.integer_array == b.integer_array;
-                    break;
-                case Kind::RealArray:
-                    identical = a.real_array == b.real_array;
-                    break;
+                case Kind::IntegerScalar: identical = a.integer_scalar == b.integer_scalar; break;
+                case Kind::RealScalar: identical = a.real_scalar == b.real_scalar; break;
+                case Kind::IntegerArray: identical = a.integer_array == b.integer_array; break;
+                case Kind::RealArray: identical = a.real_array == b.real_array; break;
                 }
             }
             if (!identical) {
@@ -255,25 +250,29 @@ bool FormattedCheckpoint::contains(const std::string& label) const {
 
 long long FormattedCheckpoint::integer(const std::string& label) const {
     const auto& r = record(label);
-    if (r.kind != Kind::IntegerScalar) throw std::runtime_error("fchk record is not an integer scalar: " + label);
+    if (r.kind != Kind::IntegerScalar)
+        throw std::runtime_error("fchk record is not an integer scalar: " + label);
     return r.integer_scalar;
 }
 
 double FormattedCheckpoint::real(const std::string& label) const {
     const auto& r = record(label);
-    if (r.kind != Kind::RealScalar) throw std::runtime_error("fchk record is not a real scalar: " + label);
+    if (r.kind != Kind::RealScalar)
+        throw std::runtime_error("fchk record is not a real scalar: " + label);
     return r.real_scalar;
 }
 
 const std::vector<long long>& FormattedCheckpoint::integers(const std::string& label) const {
     const auto& r = record(label);
-    if (r.kind != Kind::IntegerArray) throw std::runtime_error("fchk record is not an integer array: " + label);
+    if (r.kind != Kind::IntegerArray)
+        throw std::runtime_error("fchk record is not an integer array: " + label);
     return r.integer_array;
 }
 
 const std::vector<double>& FormattedCheckpoint::reals(const std::string& label) const {
     const auto& r = record(label);
-    if (r.kind != Kind::RealArray) throw std::runtime_error("fchk record is not a real array: " + label);
+    if (r.kind != Kind::RealArray)
+        throw std::runtime_error("fchk record is not a real array: " + label);
     return r.real_array;
 }
 

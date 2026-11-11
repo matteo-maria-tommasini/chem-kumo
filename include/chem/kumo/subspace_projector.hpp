@@ -20,11 +20,11 @@ public:
         : metric_(metric) {
         if (metric_.rows() == 0 || metric_.rows() != metric_.cols() ||
             columns.rows() != metric_.rows() || columns.cols() == 0 ||
-            columns.cols() > columns.rows() ||
-            !metric_.allFinite() || !columns.allFinite() ||
-            !std::isfinite(relative_rank_tolerance) ||
-            relative_rank_tolerance <= 0.0 || relative_rank_tolerance >= 1.0)
-            throw std::invalid_argument("SubspaceProjector: invalid dimensions, data, or tolerance");
+            columns.cols() > columns.rows() || !metric_.allFinite() || !columns.allFinite() ||
+            !std::isfinite(relative_rank_tolerance) || relative_rank_tolerance <= 0.0 ||
+            relative_rank_tolerance >= 1.0)
+            throw std::invalid_argument(
+                "SubspaceProjector: invalid dimensions, data, or tolerance");
 
         const double symmetry_error = (metric_ - metric_.transpose()).cwiseAbs().maxCoeff();
         if (symmetry_error > 1e-12 * std::max(1.0, metric_.cwiseAbs().maxCoeff()))
@@ -41,17 +41,20 @@ public:
         const auto& values = eig.eigenvalues();
         const double largest = values.maxCoeff();
         if (!(largest > 0.0) || values.minCoeff() <= relative_rank_tolerance * largest)
-            throw std::invalid_argument("SubspaceProjector: rank-deficient or ill-conditioned subspace");
+            throw std::invalid_argument(
+                "SubspaceProjector: rank-deficient or ill-conditioned subspace");
 
         // Symmetric inverse square root avoids an explicit matrix inverse.
-        const Eigen::MatrixXd inverse_sqrt =
-            eig.eigenvectors() * values.array().rsqrt().matrix().asDiagonal()
-            * eig.eigenvectors().transpose();
+        const Eigen::MatrixXd inverse_sqrt = eig.eigenvectors() *
+                                             values.array().rsqrt().matrix().asDiagonal() *
+                                             eig.eigenvectors().transpose();
         basis_.noalias() = columns * inverse_sqrt;
     }
 
     [[nodiscard]] Eigen::Index ambient_dimension() const noexcept { return metric_.rows(); }
+
     [[nodiscard]] Eigen::Index dimension() const noexcept { return basis_.cols(); }
+
     [[nodiscard]] const Eigen::MatrixXd& orthonormal_basis() const noexcept { return basis_; }
 
     /// Apply to one or several columns of AO expansion coefficients.
@@ -64,9 +67,7 @@ public:
     }
 
     /// Materialize the coefficient-space projector, for tests and diagnostics.
-    [[nodiscard]] Eigen::MatrixXd matrix() const {
-        return basis_ * (basis_.transpose() * metric_);
-    }
+    [[nodiscard]] Eigen::MatrixXd matrix() const { return basis_ * (basis_.transpose() * metric_); }
 
 private:
     Eigen::MatrixXd metric_;

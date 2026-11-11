@@ -36,6 +36,7 @@ public:
     explicit BasisSet(const FormattedCheckpoint& fchk);
 
     [[nodiscard]] const std::vector<Shell>& shells() const noexcept { return shells_; }
+
     [[nodiscard]] std::size_t function_count() const noexcept { return function_count_; }
 
 private:

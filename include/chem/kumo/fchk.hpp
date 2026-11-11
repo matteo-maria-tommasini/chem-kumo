@@ -22,6 +22,7 @@ public:
 
 private:
     enum class Kind { IntegerScalar, RealScalar, IntegerArray, RealArray };
+
     struct Record {
         Kind kind{};
         long long integer_scalar = 0;

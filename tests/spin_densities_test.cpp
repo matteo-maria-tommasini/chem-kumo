@@ -18,18 +18,18 @@ int main(int argc, char** argv) {
             double worst = 0.0;
             for (std::size_t i = 0; i < all.total.values().size(); ++i) {
                 const double av = all.alpha.values()[i], bv = all.beta.values()[i];
-                worst = std::max({worst, std::abs(av-a.values()[i]),
-                                  std::abs(bv-b.values()[i]),
-                                  std::abs(all.total.values()[i]-total.values()[i]),
-                                  std::abs(all.spin.values()[i]-spin.values()[i]),
-                                  std::abs(all.total.values()[i]-(av+bv)),
-                                  std::abs(all.spin.values()[i]-(av-bv))});
+                worst = std::max({worst, std::abs(av - a.values()[i]), std::abs(bv - b.values()[i]),
+                                  std::abs(all.total.values()[i] - total.values()[i]),
+                                  std::abs(all.spin.values()[i] - spin.values()[i]),
+                                  std::abs(all.total.values()[i] - (av + bv)),
+                                  std::abs(all.spin.values()[i] - (av - bv))});
             }
-            std::cout << argv[t] << " points=" << all.total.values().size()
-                      << " max_abs=" << worst << '\n';
+            std::cout << argv[t] << " points=" << all.total.values().size() << " max_abs=" << worst
+                      << '\n';
             if (!std::isfinite(worst) || worst > 1e-9) return 1;
         }
     } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n'; return 1;
+        std::cerr << e.what() << '\n';
+        return 1;
     }
 }

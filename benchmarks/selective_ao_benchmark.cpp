@@ -9,10 +9,15 @@
 #include <vector>
 
 using namespace chem::kumo;
+
 namespace {
 using Clock = std::chrono::steady_clock;
 volatile double sink = 0.0;
-struct Measurement { double seconds; double checksum; };
+
+struct Measurement {
+    double seconds;
+    double checksum;
+};
 
 template <class F> Measurement measure(F&& function, int repeats) {
     std::vector<double> times;
@@ -31,6 +36,7 @@ template <class F> Measurement measure(F&& function, int repeats) {
 
 constexpr std::array components{DensityComponent::Total, DensityComponent::Alpha,
                                 DensityComponent::Beta, DensityComponent::Spin};
+
 Request make_request(bool hessian) {
     Request request;
     for (const auto component : components) {
@@ -48,11 +54,12 @@ double checksum_common(const Results& result) {
         const auto& gradient = result.get(density.gradient());
         const auto& tau = result.get(density.tau());
         for (std::size_t p = 0; p < tau.points; ++p)
-            checksum += gradient.component(0)[p] + gradient.component(1)[p]
-                      + gradient.component(2)[p] + tau.component()[p];
+            checksum += gradient.component(0)[p] + gradient.component(1)[p] +
+                        gradient.component(2)[p] + tau.component()[p];
     }
     return checksum;
 }
+
 void validate(const Results& low, const Results& full) {
     for (const auto component : components) {
         const DensityDescriptor density{component};
@@ -65,7 +72,7 @@ void validate(const Results& low, const Results& full) {
                 for (std::size_t p = 0; p < a.points; ++p) {
                     const double x = a.component(c)[p], y = b.component(c)[p];
                     if (!std::isfinite(x) || !std::isfinite(y) ||
-                        std::abs(x-y) > 5e-11 * std::max({1.0, std::abs(x), std::abs(y)}))
+                        std::abs(x - y) > 5e-11 * std::max({1.0, std::abs(x), std::abs(y)}))
                         throw std::runtime_error("first/second-order numerical mismatch");
                 }
         }
@@ -75,7 +82,8 @@ void validate(const Results& low, const Results& full) {
 
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 5) {
-        std::cerr << "usage: kumo-selective-ao-benchmark FILE.fchk[.gz] [points=512] [block=128] [repeats=5]\n";
+        std::cerr
+            << "usage: kumo-selective-ao-benchmark FILE.fchk[.gz] [points=512] [block=128] [repeats=5]\n";
         return 2;
     }
     try {
@@ -98,7 +106,8 @@ int main(int argc, char** argv) {
         const auto first_order = [&] { return checksum_common(evaluator.evaluate(grid, first)); };
         const auto second_order = [&] { return checksum_common(evaluator.evaluate(grid, second)); };
         // Warm both paths; alternate measurement order across two passes.
-        (void)first_order(); (void)second_order();
+        (void)first_order();
+        (void)second_order();
         const auto a = measure(first_order, repeats);
         const auto b = measure(second_order, repeats);
         const auto c = measure(second_order, repeats);
@@ -108,8 +117,8 @@ int main(int argc, char** argv) {
         std::cout << "points=" << count << " block=" << block << " repeats=" << repeats
                   << " first_order_seconds=" << first_seconds
                   << " second_order_seconds=" << second_seconds
-                  << " ratio=" << second_seconds / first_seconds
-                  << " checksum=" << a.checksum << '\n';
+                  << " ratio=" << second_seconds / first_seconds << " checksum=" << a.checksum
+                  << '\n';
         // The second-order request additionally materializes Hessians. This is
         // an end-to-end workload comparison, not an isolated AO-kernel speedup.
     } catch (const std::exception& e) {

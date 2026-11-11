@@ -15,8 +15,8 @@ void require(bool condition) {
     if (!condition) throw std::runtime_error("atom charge Cube regression failed");
 }
 
-void verify_charge(const std::filesystem::path& path, int expected_z,
-                   double expected_charge, bool orbital) {
+void verify_charge(const std::filesystem::path& path, int expected_z, double expected_charge,
+                   bool orbital) {
     std::ifstream input(path);
     require(static_cast<bool>(input));
     std::string line;
@@ -43,14 +43,14 @@ void verify_charge(const std::filesystem::path& path, int expected_z,
 int main() {
     chem::kumo::Grid grid;
     grid.counts = Eigen::Vector3i(2, 2, 2);
-    const std::vector<chem::kumo::Atom> atoms{
-        {26, 16.0, Eigen::Vector3d(0.0, 0.0, 0.0)}
-    };
+    const std::vector<chem::kumo::Atom> atoms{{26, 16.0, Eigen::Vector3d(0.0, 0.0, 0.0)}};
     chem::kumo::Field field(grid, atoms, std::vector<double>(8, 0.5));
     require(field.atoms()[0].atomic_number == 26);
     require(field.atoms()[0].nuclear_charge == 16.0);
-    const auto density_path = std::filesystem::temp_directory_path() / "kumo-charge-density-test.cube";
-    const auto orbital_path = std::filesystem::temp_directory_path() / "kumo-charge-orbital-test.cube";
+    const auto density_path =
+        std::filesystem::temp_directory_path() / "kumo-charge-density-test.cube";
+    const auto orbital_path =
+        std::filesystem::temp_directory_path() / "kumo-charge-orbital-test.cube";
     try {
         field.write_cube(density_path);
         field.write_orbital_cube(orbital_path, 1);

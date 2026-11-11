@@ -39,24 +39,21 @@ public:
         inverse_ = normalized_.inverse();
         for (int axis = 0; axis < 3; ++axis)
             inverse_.row(axis) /= lengths_[axis];
-        if (!inverse_.allFinite())
-            throw std::invalid_argument("invalid inverse grid transform");
+        if (!inverse_.allFinite()) throw std::invalid_argument("invalid inverse grid transform");
     }
 
     [[nodiscard]] FieldSample sample(const Eigen::Vector3d& point_bohr) const {
-        if (!point_bohr.allFinite())
-            throw std::invalid_argument("nonfinite sampling point");
+        if (!point_bohr.allFinite()) throw std::invalid_argument("nonfinite sampling point");
         const Eigen::Vector3d delta = point_bohr - field_.grid().origin;
-        if (!delta.allFinite())
-            throw std::invalid_argument("nonfinite relative position");
+        if (!delta.allFinite()) throw std::invalid_argument("nonfinite relative position");
         const Eigen::Vector3d fractional = inverse_ * delta;
-        if (!fractional.allFinite())
-            throw std::invalid_argument("nonfinite grid coordinate");
+        if (!fractional.allFinite()) throw std::invalid_argument("nonfinite grid coordinate");
         Eigen::Vector3i lower;
         Eigen::Vector3d fraction;
         for (int axis = 0; axis < 3; ++axis) {
             const double upper = static_cast<double>(field_.grid().counts[axis] - 1);
-            const double epsilon = 64.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, upper);
+            const double epsilon =
+                64.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, upper);
             if (fractional[axis] < -epsilon || fractional[axis] > upper + epsilon)
                 return {0.0, false};
             const double q = std::clamp(fractional[axis], 0.0, upper);
@@ -75,8 +72,7 @@ public:
                         throw std::invalid_argument("nonfinite field value");
                     value += weight * sample_value;
                 }
-        if (!std::isfinite(value))
-            throw std::overflow_error("field interpolation overflow");
+        if (!std::isfinite(value)) throw std::overflow_error("field interpolation overflow");
         return {value, true};
     }
 

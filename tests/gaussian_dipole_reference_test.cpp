@@ -46,8 +46,8 @@ int validate(const std::string& path) {
     const double abs_error = (dipole - gaussian).cwiseAbs().maxCoeff();
     const double tolerance = 2e-5; // a.u.; Gaussian FCHK precision and AO contractions
 
-    std::cout << std::setprecision(12)
-              << "file=" << path << " N=" << electrons << " Q=" << charge << '\n'
+    std::cout << std::setprecision(12) << "file=" << path << " N=" << electrons << " Q=" << charge
+              << '\n'
               << "  nuclear_au=" << nuclear.transpose() << '\n'
               << "  electronic_au=" << electron.transpose() << '\n'
               << "  kumo_au=" << dipole.transpose() << '\n'
@@ -67,7 +67,8 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
-        for (int i = 1; i < argc; ++i) validate(argv[i]);
+        for (int i = 1; i < argc; ++i)
+            validate(argv[i]);
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << '\n';
         return 1;

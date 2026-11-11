@@ -1,3 +1,13 @@
-option('benchmarks', type: 'boolean', value: false, description: 'Build optional developer benchmarks')
+option(
+    'benchmarks',
+    type: 'boolean',
+    value: false,
+    description: 'Build optional developer benchmarks',
+)
 
-option('openmp', type: 'boolean', value: false, description: 'Enable OpenMP parallel evaluation of density grid blocks')
+option(
+    'openmp',
+    type: 'boolean',
+    value: false,
+    description: 'Enable OpenMP parallel evaluation of density grid blocks',
+)

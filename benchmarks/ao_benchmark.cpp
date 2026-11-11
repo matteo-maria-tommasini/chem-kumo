@@ -22,18 +22,28 @@ int main(int argc, char** argv) {
             for (int rep = 0; rep < repeats; ++rep) {
                 for (int i = 0; i < points; ++i) {
                     const double t = static_cast<double>(i);
-                    const Eigen::Vector3d r(0.013*t - 7.0, 3.0*std::sin(0.019*t), 3.0*std::cos(0.023*t));
-                    if (reference) evaluator.evaluate_into_reference(r, values);
-                    else evaluator.evaluate_into(r, values);
+                    const Eigen::Vector3d r(0.013 * t - 7.0, 3.0 * std::sin(0.019 * t),
+                                            3.0 * std::cos(0.023 * t));
+                    if (reference)
+                        evaluator.evaluate_into_reference(r, values);
+                    else
+                        evaluator.evaluate_into(r, values);
                     sink += values[0];
                 }
             }
-            return std::chrono::duration<double>(std::chrono::steady_clock::now()-begin).count()/repeats;
+            return std::chrono::duration<double>(std::chrono::steady_clock::now() - begin).count() /
+                   repeats;
         };
         const double old_time = run(true);
         const double new_time = run(false);
-        std::cout << "basis=" << evaluator.basis_size() << " points=" << points << " repeats=" << repeats << '\n'
-                  << "reference_ao_s=" << old_time << '\n' << "optimized_ao_s=" << new_time << '\n'
-                  << "speedup=" << old_time/new_time << '\n' << "checksum=" << sink << '\n';
-    } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
+        std::cout << "basis=" << evaluator.basis_size() << " points=" << points
+                  << " repeats=" << repeats << '\n'
+                  << "reference_ao_s=" << old_time << '\n'
+                  << "optimized_ao_s=" << new_time << '\n'
+                  << "speedup=" << old_time / new_time << '\n'
+                  << "checksum=" << sink << '\n';
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        return 1;
+    }
 }

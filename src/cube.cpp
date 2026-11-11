@@ -49,6 +49,7 @@ void check_comments(const CubeMetadata& metadata) {
         metadata.second_comment.find_first_of("\r\n") != std::string::npos)
         throw std::invalid_argument("Cube comments must be single lines");
 }
+
 // A bounded streaming gzip decoder. Errors are retained separately because
 // formatted iostream extraction may translate streambuf exceptions into EOF.
 class GzipBuffer final : public std::streambuf {
@@ -60,13 +61,19 @@ public:
         initialized_ = true;
         setg(output_.data(), output_.data(), output_.data());
     }
-    ~GzipBuffer() override { if (initialized_) inflateEnd(&z_); }
+
+    ~GzipBuffer() override {
+        if (initialized_) inflateEnd(&z_);
+    }
+
     GzipBuffer(const GzipBuffer&) = delete;
     GzipBuffer& operator=(const GzipBuffer&) = delete;
+
     void validate() const {
         if (!error_.empty()) throw std::runtime_error(error_);
         if (!finished_) throw std::runtime_error("truncated gzip Cube stream");
     }
+
 protected:
     int_type underflow() override {
         if (gptr() < egptr()) return traits_type::to_int_type(*gptr());
@@ -75,7 +82,10 @@ protected:
             if (!z_.avail_in) {
                 source_.read(reinterpret_cast<char*>(input_.data()), input_.size());
                 const auto n = source_.gcount();
-                if (n == 0) { error_ = "truncated gzip Cube stream"; return traits_type::eof(); }
+                if (n == 0) {
+                    error_ = "truncated gzip Cube stream";
+                    return traits_type::eof();
+                }
                 z_.next_in = input_.data();
                 z_.avail_in = static_cast<uInt>(n);
             }
@@ -97,6 +107,7 @@ protected:
             if (finished_ || !error_.empty()) return traits_type::eof();
         }
     }
+
 private:
     std::ifstream source_;
     z_stream z_{};
@@ -126,7 +137,8 @@ CubeData read_cube(const std::filesystem::path& path) {
     // Consume to the physical gzip end to verify trailer CRC32/ISIZE.
     decoded.clear();
     std::array<char, 4096> discard{};
-    while (decoded.read(discard.data(), discard.size()) || decoded.gcount()) {}
+    while (decoded.read(discard.data(), discard.size()) || decoded.gcount()) {
+    }
     buffer.validate();
     return result;
 }
@@ -174,8 +186,8 @@ CubeData parse_cube(std::istream& input) {
     for (long long i = 0; i < atom_count; ++i) {
         auto row = header_row(input);
         Atom atom;
-        if (!(row >> atom.atomic_number >> atom.nuclear_charge >>
-              atom.position[0] >> atom.position[1] >> atom.position[2]))
+        if (!(row >> atom.atomic_number >> atom.nuclear_charge >> atom.position[0] >>
+              atom.position[1] >> atom.position[2]))
             throw std::runtime_error("invalid Cube atom record");
         end_row(row);
         if (atom.atomic_number < 0 || atom.atomic_number > 118 ||
@@ -186,7 +198,8 @@ CubeData parse_cube(std::istream& input) {
     if (metadata.coordinates_in_angstrom) {
         grid.origin *= angstrom_to_bohr;
         grid.steps *= angstrom_to_bohr;
-        for (auto& atom : atoms) atom.position *= angstrom_to_bohr;
+        for (auto& atom : atoms)
+            atom.position *= angstrom_to_bohr;
     }
 
     std::vector<double> values;
@@ -204,8 +217,7 @@ CubeData parse_cube(std::istream& input) {
     }
     if (input.bad()) throw std::runtime_error("Cube input read failure");
     if (values.size() != count) throw std::runtime_error("truncated Cube samples");
-    return {Field(std::move(grid), std::move(atoms), std::move(values)),
-            std::move(metadata)};
+    return {Field(std::move(grid), std::move(atoms), std::move(values)), std::move(metadata)};
 }
 } // namespace
 
@@ -222,11 +234,13 @@ void write_cube(const CubeData& cube, const std::filesystem::path& path) {
     output << cube.metadata.first_comment << '\n' << cube.metadata.second_comment << '\n';
     output << std::scientific << std::setprecision(12);
     output << atoms.size();
-    for (int k = 0; k < 3; ++k) output << ' ' << grid.origin[k] * factor;
+    for (int k = 0; k < 3; ++k)
+        output << ' ' << grid.origin[k] * factor;
     output << '\n';
     for (int axis = 0; axis < 3; ++axis) {
         output << (cube.metadata.coordinates_in_angstrom ? -grid.counts[axis] : grid.counts[axis]);
-        for (int k = 0; k < 3; ++k) output << ' ' << grid.steps(k, axis) * factor;
+        for (int k = 0; k < 3; ++k)
+            output << ' ' << grid.steps(k, axis) * factor;
         output << '\n';
     }
     for (const auto& atom : atoms) {
@@ -234,7 +248,8 @@ void write_cube(const CubeData& cube, const std::filesystem::path& path) {
             !std::isfinite(atom.nuclear_charge) || !atom.position.allFinite())
             throw std::invalid_argument("invalid Cube atom");
         output << atom.atomic_number << ' ' << atom.nuclear_charge;
-        for (int k = 0; k < 3; ++k) output << ' ' << atom.position[k] * factor;
+        for (int k = 0; k < 3; ++k)
+            output << ' ' << atom.position[k] * factor;
         output << '\n';
     }
     for (std::size_t i = 0; i < values.size(); ++i) {

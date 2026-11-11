@@ -26,12 +26,14 @@ int main(int argc, char** argv) {
 #else
             (void)threads;
 #endif
-            for (std::size_t block : {std::size_t(1), std::size_t(32), std::size_t(64), std::size_t(128)}) {
+            for (std::size_t block :
+                 {std::size_t(1), std::size_t(32), std::size_t(64), std::size_t(128)}) {
                 const auto fields = mol.densities_blocked(grid, components, block);
                 for (auto spin : components) {
                     const auto a = reference.at(spin).values();
                     const auto b = fields.at(spin).values();
-                    if (a.size() != b.size()) throw std::runtime_error("parallel density size mismatch");
+                    if (a.size() != b.size())
+                        throw std::runtime_error("parallel density size mismatch");
                     for (std::size_t i = 0; i < a.size(); ++i) {
                         if (!std::isfinite(b[i]) || std::abs(a[i] - b[i]) > 1e-10)
                             throw std::runtime_error("parallel density numerical mismatch");

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
+
 int main(int argc, char** argv) {
     if (argc < 2 || argc > 4) {
         std::cerr << "usage: kumo-benchmark input.fchk [spacing_bohr=0.3] [repeats=3]\n";
@@ -20,7 +21,7 @@ int main(int argc, char** argv) {
             const auto t0 = std::chrono::steady_clock::now();
             fn();
             const auto t1 = std::chrono::steady_clock::now();
-            best = std::min(best, std::chrono::duration<double>(t1-t0).count());
+            best = std::min(best, std::chrono::duration<double>(t1 - t0).count());
         }
         return best;
     };
@@ -39,12 +40,12 @@ int main(int argc, char** argv) {
         auto f = molecule.densities(grid, {Spin::Total, Spin::Difference});
         sink = sink + f.at(Spin::Total).values()[0];
     });
-    std::cout << "basis=" << molecule.basis_size()
-              << " grid=" << static_cast<long long>(grid.counts[0])*grid.counts[1]*grid.counts[2]
+    std::cout << "basis=" << molecule.basis_size() << " grid="
+              << static_cast<long long>(grid.counts[0]) * grid.counts[1] * grid.counts[2]
               << " repeats=" << repeats << "\n"
               << "four_separate_s=" << separate << "\n"
               << "four_combined_s=" << combined << "\n"
               << "two_selected_s=" << selective << "\n"
-              << "combined_speedup=" << separate/combined << "\n"
+              << "combined_speedup=" << separate / combined << "\n"
               << "sink=" << sink << "\n";
 }

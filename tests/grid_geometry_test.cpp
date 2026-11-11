@@ -11,8 +11,7 @@
 namespace {
 
 void require(bool condition) {
-    if (!condition)
-        throw std::runtime_error("grid geometry test failed");
+    if (!condition) throw std::runtime_error("grid geometry test failed");
 }
 
 void expect_invalid(const std::function<void()>& operation) {
@@ -36,7 +35,8 @@ void test_scaled_grids() {
         grid.steps = Eigen::Matrix3d::Identity() * scale;
 
         chem::kumo::Field field(
-            grid, std::vector<chem::kumo::Atom>{}, std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
+            grid, std::vector<chem::kumo::Atom>{},
+            std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
 
         require(field.values().size() == 60);
     }
@@ -47,13 +47,10 @@ void test_oblique_grid() {
     grid.counts = Eigen::Vector3i(2, 3, 4);
     grid.origin = Eigen::Vector3d(1.0, 2.0, 3.0);
 
-    grid.steps <<
-        1.0, 0.2, 0.1,
-        0.0, 1.0, 0.3,
-        0.0, 0.0, 1.0;
+    grid.steps << 1.0, 0.2, 0.1, 0.0, 1.0, 0.3, 0.0, 0.0, 1.0;
 
-    chem::kumo::Field field(
-        grid, std::vector<chem::kumo::Atom>{}, std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
+    chem::kumo::Field field(grid, std::vector<chem::kumo::Atom>{},
+                            std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
 
     require(field.values().size() == 24);
 }
@@ -63,14 +60,12 @@ void test_degenerate_grid() {
     grid.counts = Eigen::Vector3i(2, 2, 2);
     grid.origin = Eigen::Vector3d::Zero();
 
-    grid.steps <<
-        1.0, 1.0, 0.0,
-        0.0, 0.0, 1.0,
-        0.0, 0.0, 0.0;
+    grid.steps << 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0;
 
     expect_invalid([&]() {
         chem::kumo::Field field(
-            grid, std::vector<chem::kumo::Atom>{}, std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
+            grid, std::vector<chem::kumo::Atom>{},
+            std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
     });
 }
 
@@ -80,12 +75,12 @@ void test_nonfinite_grid() {
     grid.origin = Eigen::Vector3d::Zero();
     grid.steps = Eigen::Matrix3d::Identity();
 
-    grid.origin.x() =
-        std::numeric_limits<double>::quiet_NaN();
+    grid.origin.x() = std::numeric_limits<double>::quiet_NaN();
 
     expect_invalid([&]() {
         chem::kumo::Field field(
-            grid, std::vector<chem::kumo::Atom>{}, std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
+            grid, std::vector<chem::kumo::Atom>{},
+            std::vector<double>(static_cast<std::size_t>(grid.counts.prod()), 0.0));
     });
 }
 

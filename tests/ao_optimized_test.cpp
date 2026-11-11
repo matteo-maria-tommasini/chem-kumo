@@ -14,13 +14,17 @@ int main(int argc, char** argv) {
             double worst = 0;
             for (int i = 0; i < 1000; ++i) {
                 const double t = static_cast<double>(i);
-                Eigen::Vector3d point(0.137*t - 10.0, std::sin(t*0.21)*4.0, std::cos(t*0.13)*3.0);
+                Eigen::Vector3d point(0.137 * t - 10.0, std::sin(t * 0.21) * 4.0,
+                                      std::cos(t * 0.13) * 3.0);
                 eval.evaluate_into(point, fast);
                 eval.evaluate_into_reference(point, reference);
-                worst = std::max(worst, (fast-reference).cwiseAbs().maxCoeff());
+                worst = std::max(worst, (fast - reference).cwiseAbs().maxCoeff());
             }
             std::cout << argv[a] << " basis=" << eval.basis_size() << " max_abs=" << worst << '\n';
             if (!std::isfinite(worst) || worst > 1e-12) return 1;
         }
-    } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << '\n';
+        return 1;
+    }
 }

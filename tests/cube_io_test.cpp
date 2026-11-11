@@ -14,13 +14,17 @@ namespace {
 void require(bool condition) {
     if (!condition) throw std::runtime_error("Cube I/O regression failed");
 }
+
 void expect_failure(const std::filesystem::path& path) {
     bool failed = false;
-    try { (void)chem::kumo::read_cube(path); }
-    catch (const std::exception&) { failed = true; }
+    try {
+        (void)chem::kumo::read_cube(path);
+    } catch (const std::exception&) {
+        failed = true;
+    }
     require(failed);
 }
-}
+} // namespace
 
 int main() {
     namespace fs = std::filesystem;
@@ -32,9 +36,7 @@ int main() {
         chem::kumo::Grid grid;
         grid.counts = Eigen::Vector3i(2, 3, 4);
         grid.origin = Eigen::Vector3d(0.2, -0.3, 0.5);
-        grid.steps << 0.2, 0.01, 0.03,
-                      0.0, 0.3, 0.02,
-                      0.0, 0.0, 0.4;
+        grid.steps << 0.2, 0.01, 0.03, 0.0, 0.3, 0.02, 0.0, 0.0, 0.4;
         std::vector<double> samples(24);
         for (std::size_t i = 0; i < samples.size(); ++i)
             samples[i] = static_cast<double>(i) / 7.0;
@@ -56,7 +58,8 @@ int main() {
         auto gzloaded = chem::kumo::read_cube(zipped);
         require(gzloaded.metadata.first_comment == loaded.metadata.first_comment);
         require(gzloaded.metadata.second_comment == loaded.metadata.second_comment);
-        require(gzloaded.metadata.coordinates_in_angstrom == loaded.metadata.coordinates_in_angstrom);
+        require(gzloaded.metadata.coordinates_in_angstrom ==
+                loaded.metadata.coordinates_in_angstrom);
         require((gzloaded.field.grid().origin - loaded.field.grid().origin).norm() == 0);
         require((gzloaded.field.grid().steps - loaded.field.grid().steps).norm() == 0);
         require(gzloaded.field.grid().counts == loaded.field.grid().counts);
@@ -102,14 +105,30 @@ int main() {
         chem::kumo::FieldSampler sampler(loaded.field);
         require(sampler.sample(point).inside);
 
-        { std::ofstream out(bad); out << "a\nb\n0 0 0 0\n2 1 0 0\n2 0 1 0\n2 0 0 1\n1 2 3\n"; }
+        {
+            std::ofstream out(bad);
+            out << "a\nb\n0 0 0 0\n2 1 0 0\n2 0 1 0\n2 0 0 1\n1 2 3\n";
+        }
         expect_failure(bad);
-        { std::ofstream out(bad); out << "a\nb\n0 0 0 0 2\n2 1 0 0\n2 0 1 0\n2 0 0 1\n"; }
+        {
+            std::ofstream out(bad);
+            out << "a\nb\n0 0 0 0 2\n2 1 0 0\n2 0 1 0\n2 0 0 1\n";
+        }
         expect_failure(bad);
-        { std::ofstream out(bad); out << "a\nb\n-1 0 0 0\n2 1 0 0\n2 0 1 0\n2 0 0 1\n"; }
+        {
+            std::ofstream out(bad);
+            out << "a\nb\n-1 0 0 0\n2 1 0 0\n2 0 1 0\n2 0 0 1\n";
+        }
         expect_failure(bad);
     } catch (...) {
-        fs::remove(base); fs::remove(bad); fs::remove(zipped); fs::remove(corrupt); throw;
+        fs::remove(base);
+        fs::remove(bad);
+        fs::remove(zipped);
+        fs::remove(corrupt);
+        throw;
     }
-    fs::remove(base); fs::remove(bad); fs::remove(zipped); fs::remove(corrupt);
+    fs::remove(base);
+    fs::remove(bad);
+    fs::remove(zipped);
+    fs::remove(corrupt);
 }

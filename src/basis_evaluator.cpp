@@ -14,13 +14,15 @@ namespace {
 double factorial(int n) {
     if (n < 0) throw std::runtime_error("negative factorial argument");
     double value = 1.0;
-    for (int i = 2; i <= n; ++i) value *= static_cast<double>(i);
+    for (int i = 2; i <= n; ++i)
+        value *= static_cast<double>(i);
     return value;
 }
 
 double integer_power(double x, int n) noexcept {
     double result = 1.0;
-    for (int i = 0; i < n; ++i) result *= x;
+    for (int i = 0; i < n; ++i)
+        result *= x;
     return result;
 }
 
@@ -39,10 +41,11 @@ double c2pcff(int l, int m, int lx, int ly) {
     const int ma = std::abs(m);
     if (ma > l || lz < 0) return 0.0;
 
-    const double a = std::sqrt(factorial(2 * lx) * factorial(2 * ly) * factorial(2 * lz) * factorial(l) /
-                               (factorial(2 * l) * factorial(lx) * factorial(ly) * factorial(lz)));
-    const double b = std::sqrt(factorial(l - ma) / factorial(l + ma)) /
-                     (std::pow(2.0, l) * factorial(l));
+    const double a =
+        std::sqrt(factorial(2 * lx) * factorial(2 * ly) * factorial(2 * lz) * factorial(l) /
+                  (factorial(2 * l) * factorial(lx) * factorial(ly) * factorial(lz)));
+    const double b =
+        std::sqrt(factorial(l - ma) / factorial(l + ma)) / (std::pow(2.0, l) * factorial(l));
     const int ilim = (l - ma) / 2;
     const int j = (l - ma - lz) / 2;
     double g = 0.0;
@@ -55,8 +58,8 @@ double c2pcff(int l, int m, int lx, int ly) {
                          factorial(i) / (factorial(j) * factorial(i - j));
         for (int k = 0; k <= j; ++k) {
             if (lx - 2 * k < 0 || lx - 2 * k > ma) continue;
-            const double d = factorial(j) / (factorial(k) * factorial(j - k)) *
-                             factorial(ma) / (factorial(lx - 2 * k) * factorial(ma + 2 * k - lx));
+            const double d = factorial(j) / (factorial(k) * factorial(j - k)) * factorial(ma) /
+                             (factorial(lx - 2 * k) * factorial(ma + 2 * k - lx));
             double e = 0.0;
             const int k_minus_lx2 = k - lx / 2;
             if (m == 0 && (lx % 2) == 0) e = std::pow(-1.0, k_minus_lx2);
@@ -116,12 +119,10 @@ Eigen::MatrixXd gaussian_cartesian_to_pure(int l) {
 BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
     std::size_t output_offset = 0;
 
-    const auto add_block = [&](const Shell& shell,
-                               int angular_momentum,
+    const auto add_block = [&](const Shell& shell, int angular_momentum,
                                const std::vector<double>& coefficients,
                                ShellRepresentation representation,
-                               std::vector<PreparedBlock>& blocks,
-                               std::size_t& max_cartesian_count,
+                               std::vector<PreparedBlock>& blocks, std::size_t& max_cartesian_count,
                                std::size_t& offset) {
         PreparedBlock block;
         block.origin = shell.origin;
@@ -135,8 +136,10 @@ BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
                                        static_cast<Eigen::Index>(nprim));
         for (std::size_t k = 0; k < ncart; ++k) {
             for (std::size_t p = 0; p < nprim; ++p) {
-                block.primitive_weights(static_cast<Eigen::Index>(k), static_cast<Eigen::Index>(p)) =
-                    coefficients[p] * detail::cartesian_primitive_normalization(block.exponents[p], block.powers[k]);
+                block.primitive_weights(static_cast<Eigen::Index>(k),
+                                        static_cast<Eigen::Index>(p)) =
+                    coefficients[p] *
+                    detail::cartesian_primitive_normalization(block.exponents[p], block.powers[k]);
             }
         }
 
@@ -155,10 +158,10 @@ BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
     blocks_.reserve(basis_.shells().size() + 4U);
     for (const auto& shell : basis_.shells()) {
         if (shell.is_sp) {
-            add_block(shell, 0, shell.coefficients, ShellRepresentation::Cartesian,
-                      blocks_, max_cartesian_count_, output_offset);
-            add_block(shell, 1, shell.p_coefficients, ShellRepresentation::Cartesian,
-                      blocks_, max_cartesian_count_, output_offset);
+            add_block(shell, 0, shell.coefficients, ShellRepresentation::Cartesian, blocks_,
+                      max_cartesian_count_, output_offset);
+            add_block(shell, 1, shell.p_coefficients, ShellRepresentation::Cartesian, blocks_,
+                      max_cartesian_count_, output_offset);
         } else {
             add_block(shell, shell.angular_momentum, shell.coefficients, shell.representation,
                       blocks_, max_cartesian_count_, output_offset);
@@ -186,8 +189,8 @@ double overlap_axis(int a, int b, double alpha, double beta, double A, double B)
     for (int i = 0; i <= a; ++i) {
         double bin_b = 1.0;
         for (int j = 0; j <= b; ++j) {
-            result += bin_a * bin_b * integer_power(PA, a - i) *
-                      integer_power(PB, b - j) * moments[static_cast<std::size_t>(i + j)];
+            result += bin_a * bin_b * integer_power(PA, a - i) * integer_power(PB, b - j) *
+                      moments[static_cast<std::size_t>(i + j)];
             if (j < b) bin_b *= static_cast<double>(b - j) / (j + 1);
         }
         if (i < a) bin_a *= static_cast<double>(a - i) / (i + 1);
@@ -203,9 +206,9 @@ Eigen::MatrixXd BasisEvaluator::overlap_matrix() const {
         const auto& A = blocks_[a];
         for (std::size_t b = a; b < blocks_.size(); ++b) {
             const auto& B = blocks_[b];
-            Eigen::MatrixXd cart = Eigen::MatrixXd::Zero(
-                static_cast<Eigen::Index>(A.powers.size()),
-                static_cast<Eigen::Index>(B.powers.size()));
+            Eigen::MatrixXd cart =
+                Eigen::MatrixXd::Zero(static_cast<Eigen::Index>(A.powers.size()),
+                                      static_cast<Eigen::Index>(B.powers.size()));
             for (std::size_t i = 0; i < A.powers.size(); ++i) {
                 const auto& x = A.powers[i];
                 for (std::size_t j = 0; j < B.powers.size(); ++j) {
@@ -218,8 +221,11 @@ Eigen::MatrixXd BasisEvaluator::overlap_matrix() const {
                                 overlap_axis(x.x, y.x, alpha, beta, A.origin.x(), B.origin.x()) *
                                 overlap_axis(x.y, y.y, alpha, beta, A.origin.y(), B.origin.y()) *
                                 overlap_axis(x.z, y.z, alpha, beta, A.origin.z(), B.origin.z());
-                            value += A.primitive_weights(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(p)) *
-                                     B.primitive_weights(static_cast<Eigen::Index>(j), static_cast<Eigen::Index>(q)) * primitive;
+                            value += A.primitive_weights(static_cast<Eigen::Index>(i),
+                                                         static_cast<Eigen::Index>(p)) *
+                                     B.primitive_weights(static_cast<Eigen::Index>(j),
+                                                         static_cast<Eigen::Index>(q)) *
+                                     primitive;
                         }
                     cart(static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(j)) = value;
                 }
@@ -242,8 +248,10 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
     const auto n = static_cast<Eigen::Index>(basis_size());
     CartesianAOMoments result;
     result.overlap = Eigen::MatrixXd::Zero(n, n);
-    for (auto& m : result.first) m = Eigen::MatrixXd::Zero(n, n);
-    for (auto& m : result.second) m = Eigen::MatrixXd::Zero(n, n);
+    for (auto& m : result.first)
+        m = Eigen::MatrixXd::Zero(n, n);
+    for (auto& m : result.second)
+        m = Eigen::MatrixXd::Zero(n, n);
 
     for (std::size_t ia = 0; ia < blocks_.size(); ++ia) {
         const auto& A = blocks_[ia];
@@ -252,7 +260,8 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
             const auto nc = static_cast<Eigen::Index>(A.powers.size());
             const auto mc = static_cast<Eigen::Index>(B.powers.size());
             std::array<Eigen::MatrixXd, 10> cart;
-            for (auto& m : cart) m = Eigen::MatrixXd::Zero(nc, mc);
+            for (auto& m : cart)
+                m = Eigen::MatrixXd::Zero(nc, mc);
 
             for (Eigen::Index i = 0; i < nc; ++i) {
                 const auto& x = A.powers[static_cast<std::size_t>(i)];
@@ -269,12 +278,12 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
                             double v[3][3];
                             for (int d = 0; d < 3; ++d) {
                                 const double c = B.origin[d];
-                                const double s0 = overlap_axis(ap[d], bp[d], alpha, beta,
-                                                               A.origin[d], c);
-                                const double s1 = overlap_axis(ap[d], bp[d] + 1, alpha, beta,
-                                                               A.origin[d], c);
-                                const double s2 = overlap_axis(ap[d], bp[d] + 2, alpha, beta,
-                                                               A.origin[d], c);
+                                const double s0 =
+                                    overlap_axis(ap[d], bp[d], alpha, beta, A.origin[d], c);
+                                const double s1 =
+                                    overlap_axis(ap[d], bp[d] + 1, alpha, beta, A.origin[d], c);
+                                const double s2 =
+                                    overlap_axis(ap[d], bp[d] + 2, alpha, beta, A.origin[d], c);
                                 v[d][0] = s0;
                                 v[d][1] = s1 + c * s0;
                                 v[d][2] = s2 + 2.0 * c * s1 + c * c * s0;
@@ -283,21 +292,17 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
                                 A.primitive_weights(i, static_cast<Eigen::Index>(p)) *
                                 B.primitive_weights(j, static_cast<Eigen::Index>(q));
                             const double values[10] = {
-                                v[0][0] * v[1][0] * v[2][0],
-                                v[0][1] * v[1][0] * v[2][0],
-                                v[0][0] * v[1][1] * v[2][0],
-                                v[0][0] * v[1][0] * v[2][1],
-                                v[0][2] * v[1][0] * v[2][0],
-                                v[0][0] * v[1][2] * v[2][0],
-                                v[0][0] * v[1][0] * v[2][2],
-                                v[0][1] * v[1][1] * v[2][0],
-                                v[0][1] * v[1][0] * v[2][1],
-                                v[0][0] * v[1][1] * v[2][1]
-                            };
-                            for (int k = 0; k < 10; ++k) sums[k] += weight * values[k];
+                                v[0][0] * v[1][0] * v[2][0], v[0][1] * v[1][0] * v[2][0],
+                                v[0][0] * v[1][1] * v[2][0], v[0][0] * v[1][0] * v[2][1],
+                                v[0][2] * v[1][0] * v[2][0], v[0][0] * v[1][2] * v[2][0],
+                                v[0][0] * v[1][0] * v[2][2], v[0][1] * v[1][1] * v[2][0],
+                                v[0][1] * v[1][0] * v[2][1], v[0][0] * v[1][1] * v[2][1]};
+                            for (int k = 0; k < 10; ++k)
+                                sums[k] += weight * values[k];
                         }
                     }
-                    for (int k = 0; k < 10; ++k) cart[k](i, j) = sums[k];
+                    for (int k = 0; k < 10; ++k)
+                        cart[k](i, j) = sums[k];
                 }
             }
             const auto ra = static_cast<Eigen::Index>(A.output_offset);
@@ -308,9 +313,10 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
                 Eigen::MatrixXd block = std::move(cart[k]);
                 if (A.pure_transform.size()) block = (A.pure_transform * block).eval();
                 if (B.pure_transform.size()) block = (block * B.pure_transform.transpose()).eval();
-                Eigen::MatrixXd* out = k == 0 ? &result.overlap :
-                    (k <= 3 ? &result.first[static_cast<std::size_t>(k - 1)] :
-                              &result.second[static_cast<std::size_t>(k - 4)]);
+                Eigen::MatrixXd* out =
+                    k == 0 ? &result.overlap
+                           : (k <= 3 ? &result.first[static_cast<std::size_t>(k - 1)]
+                                     : &result.second[static_cast<std::size_t>(k - 4)]);
                 out->block(ra, rb, na, nb) = block;
                 if (ia != ib) out->block(rb, ra, nb, na) = block.transpose();
             }
@@ -320,9 +326,9 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
 }
 
 void BasisEvaluator::evaluate_into_impl_reference(const Eigen::Vector3d& point,
-                                        Eigen::Ref<Eigen::VectorXd> output,
-                                        std::vector<double>& cartesian_scratch,
-                                        std::vector<double>& radial_scratch) const {
+                                                  Eigen::Ref<Eigen::VectorXd> output,
+                                                  std::vector<double>& cartesian_scratch,
+                                                  std::vector<double>& radial_scratch) const {
     if (static_cast<std::size_t>(output.size()) != basis_.function_count()) {
         throw std::runtime_error("AO output vector has wrong basis size");
     }
@@ -343,8 +349,7 @@ void BasisEvaluator::evaluate_into_impl_reference(const Eigen::Vector3d& point,
         for (std::size_t k = 0; k < ncart; ++k) {
             const auto& power = block.powers[k];
             const double polynomial = integer_power(r.x(), power.x) *
-                                      integer_power(r.y(), power.y) *
-                                      integer_power(r.z(), power.z);
+                                      integer_power(r.y(), power.y) * integer_power(r.z(), power.z);
             double radial_sum = 0.0;
             for (std::size_t p = 0; p < nprim; ++p) {
                 radial_sum += block.primitive_weights(static_cast<Eigen::Index>(k),
@@ -361,13 +366,12 @@ void BasisEvaluator::evaluate_into_impl_reference(const Eigen::Vector3d& point,
             }
         } else {
             const Eigen::Map<const Eigen::VectorXd> cartesian(cartesian_scratch.data(),
-                                                               static_cast<Eigen::Index>(ncart));
+                                                              static_cast<Eigen::Index>(ncart));
             output.segment(out_offset, static_cast<Eigen::Index>(block.output_count)).noalias() =
                 block.pure_transform * cartesian;
         }
     }
 }
-
 
 void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
                                         Eigen::Ref<Eigen::VectorXd> output,
@@ -392,8 +396,9 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
         }
         // Reuse Cartesian powers across all functions in this shell.
         // Preserve the original primitive summation order for reproducibility.
-        const int l = block.powers.empty() ? 0 :
-            block.powers.front().x + block.powers.front().y + block.powers.front().z;
+        const int l = block.powers.empty() ? 0
+                                           : block.powers.front().x + block.powers.front().y +
+                                                 block.powers.front().z;
         double xp_stack[32], yp_stack[32], zp_stack[32];
         std::vector<double> xp_heap, yp_heap, zp_heap;
         double *xp = xp_stack, *yp = yp_stack, *zp = zp_stack;
@@ -401,13 +406,15 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
             xp_heap.resize(static_cast<std::size_t>(l + 1));
             yp_heap.resize(static_cast<std::size_t>(l + 1));
             zp_heap.resize(static_cast<std::size_t>(l + 1));
-            xp = xp_heap.data(); yp = yp_heap.data(); zp = zp_heap.data();
+            xp = xp_heap.data();
+            yp = yp_heap.data();
+            zp = zp_heap.data();
         }
         xp[0] = yp[0] = zp[0] = 1.0;
         for (int n = 1; n <= l; ++n) {
-            xp[n] = xp[n-1] * r.x();
-            yp[n] = yp[n-1] * r.y();
-            zp[n] = zp[n-1] * r.z();
+            xp[n] = xp[n - 1] * r.x();
+            yp[n] = yp[n - 1] * r.y();
+            zp[n] = zp[n - 1] * r.z();
         }
         for (std::size_t k = 0; k < ncart; ++k) {
             const auto& power = block.powers[k];
@@ -428,7 +435,7 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
             }
         } else {
             const Eigen::Map<const Eigen::VectorXd> cartesian(cartesian_scratch.data(),
-                                                               static_cast<Eigen::Index>(ncart));
+                                                              static_cast<Eigen::Index>(ncart));
             output.segment(out_offset, static_cast<Eigen::Index>(block.output_count)).noalias() =
                 block.pure_transform * cartesian;
         }
@@ -460,8 +467,8 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point,
             const int degrees[3] = {power.x, power.y, power.z};
             for (std::size_t p = 0; p < block.exponents.size(); ++p) {
                 const double a = block.exponents[p];
-                const double weight = block.primitive_weights(k, static_cast<Eigen::Index>(p)) *
-                                      std::exp(-a * r2);
+                const double weight =
+                    block.primitive_weights(k, static_cast<Eigen::Index>(p)) * std::exp(-a * r2);
                 double v[3], d[3], dd[3];
                 for (int axis = 0; axis < 3; ++axis) {
                     const int l = degrees[axis];
@@ -470,8 +477,8 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point,
                     v[axis] = xl;
                     d[axis] = (l ? l * integer_power(x, l - 1) : 0.0) - 2.0 * a * x * xl;
                     if (order == 2)
-                        dd[axis] = (l >= 2 ? l * (l - 1) * integer_power(x, l - 2) : 0.0)
-                                 - 2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl;
+                        dd[axis] = (l >= 2 ? l * (l - 1) * integer_power(x, l - 2) : 0.0) -
+                                   2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl;
                 }
                 cart(k, 0) += weight * v[0] * v[1] * v[2];
                 cart(k, 1) += weight * d[0] * v[1] * v[2];
@@ -497,8 +504,7 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point,
         const auto count = static_cast<Eigen::Index>(block.output_count);
         result.values.segment(offset, count) = transformed.col(0);
         result.gradient.middleRows(offset, count) = transformed.middleCols(1, 3);
-        if (order == 2)
-            result.hessian.middleRows(offset, count) = transformed.middleCols(4, 6);
+        if (order == 2) result.hessian.middleRows(offset, count) = transformed.middleCols(4, 6);
     }
     return result;
 }
@@ -517,7 +523,7 @@ void BasisEvaluator::evaluate_into(const Eigen::Vector3d& point,
 }
 
 void BasisEvaluator::evaluate_into_reference(const Eigen::Vector3d& point,
-                                              Eigen::Ref<Eigen::VectorXd> output) const {
+                                             Eigen::Ref<Eigen::VectorXd> output) const {
     std::vector<double> cartesian_scratch(max_cartesian_count_);
     std::vector<double> radial_scratch(max_primitive_count_);
     evaluate_into_impl_reference(point, output, cartesian_scratch, radial_scratch);
@@ -539,19 +545,22 @@ void BasisEvaluator::evaluate_batch(
 }
 
 MolecularOrbitals::MolecularOrbitals(const FormattedCheckpoint& fchk, OrbitalSpin spin) {
-    const auto nbasis = detail::checked_positive_size(
-        fchk.integer("Number of basis functions"), "Number of basis functions");
-    const char* label = spin == OrbitalSpin::Alpha ? "Alpha MO coefficients" : "Beta MO coefficients";
+    const auto nbasis = detail::checked_positive_size(fchk.integer("Number of basis functions"),
+                                                      "Number of basis functions");
+    const char* label =
+        spin == OrbitalSpin::Alpha ? "Alpha MO coefficients" : "Beta MO coefficients";
     if (!fchk.contains(label)) {
         throw std::runtime_error(std::string("missing fchk record: ") + label);
     }
     const auto& flat = fchk.reals(label);
-    if (flat.size() % nbasis != 0U) throw std::runtime_error(std::string("invalid ") + label + " array size");
+    if (flat.size() % nbasis != 0U)
+        throw std::runtime_error(std::string("invalid ") + label + " array size");
     const auto nmo = flat.size() / nbasis;
     coefficients_.resize(static_cast<Eigen::Index>(nbasis), static_cast<Eigen::Index>(nmo));
     for (std::size_t mo = 0; mo < nmo; ++mo) {
         for (std::size_t ao = 0; ao < nbasis; ++ao) {
-            coefficients_(static_cast<Eigen::Index>(ao), static_cast<Eigen::Index>(mo)) = flat[mo * nbasis + ao];
+            coefficients_(static_cast<Eigen::Index>(ao), static_cast<Eigen::Index>(mo)) =
+                flat[mo * nbasis + ao];
         }
     }
 }
@@ -566,12 +575,14 @@ std::size_t MolecularOrbitals::orbital_count() const noexcept {
 
 double MolecularOrbitals::evaluate(std::size_t orbital, const Eigen::VectorXd& ao_values) const {
     if (orbital >= orbital_count()) throw std::out_of_range("MO index out of range");
-    if (ao_values.size() != coefficients_.rows()) throw std::runtime_error("AO vector/MO coefficient size mismatch");
+    if (ao_values.size() != coefficients_.rows())
+        throw std::runtime_error("AO vector/MO coefficient size mismatch");
     return coefficients_.col(static_cast<Eigen::Index>(orbital)).dot(ao_values);
 }
 
 Eigen::VectorXd MolecularOrbitals::evaluate_all(const Eigen::VectorXd& ao_values) const {
-    if (ao_values.size() != coefficients_.rows()) throw std::runtime_error("AO vector/MO coefficient size mismatch");
+    if (ao_values.size() != coefficients_.rows())
+        throw std::runtime_error("AO vector/MO coefficient size mismatch");
     return coefficients_.transpose() * ao_values;
 }
 
