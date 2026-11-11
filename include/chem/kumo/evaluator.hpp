@@ -7,17 +7,24 @@
 #include <vector>
 
 namespace chem::kumo {
-// Typed property keys; the first API increment deliberately supports
-// density scalars and their analytic derivatives, plus MO amplitudes.
+/// Density component: total, alpha, beta, or spin difference (alpha - beta).
 enum class DensityComponent { Total, Alpha, Beta, Spin };
+
+/// Kind of property. Number of components in the result: Gradient 3 (x, y,
+/// z), Hessian 6 (xx, xy, xz, yy, yz, zz), all others 1. Orbital is a signed
+/// MO amplitude; the other kinds apply to a DensityComponent.
 enum class PropertyKind { Density, Gradient, Hessian, Laplacian, Tau, Orbital };
+
+/// MO spin channel.
 enum class SpinChannel { Alpha, Beta };
 
+/// Key of one requested property. Build it with the density:: and orbital::
+/// helpers below rather than by hand.
 struct Property {
     PropertyKind kind;
-    DensityComponent component = DensityComponent::Total;
-    SpinChannel channel = SpinChannel::Alpha;
-    std::size_t orbital_index = 0; // one-based
+    DensityComponent component = DensityComponent::Total; ///< used by density kinds
+    SpinChannel channel = SpinChannel::Alpha;             ///< used by Orbital
+    std::size_t orbital_index = 0;                        ///< used by Orbital; one-based
     friend bool operator==(const Property&, const Property&) = default;
 
     friend bool operator<(const Property& a, const Property& b) noexcept {
@@ -28,6 +35,7 @@ struct Property {
     }
 };
 
+/// Properties of one density component, e.g. density::total.gradient().
 struct DensityDescriptor {
     DensityComponent component;
 
@@ -39,9 +47,11 @@ struct DensityDescriptor {
 
     constexpr Property laplacian() const { return {PropertyKind::Laplacian, component}; }
 
+    /// Positive kinetic-energy density.
     constexpr Property tau() const { return {PropertyKind::Tau, component}; }
 };
 
+/// The four density components: density::total, alpha, beta, spin.
 namespace density {
 inline constexpr DensityDescriptor total{DensityComponent::Total};
 inline constexpr DensityDescriptor alpha{DensityComponent::Alpha};
@@ -49,15 +59,17 @@ inline constexpr DensityDescriptor beta{DensityComponent::Beta};
 inline constexpr DensityDescriptor spin{DensityComponent::Spin};
 } // namespace density
 
+/// One molecular orbital, e.g. orbital::alpha(5).value().
 struct OrbitalDescriptor {
     SpinChannel channel;
-    std::size_t index;
+    std::size_t index; ///< one-based
 
     Property value() const {
         return {PropertyKind::Orbital, DensityComponent::Total, channel, index};
     }
 };
 
+/// MO selectors by spin channel; indices are one-based.
 namespace orbital {
 inline OrbitalDescriptor alpha(std::size_t index) {
     return {SpinChannel::Alpha, index};
@@ -68,6 +80,8 @@ inline OrbitalDescriptor beta(std::size_t index) {
 }
 } // namespace orbital
 
+/// List of properties to evaluate. Order does not matter, and a property
+/// requested twice is evaluated once.
 class Request {
 public:
     Request& add(Property property) {
@@ -80,34 +94,44 @@ public:
 private:
     std::vector<Property> properties_;
 };
-// AUTO prefers validated occupied-MO contractions, otherwise the general
-// FCHK density-matrix contraction. The chosen backend is recorded in Results.
-// AO_MO is faster in our tested workloads, but not guaranteed universally.
+
+/// How densities are contracted. AUTO (default) uses the occupied-MO
+/// contraction (AO_MO) when the orbitals were validated against the FCHK
+/// density matrices at load time, and the general density-matrix contraction
+/// (AO_P) otherwise. The choice is reported by Results::backend_used().
+/// AO_MO was faster in the tested workloads, but this is not guaranteed.
 enum class Backend { AUTO, AO_P, AO_MO };
 
 struct EvaluationOptions {
-    int threads = 0; // 0: runtime default, 1: serial
-    std::size_t block_size = 128;
-    Backend backend = Backend::AUTO; // Prefer validated AO_MO; fall back to AO_P.
+    /// Only 0 and 1 are accepted; larger values are rejected. The value does
+    /// not currently change the number of threads: in OpenMP builds, set it
+    /// with OMP_NUM_THREADS.
+    int threads = 0;
+    std::size_t block_size = 128; ///< grid points per evaluation block; must be > 0
+    Backend backend = Backend::AUTO;
 };
 
-// SoA: vector fields use x,y,z planes; symmetric Hessians use xx,xy,xz,yy,yz,zz.
+/// Values of one property at all grid points, as one array per component
+/// (structure of arrays): component(c)[point], points in Field order.
 struct PropertyField {
     std::size_t points = 0;
     std::vector<std::vector<double>> components;
 
+    /// Values of component `index`; throws std::out_of_range if it does not exist.
     std::span<const double> component(std::size_t index = 0) const { return components.at(index); }
 };
 
+/// Output of Evaluator::evaluate(), one PropertyField per requested property.
 class Results {
 public:
+    /// Result for a requested property; throws std::out_of_range otherwise.
     const PropertyField& get(Property key) const { return fields_.at(key); }
 
     bool contains(Property key) const noexcept { return fields_.contains(key); }
 
-    // Actual density-contraction backend selected for this evaluation.
-    // For orbital-only or empty AUTO requests, AO_P is the neutral marker;
-    // orbital amplitudes themselves are independent of this choice.
+    /// Density-contraction backend actually used for this evaluation. For
+    /// orbital-only or empty AUTO requests it is AO_P, as a neutral value:
+    /// orbital amplitudes do not depend on this choice.
     [[nodiscard]] Backend backend_used() const noexcept { return backend_used_; }
 
 private:

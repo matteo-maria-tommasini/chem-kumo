@@ -47,7 +47,7 @@ public:
     void reset() noexcept { matrix_.setZero(); }
 
 private:
-    const BasisEvaluator& evaluator_; // evaluator must outlive the accumulator
+    const BasisEvaluator& evaluator_; ///< must outlive the accumulator
     Eigen::MatrixXd matrix_;
 };
 
