@@ -1,3 +1,4 @@
+#include "parallel_blocks.hpp"
 #include "backend_selection.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
@@ -317,10 +318,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     std::vector<DensityDerivatives> result(count);
     // Independent blocks write to disjoint output slots. All Eigen panels
     // and AO derivative buffers are private to each iteration.
-    const std::size_t nblocks = count / block_size + (count % block_size != 0);
-    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
-        throw std::length_error("too many derivative blocks for parallel evaluation");
-    std::exception_ptr worker_error;
+    const std::size_t nblocks = detail::parallel_block_count(
+        count, block_size, "too many derivative blocks for parallel evaluation");
+    detail::FirstException worker_errors;
     // Each OpenMP worker owns a reusable panel workspace. In serial builds
     // this region executes once, with exactly the same buffer lifetime.
 #ifdef _OPENMP
@@ -381,16 +381,11 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                     out.laplacian = out.hessian.trace();
                 }
             } catch (...) {
-#ifdef _OPENMP
-#pragma omp critical(kumo_derivatives_block_error)
-#endif
-                {
-                    if (!worker_error) worker_error = std::current_exception();
-                }
+                worker_errors.capture();
             }
         }
     } // worker-local workspace lifetime
-    if (worker_error) std::rethrow_exception(worker_error);
+    worker_errors.rethrow_if_any();
     return result;
 }
 
@@ -419,10 +414,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
     }
     if (result.empty() || count == 0) return result;
     const auto n = static_cast<Eigen::Index>(basis_size());
-    const std::size_t nblocks = count / block_size + (count % block_size != 0);
-    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
-        throw std::length_error("too many derivative blocks for parallel evaluation");
-    std::exception_ptr worker_error;
+    const std::size_t nblocks = detail::parallel_block_count(
+        count, block_size, "too many derivative blocks for parallel evaluation");
+    detail::FirstException worker_errors;
 #ifdef _OPENMP
 #pragma omp parallel if (nblocks > 1)
 #endif
@@ -508,16 +502,11 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                         it->second[slot] = combine(-1.0);
                 }
             } catch (...) {
-#ifdef _OPENMP
-#pragma omp critical(kumo_shared_derivatives_error)
-#endif
-                {
-                    if (!worker_error) worker_error = std::current_exception();
-                }
+                worker_errors.capture();
             }
         }
     }
-    if (worker_error) std::rethrow_exception(worker_error);
+    worker_errors.rethrow_if_any();
     return result;
 }
 
@@ -553,13 +542,12 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                         result.contains(Spin::Difference);
     const auto n = static_cast<Eigen::Index>(basis_size());
     const auto cap = static_cast<Eigen::Index>(std::min(count, block_size));
-    const auto nblocks = count / block_size + (count % block_size != 0);
-    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
-        throw std::length_error("too many AO-MO blocks");
+    const std::size_t nblocks =
+        detail::parallel_block_count(count, block_size, "too many AO-MO blocks");
     const auto& cb = unrestricted_ ? beta_mos_ : alpha_mos_;
     const Eigen::MatrixXd ca_occ = alpha_mos_.leftCols(nalpha_);
     const Eigen::MatrixXd cb_occ = cb.leftCols(nbeta_);
-    std::exception_ptr worker_error;
+    detail::FirstException worker_errors;
 #ifdef _OPENMP
 #pragma omp parallel if (nblocks > 1)
 #endif
@@ -645,16 +633,11 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                         it->second[slot] = combine(-1.0);
                 }
             } catch (...) {
-#ifdef _OPENMP
-#pragma omp critical(kumo_mo_derivatives_error)
-#endif
-                {
-                    if (!worker_error) worker_error = std::current_exception();
-                }
+                worker_errors.capture();
             }
         }
     }
-    if (worker_error) std::rethrow_exception(worker_error);
+    worker_errors.rethrow_if_any();
     return result;
 }
 
@@ -705,13 +688,9 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     const Eigen::Index m = static_cast<Eigen::Index>(basis_size());
     // Each block owns its AO panels and writes to disjoint output indices.
     // Keep the same arithmetic and point ordering in serial and OpenMP builds.
-    const std::size_t nblocks = count / block_size + (count % block_size != 0);
-    // OpenMP's canonical loop uses a signed counter. Avoid narrowing overflow.
-    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
-        throw std::length_error("too many grid blocks for parallel evaluation");
-    std::exception_ptr worker_error;
-    // Exceptions must not escape an OpenMP region. Preserve the first error
-    // and rethrow it on the caller thread after all workers have finished.
+    const std::size_t nblocks = detail::parallel_block_count(
+        count, block_size, "too many grid blocks for parallel evaluation");
+    detail::FirstException worker_errors;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if (nblocks > 1)
 #endif
@@ -743,15 +722,10 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                     it->second[q] = a[t] - bb[t];
             }
         } catch (...) {
-#ifdef _OPENMP
-#pragma omp critical(kumo_density_block_error)
-#endif
-            {
-                if (!worker_error) worker_error = std::current_exception();
-            }
+            worker_errors.capture();
         }
     }
-    if (worker_error) std::rethrow_exception(worker_error);
+    worker_errors.rethrow_if_any();
     std::map<Spin, Field> result;
     for (auto& [spin, values] : buffers)
         result.emplace(spin, Field(grid, atoms_, std::move(values)));

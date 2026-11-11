@@ -1,4 +1,5 @@
 #include <Eigen/LU>
+#include "parallel_blocks.hpp"
 #include "chem/kumo/density.hpp"
 #include "grid_geometry.hpp"
 #include <algorithm>
@@ -70,10 +71,9 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     if (!points.allFinite()) throw std::invalid_argument("MO evaluation points must be finite");
     const std::size_t count = static_cast<std::size_t>(points.cols());
     std::vector<OrbitalDerivatives> result(count);
-    const std::size_t nblocks = count / block_size + (count % block_size != 0);
-    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
-        throw std::length_error("too many orbital derivative blocks for parallel evaluation");
-    std::exception_ptr worker_error;
+    const std::size_t nblocks = detail::parallel_block_count(
+        count, block_size, "too many orbital derivative blocks for parallel evaluation");
+    detail::FirstException worker_errors;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if (nblocks > 1)
 #endif
@@ -85,15 +85,10 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
                 result[start + j] = orbital_derivatives(
                     points.col(static_cast<Eigen::Index>(start + j)), index, channel);
         } catch (...) {
-#ifdef _OPENMP
-#pragma omp critical(kumo_orbital_derivatives_block_error)
-#endif
-            {
-                if (!worker_error) worker_error = std::current_exception();
-            }
+            worker_errors.capture();
         }
     }
-    if (worker_error) std::rethrow_exception(worker_error);
+    worker_errors.rethrow_if_any();
     return result;
 }
 
@@ -118,10 +113,9 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
         selected.col(static_cast<Eigen::Index>(i)) =
             coeff.col(static_cast<Eigen::Index>(indices[i] - 1));
     constexpr std::size_t block_size = 128;
-    const std::size_t nblocks = count / block_size + (count % block_size != 0);
-    if (nblocks > static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()))
-        throw std::length_error("too many orbital blocks for parallel evaluation");
-    std::exception_ptr worker_error;
+    const std::size_t nblocks = detail::parallel_block_count(
+        count, block_size, "too many orbital blocks for parallel evaluation");
+    detail::FirstException worker_errors;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if (nblocks > 1)
 #endif
@@ -141,15 +135,10 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
                     buffers[mo][start + static_cast<std::size_t>(t)] =
                         psi(static_cast<Eigen::Index>(mo), t);
         } catch (...) {
-#ifdef _OPENMP
-#pragma omp critical(kumo_orbital_block_error)
-#endif
-            {
-                if (!worker_error) worker_error = std::current_exception();
-            }
+            worker_errors.capture();
         }
     }
-    if (worker_error) std::rethrow_exception(worker_error);
+    worker_errors.rethrow_if_any();
     std::vector<Field> result;
     result.reserve(indices.size());
     for (auto& buffer : buffers)
