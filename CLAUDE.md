@@ -53,6 +53,9 @@ make a test pass without explicit approval.
   `meson.build` (with a `timeout` for slow reference tests).
 - Validate inputs strictly and fail with clear exceptions (fail-closed);
   keep serial and OpenMP results numerically identical in point ordering.
+- Any code that evaluates on a `Grid` must validate it with
+  `detail::validated_point_count()` (`src/grid_validation.hpp`), not with a
+  local check; `tests/grid_validation_test.cpp` covers every entry point.
 - Compiler warnings are enabled (`warning_level=2`); keep the build warning-free.
 - Formatting is defined by `.clang-format` (C++) and `meson.format` (Meson).
   Before committing, run

@@ -1,6 +1,7 @@
 #include "backend_selection.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
+#include "grid_validation.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -17,30 +18,6 @@
 
 namespace chem::kumo {
 namespace {
-std::size_t checked_size(const Grid& g) {
-    std::size_t n = 1;
-    for (int k = 0; k < 3; ++k) {
-        if (g.counts[k] <= 0 ||
-            static_cast<std::size_t>(g.counts[k]) > std::numeric_limits<std::size_t>::max() / n)
-            throw std::invalid_argument("invalid or oversized grid");
-        n *= static_cast<std::size_t>(g.counts[k]);
-    }
-    if (!g.origin.allFinite() || !g.steps.allFinite())
-        throw std::invalid_argument("invalid grid geometry");
-
-    Eigen::Matrix3d normalized_steps;
-    for (int axis = 0; axis < 3; ++axis) {
-        const double norm = g.steps.col(axis).norm();
-        if (!std::isfinite(norm) || norm <= 0.0)
-            throw std::invalid_argument("invalid grid geometry");
-        normalized_steps.col(axis) = g.steps.col(axis) / norm;
-    }
-
-    if (std::abs(normalized_steps.determinant()) < 1e-12)
-        throw std::invalid_argument("invalid grid geometry");
-    return n;
-}
-
 Eigen::MatrixXd unpack(const std::vector<double>& packed, std::size_t n) {
     if (n > std::numeric_limits<std::size_t>::max() / (n + 1) || packed.size() != n * (n + 1) / 2)
         throw std::runtime_error("invalid packed AO density matrix size");
@@ -84,7 +61,8 @@ Grid Grid::around(const std::vector<Atom>& atoms, double margin, double spacing)
 
 Field::Field(Grid g, std::vector<Atom> atoms, std::vector<double> v)
     : grid_(std::move(g)), atoms_(std::move(atoms)), values_(std::move(v)) {
-    if (values_.size() != checked_size(grid_)) throw std::invalid_argument("field size mismatch");
+    if (values_.size() != detail::validated_point_count(grid_))
+        throw std::invalid_argument("field size mismatch");
 }
 
 double Field::operator()(int i, int j, int k) const {
@@ -683,7 +661,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
 }
 
 Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {
-    const auto count = checked_size(grid);
+    const auto count = detail::validated_point_count(grid);
     std::vector<double> values(count);
     Eigen::MatrixXd p;
     switch (spin) {
@@ -729,7 +707,7 @@ namespace chem::kumo {
 std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                                                   std::initializer_list<Spin> components,
                                                   std::size_t block_size) const {
-    const auto count = checked_size(grid);
+    const auto count = detail::validated_point_count(grid);
     if (block_size == 0 || block_size > 65536)
         throw std::invalid_argument("block_size must be in [1,65536]");
     std::map<Spin, std::vector<double>> buffers;

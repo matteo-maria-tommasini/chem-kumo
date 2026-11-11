@@ -1,6 +1,7 @@
 #include "chem/kumo/evaluator.hpp"
 #include "evaluation_plan.hpp"
 #include "automatic_backend.hpp"
+#include "grid_validation.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -40,14 +41,10 @@ Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
 }
 
 Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
+    // Validate the grid up front: the derivative paths below evaluate on
+    // explicit points and would otherwise accept a degenerate geometry.
+    const std::size_t n = detail::validated_point_count(grid);
     // Plan the requested properties before resolving the electronic backend.
-    std::size_t n = 1;
-    for (int axis = 0; axis < 3; ++axis) {
-        if (grid.counts[axis] <= 0 || n > std::numeric_limits<std::size_t>::max() /
-                                              static_cast<std::size_t>(grid.counts[axis]))
-            throw std::invalid_argument("invalid grid size");
-        n *= static_cast<std::size_t>(grid.counts[axis]);
-    }
     const auto plan = detail::EvaluationPlan::from(request);
     const auto& info = molecule_->electronic_structure_info();
     const Backend backend =
