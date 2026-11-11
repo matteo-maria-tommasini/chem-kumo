@@ -679,14 +679,29 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     for (Spin component : components)
         buffers.try_emplace(component, count);
     if (buffers.empty()) return {};
-    const bool need_a = buffers.contains(Spin::Alpha) || buffers.contains(Spin::Total) ||
-                        buffers.contains(Spin::Difference);
-    const bool need_b = buffers.contains(Spin::Beta) || buffers.contains(Spin::Total) ||
-                        buffers.contains(Spin::Difference);
-    const Eigen::MatrixXd pa = need_a ? Eigen::MatrixXd(0.5 * (total_ + spin_)) : Eigen::MatrixXd();
-    const Eigen::MatrixXd pb = need_b ? Eigen::MatrixXd(0.5 * (total_ - spin_)) : Eigen::MatrixXd();
+    // Each component is a quadratic form phi^T P phi, and each P costs one
+    // nAO x nAO x points product, which dominates the run time. Total and
+    // spin difference alone use the FCHK matrices directly, one product each.
+    // If alpha or beta is requested, contract the alpha and beta matrices and
+    // derive total = alpha + beta and difference = alpha - beta from them, so
+    // that no request needs more than two products.
+    const bool by_spin = buffers.contains(Spin::Alpha) || buffers.contains(Spin::Beta);
+    std::vector<Spin> contracted;
+    if (by_spin) {
+        const bool derived = buffers.contains(Spin::Total) || buffers.contains(Spin::Difference);
+        if (derived || buffers.contains(Spin::Alpha)) contracted.push_back(Spin::Alpha);
+        if (derived || buffers.contains(Spin::Beta)) contracted.push_back(Spin::Beta);
+    } else {
+        for (const auto& entry : buffers)
+            contracted.push_back(entry.first);
+    }
+    std::vector<Eigen::MatrixXd> storage(contracted.size());
+    std::vector<const Eigen::MatrixXd*> matrices;
+    for (std::size_t i = 0; i < contracted.size(); ++i)
+        matrices.push_back(&select_density_matrix(total_, spin_, contracted[i], storage[i]));
     const Eigen::Index m = static_cast<Eigen::Index>(basis_size());
-    // Each block owns its AO panels and writes to disjoint output indices.
+    // Each block owns its AO panels and writes to disjoint output indices of
+    // the preallocated buffers (the map itself is only read in the loop).
     // Keep the same arithmetic and point ordering in serial and OpenMP builds.
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many grid blocks for parallel evaluation");
@@ -703,23 +718,19 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                 points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
             Eigen::MatrixXd phi(m, b);
             evaluator_.evaluate_batch(points, phi);
-            Eigen::VectorXd a = Eigen::VectorXd::Zero(b), bb = Eigen::VectorXd::Zero(b);
-            if (need_a) {
-                Eigen::MatrixXd y = pa * phi;
-                a = (phi.array() * y.array()).colwise().sum().transpose().matrix();
+            std::map<Spin, Eigen::VectorXd> rho;
+            for (std::size_t i = 0; i < contracted.size(); ++i) {
+                const Eigen::MatrixXd y = *matrices[i] * phi;
+                rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
             }
-            if (need_b) {
-                Eigen::MatrixXd y = pb * phi;
-                bb = (phi.array() * y.array()).colwise().sum().transpose().matrix();
-            }
-            for (Eigen::Index t = 0; t < b; ++t) {
-                const auto q = start + static_cast<std::size_t>(t);
-                if (auto it = buffers.find(Spin::Alpha); it != buffers.end()) it->second[q] = a[t];
-                if (auto it = buffers.find(Spin::Beta); it != buffers.end()) it->second[q] = bb[t];
-                if (auto it = buffers.find(Spin::Total); it != buffers.end())
-                    it->second[q] = a[t] + bb[t];
-                if (auto it = buffers.find(Spin::Difference); it != buffers.end())
-                    it->second[q] = a[t] - bb[t];
+            for (auto& [spin, values] : buffers) {
+                Eigen::Map<Eigen::VectorXd> out(values.data() + start, b);
+                if (rho.contains(spin))
+                    out = rho.at(spin);
+                else if (spin == Spin::Total)
+                    out = rho.at(Spin::Alpha) + rho.at(Spin::Beta);
+                else
+                    out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
             }
         } catch (...) {
             worker_errors.capture();
