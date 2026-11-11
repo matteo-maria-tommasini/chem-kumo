@@ -7,20 +7,54 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    # A normal run takes about 5 minutes; fail stuck jobs instead of
+    # letting them hang for the 6-hour GitHub default.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
+      # Package mirrors and DNS on hosted runners occasionally fail for a few
+      # minutes. Retry the whole install with increasing pauses, and let apt
+      # retry individual downloads with a bounded network timeout.
       - name: Install dependencies (Ubuntu)
         if: runner.os == 'Linux'
+        timeout-minutes: 15
         run: |
-          sudo apt-get update
-          sudo apt-get install -y meson ninja-build libeigen3-dev zlib1g-dev g++ pkg-config
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          for attempt in 1 2 3; do
+            if sudo apt-get "${apt_opts[@]}" update &&
+               sudo apt-get "${apt_opts[@]}" install -y --no-install-recommends \
+                 meson ninja-build libeigen3-dev zlib1g-dev g++ pkg-config; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::apt install failed (attempt $attempt of 3); retrying in $((attempt * 60)) s"
+              sleep $((attempt * 60))
+            fi
+          done
+          echo "::error::apt install failed after 3 attempts"
+          exit 1
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install meson ninja eigen pkg-config
+        timeout-minutes: 15
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          for attempt in 1 2 3; do
+            if brew install meson ninja eigen pkg-config; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::brew install failed (attempt $attempt of 3); retrying in $((attempt * 60)) s"
+              sleep $((attempt * 60))
+            fi
+          done
+          echo "::error::brew install failed after 3 attempts"
+          exit 1
       - name: Configure
         run: meson setup build --buildtype=debugoptimized
       - name: Compile
