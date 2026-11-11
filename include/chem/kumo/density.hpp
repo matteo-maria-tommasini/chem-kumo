@@ -33,7 +33,7 @@ struct Atom {
 /// test does not depend on the spacing, so very fine grids are valid.
 struct Grid {
     Eigen::Vector3d origin = Eigen::Vector3d::Zero();
-    Eigen::Matrix3d steps = Eigen::Matrix3d::Identity(); // columns: axis vectors, bohr
+    Eigen::Matrix3d steps = Eigen::Matrix3d::Identity(); ///< columns: axis vectors, bohr
     Eigen::Vector3i counts = Eigen::Vector3i::Ones();
     static Grid around(const std::vector<Atom>& atoms, double margin_bohr, double spacing_bohr);
 };
@@ -137,7 +137,7 @@ public:
     [[nodiscard]] std::vector<DensityDerivatives> density_derivatives_blocked(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
         Spin spin = Spin::Total, std::size_t block_size = 128) const;
-    // Reference implementation retained for numerical regression testing.
+    /// Point-by-point reference implementation, kept for numerical regression tests.
     [[nodiscard]] Field density_pointwise(const Grid& grid, Spin spin = Spin::Total) const;
     /// Evaluate total, alpha, beta and alpha-minus-beta together.
     [[nodiscard]] SpinDensities spin_densities(const Grid& grid) const;
@@ -188,7 +188,7 @@ public:
 private:
     friend class Evaluator;
     friend struct detail::AoMoTestAccess;
-    // Internal multi-component AO-P contraction; one AO derivative evaluation per point.
+    /// Internal multi-component AO-P contraction; one AO derivative evaluation per point.
     [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
         const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2) const;

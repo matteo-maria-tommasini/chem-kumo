@@ -5,7 +5,7 @@
 #include <stdexcept>
 
 namespace chem::kumo::detail {
-/*
+/**
  * Automatic density-contraction backend policy (chem-kumo 1.4.0).
  *
  * Prefer AO_MO when the occupied molecular orbitals reproduce the FCHK

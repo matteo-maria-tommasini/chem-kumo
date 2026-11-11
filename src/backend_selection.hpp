@@ -6,8 +6,8 @@
 #include <stdexcept>
 
 namespace chem::kumo::detail {
-// AO-P is authoritative. AO-MO is eligible only after validating BOTH
-// total and spin density matrices against the occupied-orbital reconstruction.
+/// AO-P is authoritative. AO-MO is eligible only after validating BOTH
+/// total and spin density matrices against the occupied-orbital reconstruction.
 enum class ElectronicBackend { AoP, AoMo };
 
 struct BackendDecision {

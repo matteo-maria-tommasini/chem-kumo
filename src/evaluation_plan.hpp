@@ -4,8 +4,8 @@
 #include <algorithm>
 
 namespace chem::kumo::detail {
-// Internal, immutable per-evaluation description of primitive requirements.
-// This stage deliberately does not alter the validated numerical kernels.
+/// Per-component requirements of a Request: which properties are needed and,
+/// from them, the highest AO derivative order to evaluate (-1: none).
 struct ComponentPlan {
     bool density = false;
     bool gradient = false;
