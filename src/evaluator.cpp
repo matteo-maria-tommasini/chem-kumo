@@ -20,8 +20,97 @@ Spin spin_of(DensityComponent c) {
     throw std::invalid_argument("unknown density component");
 }
 
+Spin spin_of(SpinChannel c) {
+    return c == SpinChannel::Alpha ? Spin::Alpha : Spin::Beta;
+}
+
 std::size_t channels(PropertyKind k) {
     return k == PropertyKind::Gradient ? 3 : k == PropertyKind::Hessian ? 6 : 1;
+}
+
+constexpr DensityComponent all_components[] = {DensityComponent::Total, DensityComponent::Alpha,
+                                               DensityComponent::Beta, DensityComponent::Spin};
+
+// Two evaluation paths exist:
+//  - point path: shared AO derivative evaluation on explicit point blocks,
+//    used for all density derivatives and, with AO-MO, also for densities;
+//  - grid path: the validated Molecule::density / Molecule::orbital kernels,
+//    used for AO-P densities and for all orbitals.
+bool uses_point_path(const detail::ComponentPlan& component, Backend backend) {
+    return component.derivatives() || (backend == Backend::AO_MO && component.density);
+}
+
+bool uses_point_path(const detail::EvaluationPlan& plan, Backend backend) {
+    return std::any_of(plan.components.begin(), plan.components.end(),
+                       [&](const auto& c) { return uses_point_path(c, backend); });
+}
+
+const detail::ComponentPlan& plan_for(const detail::EvaluationPlan& plan, DensityComponent c) {
+    return plan.components[detail::EvaluationPlan::index(c)];
+}
+
+// Copy one property of block results, starting at grid point `start`.
+// Evaluator Hessians use row-major upper-triangle order: xx, xy, xz, yy, yz, zz.
+void store_block(PropertyField& output, PropertyKind kind,
+                 const std::vector<DensityDerivatives>& block, std::size_t start) {
+    for (std::size_t local = 0; local < block.size(); ++local) {
+        const auto& d = block[local];
+        const std::size_t p = start + local;
+        switch (kind) {
+        case PropertyKind::Density: output.components[0][p] = d.value; break;
+        case PropertyKind::Gradient:
+            for (int a = 0; a < 3; ++a)
+                output.components[a][p] = d.gradient[a];
+            break;
+        case PropertyKind::Hessian:
+            output.components[0][p] = d.hessian(0, 0);
+            output.components[1][p] = d.hessian(0, 1);
+            output.components[2][p] = d.hessian(0, 2);
+            output.components[3][p] = d.hessian(1, 1);
+            output.components[4][p] = d.hessian(1, 2);
+            output.components[5][p] = d.hessian(2, 2);
+            break;
+        case PropertyKind::Laplacian: output.components[0][p] = d.laplacian; break;
+        case PropertyKind::Tau: output.components[0][p] = d.tau; break;
+        default: throw std::logic_error("invalid derivative property");
+        }
+    }
+}
+
+// Point path. Grid points are processed in blocks of at most block_size, so
+// coordinate and derivative temporaries stay bounded. `evaluate_block`
+// returns the derivatives of the requested spin components on one block.
+template <typename BlockEvaluator>
+void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size,
+                         const detail::EvaluationPlan& plan, Backend backend,
+                         const BlockEvaluator& evaluate_block,
+                         std::map<Property, PropertyField>& fields) {
+    std::vector<Spin> needed;
+    for (auto component : all_components)
+        if (uses_point_path(plan_for(plan, component), backend))
+            needed.push_back(spin_of(component));
+
+    const std::size_t block_capacity = std::min(n, block_size);
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(block_capacity));
+    for (std::size_t start = 0; start < n; start += block_capacity) {
+        const std::size_t count = std::min(block_capacity, n - start);
+        for (std::size_t local = 0; local < count; ++local)
+            points.col(static_cast<Eigen::Index>(local)) = detail::grid_point(grid, start + local);
+        const auto block_points = points.leftCols(static_cast<Eigen::Index>(count)).eval();
+        const auto block = evaluate_block(block_points, needed);
+
+        for (auto component : all_components) {
+            if (!uses_point_path(plan_for(plan, component), backend)) continue;
+            const auto& derivatives = block.at(spin_of(component));
+            for (auto& [key, output] : fields) {
+                // AO-P densities come from the grid path instead.
+                if (key.component != component || key.kind == PropertyKind::Orbital ||
+                    (key.kind == PropertyKind::Density && backend == Backend::AO_P))
+                    continue;
+                store_block(output, key.kind, derivatives, start);
+            }
+        }
+    }
 }
 } // namespace
 
@@ -57,83 +146,29 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
             key, PropertyField{n, std::vector<std::vector<double>>(channels(key.kind),
                                                                    std::vector<double>(n))});
     }
-    // Stage 02C.2a: bound coordinate and derivative temporaries by block_size.
-    // The validated AO-P kernel remains the numerical reference. This is not
-    // yet a fused AO evaluation across electronic components.
-    if (plan.needs_derivative_points() ||
-        (backend == Backend::AO_MO && std::any_of(plan.components.begin(), plan.components.end(),
-                                                  [](const auto& c) { return c.density; }))) {
-        const std::size_t block_capacity = std::min(n, options_.block_size);
-        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3,
-                                                        static_cast<Eigen::Index>(block_capacity));
-        for (std::size_t start = 0; start < n; start += block_capacity) {
-            const std::size_t count = std::min(block_capacity, n - start);
-            for (std::size_t local = 0; local < count; ++local)
-                points.col(static_cast<Eigen::Index>(local)) =
-                    detail::grid_point(grid, start + local);
-            const auto block_points = points.leftCols(static_cast<Eigen::Index>(count)).eval();
-            std::vector<Spin> needed;
-            for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
-                                   DensityComponent::Beta, DensityComponent::Spin}) {
-                const auto& component_plan =
-                    plan.components[detail::EvaluationPlan::index(component)];
-                if (component_plan.derivatives() ||
-                    (backend == Backend::AO_MO && component_plan.density))
-                    needed.push_back(spin_of(component));
-            }
-            const auto shared =
-                backend == Backend::AO_MO
-                    ? molecule_->density_derivatives_mo(block_points, needed, options_.block_size,
-                                                        std::max(0, plan.maximum_ao_order))
-                    : molecule_->density_derivatives_shared(
-                          block_points, needed, options_.block_size, plan.maximum_ao_order);
-            for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
-                                   DensityComponent::Beta, DensityComponent::Spin}) {
-                const auto& component_plan =
-                    plan.components[detail::EvaluationPlan::index(component)];
-                if (!component_plan.derivatives() &&
-                    !(backend == Backend::AO_MO && component_plan.density))
-                    continue;
-                const auto& derivatives = shared.at(spin_of(component));
-                for (auto& [key, output] : result.fields_) {
-                    if (key.component != component || key.kind == PropertyKind::Orbital ||
-                        (key.kind == PropertyKind::Density && backend == Backend::AO_P))
-                        continue;
-                    for (std::size_t local = 0; local < count; ++local) {
-                        const auto& d = derivatives[local];
-                        const std::size_t p = start + local;
-                        switch (key.kind) {
-                        case PropertyKind::Density: output.components[0][p] = d.value; break;
-                        case PropertyKind::Gradient:
-                            for (int a = 0; a < 3; ++a)
-                                output.components[a][p] = d.gradient[a];
-                            break;
-                        case PropertyKind::Hessian:
-                            output.components[0][p] = d.hessian(0, 0);
-                            output.components[1][p] = d.hessian(0, 1);
-                            output.components[2][p] = d.hessian(0, 2);
-                            output.components[3][p] = d.hessian(1, 1);
-                            output.components[4][p] = d.hessian(1, 2);
-                            output.components[5][p] = d.hessian(2, 2);
-                            break;
-                        case PropertyKind::Laplacian: output.components[0][p] = d.laplacian; break;
-                        case PropertyKind::Tau: output.components[0][p] = d.tau; break;
-                        default: throw std::logic_error("invalid derivative property");
-                        }
-                    }
-                }
-            }
-        }
+
+    if (uses_point_path(plan, backend)) {
+        // The AO-MO and AO-P block kernels are private to Molecule; Evaluator
+        // is a friend, so the call is wrapped here and passed to the helper.
+        const auto evaluate_block = [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& points,
+                                        const std::vector<Spin>& needed) {
+            return backend == Backend::AO_MO
+                       ? molecule_->density_derivatives_mo(points, needed, options_.block_size,
+                                                           std::max(0, plan.maximum_ao_order))
+                       : molecule_->density_derivatives_shared(points, needed, options_.block_size,
+                                                               plan.maximum_ao_order);
+        };
+        evaluate_point_path(grid, n, options_.block_size, plan, backend, evaluate_block,
+                            result.fields_);
     }
-    // Scalar density and orbital paths remain delegated to the 1.3 kernels.
+
+    // Grid path: orbitals always, densities only with AO-P.
     for (auto& [key, output] : result.fields_) {
         if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital) continue;
         if (key.kind == PropertyKind::Density && backend == Backend::AO_MO) continue;
-        Field field =
-            key.kind == PropertyKind::Density
-                ? molecule_->density(grid, spin_of(key.component))
-                : molecule_->orbital(grid, key.orbital_index,
-                                     key.channel == SpinChannel::Alpha ? Spin::Alpha : Spin::Beta);
+        const Field field = key.kind == PropertyKind::Density
+                                ? molecule_->density(grid, spin_of(key.component))
+                                : molecule_->orbital(grid, key.orbital_index, spin_of(key.channel));
         std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
     }
     return result;
