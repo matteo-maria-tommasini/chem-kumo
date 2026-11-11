@@ -36,8 +36,17 @@ Cube with an MO index record. `Field` stores values, atoms, and grid geometry.
 - `densities(grid, {components...})` computes selected fields with shared AO
   evaluation; duplicate component requests do not create duplicate fields.
 - `spin_densities(grid)` returns all four components in a named structure.
-- `densities_blocked(grid, components, block_size)` explicitly selects a
-  block size (the default density path uses 128 points per block).
+- `densities_blocked(grid, components, block_size, screening_threshold)`
+  explicitly selects a block size (the default density path uses 128 points
+  per block) and an AO screening threshold.
+- AO screening: in each block, AOs whose absolute value is at most
+  `default_screening_threshold` (1e-12) at every point are left out of the
+  density-matrix contraction. This makes large-basis densities several times
+  faster; the change in the density is at rounding level (at most about
+  1e-13 e/bohr^3 in the tested systems). A threshold of 0 gives the exact
+  contraction. `EvaluationOptions::screening_threshold` sets the same
+  threshold for `Evaluator` AO_P densities; derivatives and AO_MO densities
+  are not screened yet.
 - `density_pointwise(grid, spin)` retains the original pointwise algorithm
   for regression comparisons.
 

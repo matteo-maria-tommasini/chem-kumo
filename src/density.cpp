@@ -1,3 +1,4 @@
+#include "ao_screening.hpp"
 #include "parallel_blocks.hpp"
 #include "backend_selection.hpp"
 #include "chem/kumo/density.hpp"
@@ -671,10 +672,12 @@ std::map<Spin, Field> Molecule::densities(const Grid& grid,
 
 std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                                                   std::initializer_list<Spin> components,
-                                                  std::size_t block_size) const {
+                                                  std::size_t block_size,
+                                                  double screening_threshold) const {
     const auto count = detail::validated_point_count(grid);
     if (block_size == 0 || block_size > 65536)
         throw std::invalid_argument("block_size must be in [1,65536]");
+    detail::validate_screening_threshold(screening_threshold);
     std::map<Spin, std::vector<double>> buffers;
     for (Spin component : components)
         buffers.try_emplace(component, count);
@@ -718,9 +721,16 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                 points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
             Eigen::MatrixXd phi(m, b);
             evaluator_.evaluate_batch(points, phi);
+            // Contract only the AOs that are significant somewhere in the
+            // block; if all of them are, use the full matrices as they are.
+            const auto kept = detail::significant_aos(phi, screening_threshold);
+            const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
+            if (screened) phi = Eigen::MatrixXd(phi(kept, Eigen::all));
             std::map<Spin, Eigen::VectorXd> rho;
             for (std::size_t i = 0; i < contracted.size(); ++i) {
-                const Eigen::MatrixXd y = *matrices[i] * phi;
+                const Eigen::MatrixXd y = screened
+                                              ? Eigen::MatrixXd((*matrices[i])(kept, kept) * phi)
+                                              : Eigen::MatrixXd(*matrices[i] * phi);
                 rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
             }
             for (auto& [spin, values] : buffers) {

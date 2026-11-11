@@ -109,6 +109,10 @@ struct EvaluationOptions {
     int threads = 0;
     std::size_t block_size = 128; ///< grid points per evaluation block; must be > 0
     Backend backend = Backend::AUTO;
+    /// AO screening threshold for AO_P densities (see
+    /// default_screening_threshold); must be finite and >= 0, and 0 gives
+    /// the exact contraction. Derivatives and AO_MO are not screened yet.
+    double screening_threshold = default_screening_threshold;
 };
 
 /// Values of one property at all grid points, as one array per component
@@ -155,8 +159,9 @@ private:
 class Evaluator {
 public:
     /// Throws std::invalid_argument for invalid options: block_size == 0,
-    /// threads < 0 or > 1, an unknown backend, or AO_MO requested for a
-    /// molecule whose orbitals are not AO-MO eligible.
+    /// threads < 0 or > 1, a negative or nonfinite screening_threshold, an
+    /// unknown backend, or AO_MO requested for a molecule whose orbitals are
+    /// not AO-MO eligible.
     explicit Evaluator(const Molecule& molecule, EvaluationOptions options = {});
 
     /// Evaluate every property in `request` at all grid points, in Field
