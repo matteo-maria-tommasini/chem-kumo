@@ -27,6 +27,9 @@ double integer_power(double x, int n) noexcept {
     return result;
 }
 
+// All Cartesian powers (lx, ly, lz) with lx + ly + lz = l, enumerated with lx
+// in the outer loop and ly in the inner loop, both ascending ("PRISM" order).
+// Used only to check that every Gaussian component has a c2pcff() mapping.
 std::vector<CartesianPower> prism_cartesian_order(int l) {
     std::vector<CartesianPower> result;
     for (int lx = 0; lx <= l; ++lx) {
@@ -37,6 +40,22 @@ std::vector<CartesianPower> prism_cartesian_order(int l) {
     return result;
 }
 
+// Coefficient of the Cartesian Gaussian x^lx y^ly z^lz (lz = l - lx - ly) in
+// the real pure (spherical harmonic) Gaussian with angular momentum l and
+// order m, for -l <= m <= l. m = 0 is the zonal function; m > 0 and m < 0 are
+// the cosine-like and sine-like combinations, with the sqrt(2) factor of real
+// spherical harmonics. Both function types are normalized.
+//
+// Closed-form expression of H. B. Schlegel and M. J. Frisch, "Transformation
+// between Cartesian and pure spherical harmonic Gaussians", Int. J. Quantum
+// Chem. 54, 83-87 (1995). In the code:
+//   a: ratio of Cartesian to pure normalization constants;
+//   b: sqrt((l-|m|)!/(l+|m|)!) / (2^l l!);
+//   c: sum over i of binom(l, i) binom(i, j) (-1)^i (2l-2i)! / (l-|m|-2i)!,
+//      with j = (l - |m| - lz) / 2, which must be an integer;
+//   d, e: sum over k of binom(j, k) binom(|m|, lx-2k) times the sign/sqrt(2)
+//      factor that selects the cosine (m > 0) or sine (m < 0) part.
+// Returns 0 for components that do not contribute.
 double c2pcff(int l, int m, int lx, int ly) {
     const int lz = l - lx - ly;
     const int ma = std::abs(m);
@@ -75,6 +94,10 @@ double c2pcff(int l, int m, int lx, int ly) {
 
 } // namespace
 
+// Order of Cartesian components within a shell in Gaussian FCHK files. For
+// d and f shells Gaussian uses the explicit orders below (xx, yy, zz, xy, xz,
+// yz for d); from g shells on, the order is lexicographic in (lx, ly), i.e.
+// zzzz, yzzz, yyzz, yyyz, yyyy, xzzz, ...
 std::vector<CartesianPower> gaussian_cartesian_order(int l) {
     if (l < 0) throw std::runtime_error("negative angular momentum");
     if (l == 0) return {{0, 0, 0}};
@@ -94,6 +117,9 @@ std::vector<CartesianPower> gaussian_cartesian_order(int l) {
     return result;
 }
 
+// (2l+1) x ncart matrix taking a shell's Cartesian components, in Gaussian
+// FCHK order, to its pure components in Gaussian order: m = 0, +1, -1, +2,
+// -2, ..., +l, -l (row 0 is m = 0, rows 2m-1 and 2m are +m and -m).
 Eigen::MatrixXd gaussian_cartesian_to_pure(int l) {
     if (l < 2) throw std::runtime_error("pure transformation requested below d shell");
     const auto gaussian = gaussian_cartesian_order(l);

@@ -405,7 +405,7 @@ test(
     timeout: 300,
 )
 
-# Stage 01C: AO-P versus AO-MO derivative benchmark.
+# AO-P versus AO-MO derivative benchmark.
 if benchmarks_enabled
     executable(
         'kumo-derivative-backend-comparison',
@@ -430,7 +430,7 @@ test(
     args: [meson.current_source_dir() / 'tests/data/o2.fchk.gz'],
 )
 
-# Stage 02B.1: fused/individual evaluator requests against validated 1.3 kernels.
+# Fused/individual evaluator requests against validated 1.3 kernels.
 test(
     'evaluator-fusion',
     executable(
@@ -455,7 +455,7 @@ test(
     ),
 )
 
-# Stage 02C.1: internal dependency planning, without changing numerical kernels.
+# Internal dependency planning, without changing numerical kernels.
 test(
     'evaluation-plan',
     executable(
@@ -466,7 +466,7 @@ test(
     ),
 )
 
-# Stage 02C.2c: direct numerical regression against the legacy AO-P derivative kernel.
+# Direct numerical regression against the legacy AO-P derivative kernel.
 test(
     'shared-ao-validation',
     executable(
@@ -490,7 +490,7 @@ if benchmarks_enabled
     )
 endif
 
-# Stage 02C.3: first-order AO path against full second-order contractions.
+# First-order AO path against full second-order contractions.
 test(
     'selective-ao-derivatives',
     executable(
@@ -505,7 +505,7 @@ test(
     timeout: 300,
 )
 
-# Stage 02C.3b: benchmark selective first-order versus second-order AO derivatives.
+# Benchmark selective first-order versus second-order AO derivatives.
 if benchmarks_enabled
     executable(
         'kumo-selective-ao-benchmark',
@@ -514,7 +514,7 @@ if benchmarks_enabled
     )
 endif
 
-# Stage 02D.1: validate AO-MO eligibility without changing production contractions.
+# Validate AO-MO eligibility without changing production contractions.
 test(
     'backend-selection',
     executable(
@@ -529,7 +529,7 @@ test(
     ],
 )
 
-# Stage 02D.2a: experimental AO-MO kernel, independent of Evaluator selection.
+# Experimental AO-MO kernel, independent of Evaluator selection.
 test(
     'ao-mo-kernel',
     executable('kumo-ao-mo-kernel-test', 'tests/ao_mo_kernel_test.cpp', dependencies: kumo_dep),
@@ -540,12 +540,12 @@ test(
     timeout: 300,
 )
 
-# Stage 02D.2a: manual three-way AO-MO numerical diagnostic.
+# Manual three-way AO-MO numerical diagnostic.
 if benchmarks_enabled
     executable('kumo-ao-mo-diagnostic', 'tests/ao_mo_diagnostic.cpp', dependencies: kumo_dep)
 endif
 
-# Stage 02D.2b: explicit AO_P / AO_MO Evaluator backend selection.
+# Explicit AO_P / AO_MO Evaluator backend selection.
 test(
     'evaluator-backend',
     executable(
@@ -560,7 +560,7 @@ test(
     timeout: 300,
 )
 
-# Stage 02D.2c: manual end-to-end AO_P vs AO_MO comparison through Evaluator.
+# Manual end-to-end AO_P vs AO_MO comparison through Evaluator.
 if benchmarks_enabled
     executable(
         'kumo-evaluator-backend-benchmark',
@@ -569,7 +569,7 @@ if benchmarks_enabled
     )
 endif
 
-# Stage 02D.3a: deterministic, conservative automatic backend selection.
+# Deterministic, conservative automatic backend selection.
 test(
     'automatic-backend',
     executable(
@@ -580,7 +580,7 @@ test(
     ),
 )
 
-# Stage 02D.3b: measure AUTO decisions against both explicit backends.
+# Measure AUTO decisions against both explicit backends.
 if benchmarks_enabled
     executable(
         'kumo-automatic-backend-benchmark',
@@ -590,7 +590,7 @@ if benchmarks_enabled
     )
 endif
 
-# Stage 03A: analytic AO overlaps and Gaussian MO metric regression.
+# Analytic AO overlaps and Gaussian MO metric regression.
 test(
     'analytic-overlap',
     executable(
@@ -605,7 +605,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03A.2: independent Gauss-Hermite primitive-product overlap reference.
+# Independent Gauss-Hermite primitive-product overlap reference.
 test(
     'analytic-overlap-reference',
     executable(
@@ -620,7 +620,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03B.1: expose the stored spin-resolved FCHK 1-RDM without duplicating state.
+# Expose the stored spin-resolved FCHK 1-RDM without duplicating state.
 test(
     'one-particle-density',
     executable(
@@ -635,7 +635,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03B.2: S-metric subspace projectors (factorized representation).
+# S-metric subspace projectors (factorized representation).
 test(
     'subspace-projector',
     executable(
@@ -650,7 +650,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03B.2a: metric projector stress tests.
+# Metric projector stress tests.
 test(
     'subspace-projector-stress',
     executable(
@@ -665,7 +665,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03C.1: quadrature-weighted AO overlap accumulation (no grid policy).
+# Quadrature-weighted AO overlap accumulation (no grid policy).
 test(
     'weighted-overlap',
     executable(
@@ -680,7 +680,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03C.2: diagnostic convergence of spatial quadrature toward analytic AO overlap.
+# Diagnostic convergence of spatial quadrature toward analytic AO overlap.
 test(
     'weighted-overlap-quadrature',
     executable(
@@ -695,7 +695,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03C.3: independent atomic quadrature validation.
+# Independent atomic quadrature validation.
 test(
     'atomic-radial-angular-quadrature',
     executable(
@@ -706,7 +706,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03C.4: higher-order single-centre quadrature convergence.
+# Higher-order single-centre quadrature convergence.
 test(
     'atomic-radial-angular-convergence',
     executable(
@@ -717,7 +717,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03C.5: end-to-end single-center AO overlap quadrature.
+# End-to-end single-center AO overlap quadrature.
 test(
     'weighted-overlap-single-center',
     executable(
@@ -732,7 +732,7 @@ test(
     timeout: 300,
 )
 
-# Stage 03C.6: Becke multicenter overlap diagnostic.
+# Becke multicenter overlap diagnostic.
 test(
     'weighted-overlap-multicenter',
     executable(

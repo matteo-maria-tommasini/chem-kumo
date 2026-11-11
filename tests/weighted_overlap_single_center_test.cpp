@@ -1,4 +1,4 @@
-// Stage 03C.5a: end-to-end, all atomic-center AO overlaps by radial/angular quadrature.
+// End-to-end, all atomic-center AO overlaps by radial/angular quadrature.
 // The integration rule is deliberately test-only; no production quadrature API.
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"

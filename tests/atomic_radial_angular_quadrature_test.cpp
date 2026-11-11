@@ -1,4 +1,4 @@
-// Stage 03C.3: independent single-centre radial/angular quadrature validation.
+// Independent single-centre radial/angular quadrature validation.
 // No AO evaluator or FCHK parsing: analytic Gaussian moments are the oracle.
 #include <Eigen/Eigenvalues>
 #include <algorithm>

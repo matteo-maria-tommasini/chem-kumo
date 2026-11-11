@@ -116,9 +116,28 @@ private:
     Backend backend_used_ = Backend::AO_P;
 };
 
+/// Evaluates typed property requests (densities, their derivatives, MO
+/// amplitudes) for one molecule on regular grids.
+///
+/// Lifetime: the Evaluator stores a pointer to `molecule`, not a copy. The
+/// Molecule must outlive the Evaluator and every call to evaluate().
+///
+/// Usage:
+///   Evaluator evaluator(molecule);
+///   Request request;
+///   request.add(density::total.value()).add(density::total.gradient());
+///   const Results results = evaluator.evaluate(grid, request);
+///   std::span<const double> rho = results.get(density::total.value()).component();
 class Evaluator {
 public:
+    /// Throws std::invalid_argument for invalid options: block_size == 0,
+    /// threads < 0 or > 1, an unknown backend, or AO_MO requested for a
+    /// molecule whose orbitals are not AO-MO eligible.
     explicit Evaluator(const Molecule& molecule, EvaluationOptions options = {});
+
+    /// Evaluate every property in `request` at all grid points, in Field
+    /// order (third axis fastest). Throws std::invalid_argument for an invalid
+    /// grid (see Grid) or an orbital index of 0 (indices are one-based).
     [[nodiscard]] Results evaluate(const Grid& grid, const Request& request) const;
 
 private:
