@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
                 max_abs = std::max(max_abs, std::abs(a - b));
                 max_scaled = std::max(max_scaled, std::abs(a - b) / std::max(1e-10, std::abs(a)));
             }
-        // Stage 01D: property-resolved diagnostics on the same completed grids.
+        // Property-resolved diagnostics on the same completed grids.
         // Components use the ordering declared by Output above.
         constexpr std::array<const char*, 11> names = {"rho",     "grad_x",  "grad_y",  "grad_z",
                                                        "tau",     "hess_xx", "hess_yy", "hess_zz",

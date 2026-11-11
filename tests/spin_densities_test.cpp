@@ -1,11 +1,17 @@
+// spin_densities() must agree with the four single-component density() calls
+// and satisfy total = alpha + beta and spin = alpha - beta pointwise.
 #include "chem/kumo.hpp"
+#include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
 
 int main(int argc, char** argv) {
-    if (argc != 3) return 2;
+    if (argc != 3) {
+        std::cerr << "usage: " << argv[0] << " FILE1.fchk FILE2.fchk\n";
+        return 2;
+    }
     try {
         for (int t = 1; t < argc; ++t) {
             const auto molecule = chem::kumo::Molecule::from_fchk(argv[t]);
@@ -26,10 +32,14 @@ int main(int argc, char** argv) {
             }
             std::cout << argv[t] << " points=" << all.total.values().size() << " max_abs=" << worst
                       << '\n';
-            if (!std::isfinite(worst) || worst > 1e-9) return 1;
+            kumo_test::check(std::isfinite(worst) && worst <= 1e-9,
+                             std::string(argv[t]) +
+                                 ": spin densities consistent within 1e-9 (max_abs=" +
+                                 kumo_test::num(worst) + ")");
         }
     } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
+        std::cerr << "ERROR: " << e.what() << '\n';
         return 1;
     }
+    return kumo_test::exit_code();
 }

@@ -394,7 +394,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     return result;
 }
 
-// Stage 02C.2c: shared AO evaluation for all requested SCF spin components.
+// Shared AO evaluation for all requested SCF spin components.
 // Total and spin are the canonical FCHK matrices; alpha/beta are linear
 // combinations of their contractions, never reconstructed from MO occupations.
 std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(

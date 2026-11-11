@@ -1,4 +1,4 @@
-// Stage 03C.6: diagnostic molecular Becke quadrature against analytic AO overlap.
+// Diagnostic molecular Becke quadrature against analytic AO overlap.
 // Test-only quadrature. No production grid policy or density backend changes.
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"

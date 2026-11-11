@@ -25,6 +25,12 @@ struct Atom {
 
 /// Regular 3D grid: r(i,j,k) = origin + steps * [i,j,k].
 /// All lengths are in bohr; columns of steps are the grid-axis increments.
+/// Values are stored with k fastest, then j, then i.
+///
+/// Every evaluation function requires a valid grid and otherwise throws
+/// std::invalid_argument: positive counts, finite origin and steps, nonzero
+/// step vectors, and axes that are not (nearly) linearly dependent. The axis
+/// test does not depend on the spacing, so very fine grids are valid.
 struct Grid {
     Eigen::Vector3d origin = Eigen::Vector3d::Zero();
     Eigen::Matrix3d steps = Eigen::Matrix3d::Identity(); // columns: axis vectors, bohr

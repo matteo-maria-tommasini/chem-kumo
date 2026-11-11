@@ -3,6 +3,7 @@
 // not (nearly) linearly dependent. The rule is scale-independent, so a valid
 // grid with very small spacing is accepted everywhere.
 #include "chem/kumo.hpp"
+#include "test_support.hpp"
 
 #include <cmath>
 #include <functional>
@@ -15,30 +16,16 @@
 using namespace chem::kumo;
 
 namespace {
-int failures = 0;
-
-void fail(const std::string& message) {
-    std::cerr << "FAIL: " << message << '\n';
-    ++failures;
-}
-
 void expect_accepted(const std::string& label, const std::function<void()>& call) {
     try {
         call();
     } catch (const std::exception& e) {
-        fail(label + ": valid grid rejected (" + e.what() + ")");
+        kumo_test::check(false, label + ": valid grid rejected (" + e.what() + ")");
     }
 }
 
 void expect_rejected(const std::string& label, const std::function<void()>& call) {
-    try {
-        call();
-        fail(label + ": invalid grid accepted");
-    } catch (const std::invalid_argument&) {
-        // Expected.
-    } catch (const std::exception& e) {
-        fail(label + ": wrong exception type (" + e.what() + ")");
-    }
+    kumo_test::check_throws<std::invalid_argument>(call, label + ": invalid grid rejected");
 }
 
 Grid unit_grid(double spacing) {
@@ -105,10 +92,6 @@ int main(int argc, char** argv) {
     zero_count.counts[1] = 0;
     check_all(molecule, zero_count, "zero count", false);
 
-    if (failures != 0) {
-        std::cerr << failures << " grid validation check(s) failed\n";
-        return 1;
-    }
-    std::cout << "grid validation consistent across entry points\n";
-    return 0;
+    if (kumo_test::failures == 0) std::cout << "grid validation consistent across entry points\n";
+    return kumo_test::exit_code();
 }

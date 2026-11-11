@@ -51,6 +51,9 @@ make a test pass without explicit approval.
   `meson.build`; new sources to the `kumo` library source list.
 - New tests: add `tests/<name>_test.cpp` and register a `test(...)` in
   `meson.build` (with a `timeout` for slow reference tests).
+  Every failure must print what was expected: use `kumo_test::check` /
+  `check_throws` from `tests/test_support.hpp` (or throw with a message),
+  never a bare nonzero return.
 - Validate inputs strictly and fail with clear exceptions (fail-closed);
   keep serial and OpenMP results numerically identical in point ordering.
 - Any code that evaluates on a `Grid` must validate it with
