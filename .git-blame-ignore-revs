@@ -1,0 +1,5 @@
+# Formatting-only commits, ignored by git blame and GitHub blame.
+# Local use: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply clang-format and meson format to the whole tree
+08354d1762a18b1fbd11fbead0ca4376b9d08555
