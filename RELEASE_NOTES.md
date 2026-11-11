@@ -1,3 +1,40 @@
+# chem-kumo 1.4.0 — release notes
+
+- New typed `chem::kumo::Evaluator` API (`<chem/kumo/evaluator.hpp>`) for
+  density components (total, alpha, beta, spin), gradients, Hessians,
+  Laplacians, `tau` and orbital amplitudes, driven by an `EvaluationPlan`
+  that fuses requests and evaluates only the AO derivatives they need.
+- Electronic backends: `Backend::AO_P` (AO density matrix) and
+  `Backend::AO_MO` (occupied-orbital contractions). The default
+  `Backend::AUTO` selects AO-MO only when the orbital representation stored
+  in the FCHK passes validation at load time; an explicitly requested
+  ineligible AO-MO backend is rejected. `Results::backend_used()` reports
+  the choice. The AO-MO speedup is workload-dependent
+  (see `benchmarks/BACKEND_COMPARISON.md`).
+- Additional numerical APIs: analytic AO overlap integrals
+  (`BasisEvaluator::overlap_matrix()`), Cartesian AO moments through second
+  order (`BasisEvaluator::cartesian_moments()`), spin-resolved one-particle
+  density matrices (`Molecule::density_matrix()`), metric subspace
+  projectors (`SubspaceProjector`), quadrature-based AO weighted overlaps
+  (`WeightedOverlapAccumulator`, `weighted_overlap_matrix()`), trilinear
+  field sampling (`FieldSampler`) and scalar-field integration
+  (`integrate_rectangular()`, `integrate_trapezoidal()`).
+- Scalar Gaussian Cube input: `read_cube()` reads plain or gzip-compressed
+  Cube files (detected from the gzip signature), decompresses incrementally
+  and rejects invalid or truncated streams. Only single-dataset scalar Cube
+  files are supported; Cube output remains plain text.
+- Atoms now carry an explicit nuclear charge; `Field` samples have
+  controlled mutable access; grid geometry is validated independently of
+  physical scale.
+- All public headers, including the new ones, are installed; the CLI and
+  installed-consumer tests derive the expected version from Meson.
+- The `kumo` CLI is unchanged: the new facilities are C++ API only.
+- 64/64 Meson tests passed on macOS ARM64 on 2026-10-30; CI builds and
+  tests on ubuntu-latest and macos-latest. See [docs/API.md](docs/API.md)
+  and the README for contracts and validated scope.
+
+---
+
 # chem-kumo 1.3.0 — release notes
 
 - Optional OpenMP grid-block parallelism for density components, spatial
