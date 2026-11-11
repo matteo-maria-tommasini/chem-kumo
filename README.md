@@ -275,6 +275,13 @@ reference calculations. Scientific direction, testing, and final review were
 carried out by Matteo Tommasini, with ChatGPT contributing to code development,
 debugging, and documentation.
 
+The transition from version 1.4.0 to 1.4.1 resulted from a readability,
+formatting and documentation audit conducted with Anthropic's Claude (via
+Claude Code), which also implemented the resulting changes: consistent grid
+validation, shared internal helpers, clearer error messages and test
+diagnostics, and more robust CI. Every change was reviewed and approved by
+Matteo Tommasini and verified against bit-identical numerical outputs.
+
 ## License
 
 MIT License; see [LICENSE](LICENSE). Eigen is an external dependency and is not
