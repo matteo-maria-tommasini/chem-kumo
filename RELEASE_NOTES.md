@@ -1,3 +1,49 @@
+# chem-kumo 1.4.1 — release notes
+
+A maintenance release: stricter and more consistent input validation,
+clearer error messages, and internal cleanup. The public API is unchanged
+and numerical results are bit-identical to 1.4.0 (checked on O2 and acrolein
+outputs, serial and OpenMP builds).
+
+Behaviour changes:
+
+- Grid validation uses one scale-independent rule at every evaluation entry
+  point (`Molecule::density*`, `Molecule::orbital*`, `Evaluator::evaluate`):
+  positive point counts, finite origin and steps, nonzero steps and linearly
+  independent axes, measured on normalized step directions.
+  - `Evaluator::evaluate` now rejects degenerate grids (zero steps,
+    collinear axes) with `std::invalid_argument`; before, derivative
+    requests on such grids returned meaningless values.
+  - Orbital evaluation now accepts valid grids with very small spacing,
+    which it previously rejected.
+  - Error messages for invalid grids are uniform (for example
+    "invalid grid geometry: linearly dependent axes").
+- `MolecularOrbitals` applies the same checks as `Molecule`: it rejects MO
+  records with more MOs than basis functions or nonfinite coefficients.
+- A damaged or truncated gzip Cube file is now reported as a gzip error
+  (for example `truncated gzip Cube: <path>`) instead of a misleading Cube
+  format error. FCHK and Cube readers share one streaming gzip decoder with
+  strict CRC32/ISIZE checks; gzip error messages always include the path.
+
+Internal changes:
+
+- Shared internal helpers replace duplicated code for grid points, density
+  matrix selection, AO Hessian layout, MO coefficient reading, Cube output
+  and OpenMP block loops (first worker exception rethrown on the caller).
+- `Molecule::from_fchk` and `Evaluator::evaluate` are split into small,
+  documented helpers.
+- Code formatted with `.clang-format` and `meson format` (the formatting
+  commit is listed in `.git-blame-ignore-revs`); public headers use `///`
+  documentation comments.
+- Tests report what they expected on failure (`tests/test_support.hpp`).
+- CI installs dependencies with retries and timeouts, and installs zlib
+  explicitly on Ubuntu.
+- 66/66 Meson tests passed on macOS ARM64 on 2026-11-11 (serial and
+  MacPorts Clang 22 OpenMP builds); CI builds and tests on ubuntu-latest and
+  macos-latest. New tests: `grid-validation` and `parallel-blocks`.
+
+---
+
 # chem-kumo 1.4.0 — release notes
 
 - New typed `chem::kumo::Evaluator` API (`<chem/kumo/evaluator.hpp>`) for
