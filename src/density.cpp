@@ -329,10 +329,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
 #endif
     {
         const Eigen::Index capacity = static_cast<Eigen::Index>(std::min(block_size, count));
-        Eigen::MatrixXd input(n, 4 * capacity);
+        // AO panels: value, x, y, z, then the AO Hessian (xx, yy, zz, xy, xz, yz).
+        Eigen::MatrixXd input(n, 10 * capacity);
         Eigen::MatrixXd product(n, 4 * capacity);
-        Eigen::MatrixXd hxx(n, capacity), hyy(n, capacity), hzz(n, capacity);
-        Eigen::MatrixXd hxy(n, capacity), hxz(n, capacity), hyz(n, capacity);
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
@@ -341,30 +340,14 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                 const std::size_t start = static_cast<std::size_t>(block) * block_size;
                 const std::size_t size = std::min(block_size, count - start);
                 const auto b = static_cast<Eigen::Index>(size);
-                // Pack AO values and first derivatives into one column-major panel.
-                // A single GEMM applies P to all four panels, avoiding four separate
-                // matrix products and improving reuse of the (potentially large) P.
-                auto phi = input.middleCols(0, b);
-                auto dx = input.middleCols(b, b);
-                auto dy = input.middleCols(2 * b, b);
-                auto dz = input.middleCols(3 * b, b);
-                for (Eigen::Index j = 0; j < b; ++j) {
-                    const auto ao = evaluator_.evaluate_derivatives(
-                        points.col(static_cast<Eigen::Index>(start) + j));
-                    phi.col(j) = ao.values;
-                    dx.col(j) = ao.gradient.col(0);
-                    dy.col(j) = ao.gradient.col(1);
-                    dz.col(j) = ao.gradient.col(2);
-                    hxx.col(j) = ao.hessian.col(0);
-                    hyy.col(j) = ao.hessian.col(1);
-                    hzz.col(j) = ao.hessian.col(2);
-                    hxy.col(j) = ao.hessian.col(3);
-                    hxz.col(j) = ao.hessian.col(4);
-                    hyz.col(j) = ao.hessian.col(5);
-                }
+                // The value and gradient panels are contiguous, so a single GEMM
+                // applies P to all four, improving reuse of the (potentially large) P.
+                evaluator_.evaluate_derivatives_batch(
+                    points.middleCols(static_cast<Eigen::Index>(start), b), 2,
+                    input.leftCols(10 * b));
+                const auto phi = input.middleCols(0, b);
                 product.leftCols(4 * b).noalias() = p * input.leftCols(4 * b);
                 const auto y = product.middleCols(0, b);
-                const Eigen::MatrixXd* h[6] = {&hxx, &hyy, &hzz, &hxy, &hxz, &hyz};
                 for (Eigen::Index j = 0; j < b; ++j) {
                     auto& out = result[start + static_cast<std::size_t>(j)];
                     out.value = phi.col(j).dot(y.col(j));
@@ -373,9 +356,10 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                         out.gradient[a] = 2.0 * ga.dot(y.col(j));
                         out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
                         for (int c = a; c < 3; ++c) {
+                            const auto hac =
+                                input.col((4 + detail::ao_hessian_column[a][c]) * b + j);
                             const double v =
-                                2.0 * (h[detail::ao_hessian_column[a][c]]->col(j).dot(y.col(j)) +
-                                       ga.dot(product.col((c + 1) * b + j)));
+                                2.0 * (hac.dot(y.col(j)) + ga.dot(product.col((c + 1) * b + j)));
                             out.hessian(a, c) = out.hessian(c, a) = v;
                         }
                     }
@@ -423,14 +407,12 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
 #endif
     {
         const Eigen::Index capacity = static_cast<Eigen::Index>(std::min(block_size, count));
-        Eigen::MatrixXd input(n, 4 * capacity);
+        // AO panels: value, x, y, z and, for order 2, the AO Hessian.
+        const int panels = BasisEvaluator::derivative_panel_count(ao_order);
+        Eigen::MatrixXd input(n, panels * capacity);
         Eigen::MatrixXd product_total, product_spin;
         if (total_needed) product_total.resize(n, 4 * capacity);
         if (spin_needed) product_spin.resize(n, 4 * capacity);
-        const Eigen::Index hcapacity = ao_order == 2 ? capacity : 0;
-        Eigen::MatrixXd hxx(n, hcapacity), hyy(n, hcapacity), hzz(n, hcapacity);
-        Eigen::MatrixXd hxy(n, hcapacity), hxz(n, hcapacity), hyz(n, hcapacity);
-        const Eigen::MatrixXd* h[6] = {&hxx, &hyy, &hzz, &hxy, &hxz, &hyz};
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
@@ -439,22 +421,10 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                 const std::size_t start = static_cast<std::size_t>(block) * block_size;
                 const Eigen::Index b =
                     static_cast<Eigen::Index>(std::min(block_size, count - start));
-                auto phi = input.middleCols(0, b);
-                for (Eigen::Index j = 0; j < b; ++j) {
-                    const auto ao = evaluator_.evaluate_derivatives(
-                        points.col(static_cast<Eigen::Index>(start) + j), ao_order);
-                    phi.col(j) = ao.values;
-                    for (int a = 0; a < 3; ++a)
-                        input.col((a + 1) * b + j) = ao.gradient.col(a);
-                    if (ao_order == 2) {
-                        hxx.col(j) = ao.hessian.col(0);
-                        hyy.col(j) = ao.hessian.col(1);
-                        hzz.col(j) = ao.hessian.col(2);
-                        hxy.col(j) = ao.hessian.col(3);
-                        hxz.col(j) = ao.hessian.col(4);
-                        hyz.col(j) = ao.hessian.col(5);
-                    }
-                }
+                evaluator_.evaluate_derivatives_batch(
+                    points.middleCols(static_cast<Eigen::Index>(start), b), ao_order,
+                    input.leftCols(panels * b));
+                const auto phi = input.middleCols(0, b);
                 if (total_needed)
                     product_total.leftCols(4 * b).noalias() = total_ * input.leftCols(4 * b);
                 if (spin_needed)
@@ -473,9 +443,10 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                             out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
                             if (ao_order == 2)
                                 for (int c = a; c < 3; ++c) {
+                                    const auto hac =
+                                        input.col((4 + detail::ao_hessian_column[a][c]) * b + j);
                                     const double v =
-                                        2.0 * (h[detail::ao_hessian_column[a][c]]->col(j).dot(y) +
-                                               ga.dot(product.col((c + 1) * b + j)));
+                                        2.0 * (hac.dot(y) + ga.dot(product.col((c + 1) * b + j)));
                                     out.hessian(a, c) = out.hessian(c, a) = v;
                                 }
                         }
@@ -556,20 +527,16 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
 #pragma omp parallel if (nblocks > 1)
 #endif
     {
-        Eigen::MatrixXd ao(n, (ao_order == 0 ? 1 : 4) * cap);
-        Eigen::MatrixXd hxx(n, ao_order == 2 ? cap : 0), hyy(n, ao_order == 2 ? cap : 0);
-        Eigen::MatrixXd hzz(n, ao_order == 2 ? cap : 0), hxy(n, ao_order == 2 ? cap : 0);
-        Eigen::MatrixXd hxz(n, ao_order == 2 ? cap : 0), hyz(n, ao_order == 2 ? cap : 0);
-        Eigen::MatrixXd* ah[6] = {&hxx, &hyy, &hzz, &hxy, &hxz, &hyz};
+        // AO panels: value, then x, y, z and the AO Hessian (xx, yy, zz, xy,
+        // xz, yz) as far as ao_order requires.
+        const int panels = ao_order == 0 ? 1 : BasisEvaluator::derivative_panel_count(ao_order);
+        Eigen::MatrixXd ao(n, panels * cap);
         // Each spin channel is projected once per block, using all occupied MOs.
         const auto project = [&](const Eigen::MatrixXd& c, Eigen::Index b,
                                  std::array<Eigen::MatrixXd, 10>& projected) {
             if (c.cols() == 0) return;
-            for (int a = 0; a < (ao_order == 0 ? 1 : 4); ++a)
+            for (int a = 0; a < panels; ++a)
                 projected[a].noalias() = c.transpose() * ao.middleCols(a * b, b);
-            if (ao_order == 2)
-                for (int a = 0; a < 6; ++a)
-                    projected[a + 4].noalias() = c.transpose() * ah[a]->leftCols(b);
         };
         const auto contract = [&](const std::array<Eigen::MatrixXd, 10>& v, Eigen::Index j) {
             DensityDerivatives d;
@@ -598,20 +565,11 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                 const std::size_t start = static_cast<std::size_t>(block) * block_size;
                 const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
                 const auto block_points = points.middleCols(static_cast<Eigen::Index>(start), b);
-                if (ao_order == 0) {
+                if (ao_order == 0)
                     evaluator_.evaluate_batch(block_points, ao.leftCols(b));
-                } else {
-                    for (Eigen::Index j = 0; j < b; ++j) {
-                        const auto v =
-                            evaluator_.evaluate_derivatives(block_points.col(j), ao_order);
-                        ao.col(j) = v.values;
-                        for (int a = 0; a < 3; ++a)
-                            ao.col((a + 1) * b + j) = v.gradient.col(a);
-                        if (ao_order == 2)
-                            for (int a = 0; a < 6; ++a)
-                                ah[a]->col(j) = v.hessian.col(a);
-                    }
-                }
+                else
+                    evaluator_.evaluate_derivatives_batch(block_points, ao_order,
+                                                          ao.leftCols(panels * b));
                 std::array<Eigen::MatrixXd, 10> va, vb;
                 if (need_a) project(ca_occ, b, va);
                 if (need_b && !beta_is_alpha) project(cb_occ, b, vb);

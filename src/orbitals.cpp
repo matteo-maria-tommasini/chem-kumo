@@ -1,6 +1,7 @@
 #include <Eigen/LU>
 #include "parallel_blocks.hpp"
 #include "chem/kumo/density.hpp"
+#include "derivative_layout.hpp"
 #include "grid_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -74,18 +75,40 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many orbital derivative blocks for parallel evaluation");
     detail::FirstException worker_errors;
+    const auto c = coeff.col(static_cast<Eigen::Index>(index - 1));
+    const auto n = static_cast<Eigen::Index>(basis_size());
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) if (nblocks > 1)
+#pragma omp parallel if (nblocks > 1)
 #endif
-    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(block) * block_size;
-            const std::size_t size = std::min(block_size, count - start);
-            for (std::size_t j = 0; j < size; ++j)
-                result[start + j] = orbital_derivatives(
-                    points.col(static_cast<Eigen::Index>(start + j)), index, channel);
-        } catch (...) {
-            worker_errors.capture();
+    {
+        // AO panels: value, x, y, z, xx, yy, zz, xy, xz, yz (one per point each).
+        const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
+        Eigen::MatrixXd ao(n, 10 * capacity);
+#ifdef _OPENMP
+#pragma omp for schedule(static)
+#endif
+        for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+            try {
+                const std::size_t start = static_cast<std::size_t>(block) * block_size;
+                const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
+                evaluator_.evaluate_derivatives_batch(
+                    points.middleCols(static_cast<Eigen::Index>(start), b), 2, ao.leftCols(10 * b));
+                const auto panel = [&](int component, Eigen::Index j) {
+                    return c.dot(ao.col(component * b + j));
+                };
+                for (Eigen::Index j = 0; j < b; ++j) {
+                    auto& out = result[start + static_cast<std::size_t>(j)];
+                    out.value = panel(0, j);
+                    for (int a = 0; a < 3; ++a) {
+                        out.gradient[a] = panel(1 + a, j);
+                        for (int e = a; e < 3; ++e)
+                            out.hessian(a, e) = out.hessian(e, a) =
+                                panel(4 + detail::ao_hessian_column[a][e], j);
+                    }
+                }
+            } catch (...) {
+                worker_errors.capture();
+            }
         }
     }
     worker_errors.rethrow_if_any();

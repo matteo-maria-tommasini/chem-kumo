@@ -178,6 +178,7 @@ BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
         }
         max_cartesian_count = std::max(max_cartesian_count, ncart);
         max_primitive_count_ = std::max(max_primitive_count_, nprim);
+        max_angular_momentum_ = std::max(max_angular_momentum_, angular_momentum);
         offset += block.output_count;
         blocks.push_back(std::move(block));
     };
@@ -474,66 +475,126 @@ AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point)
 }
 
 AODerivatives BasisEvaluator::evaluate_derivatives(const Eigen::Vector3d& point, int order) const {
-    if (order < 1 || order > 2) throw std::invalid_argument("AO derivative order must be 1 or 2");
+    const int panels = derivative_panel_count(order);
     const auto n = static_cast<Eigen::Index>(basis_.function_count());
+    Eigen::MatrixXd output(n, panels);
+    evaluate_derivatives_batch(point, order, output);
     AODerivatives result;
-    result.values = Eigen::VectorXd::Zero(n);
-    result.gradient.setZero(n, 3);
+    result.values = output.col(0);
+    result.gradient = output.middleCols(1, 3);
     result.hessian.setZero(n, 6);
+    if (order == 2) result.hessian = output.middleCols(4, 6);
+    return result;
+}
 
+int BasisEvaluator::derivative_panel_count(int order) {
+    if (order < 1 || order > 2) throw std::invalid_argument("AO derivative order must be 1 or 2");
+    return order == 2 ? 10 : 4;
+}
+
+void BasisEvaluator::evaluate_derivatives_batch(
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, int order,
+    Eigen::Ref<Eigen::MatrixXd> output) const {
+    const int panels = derivative_panel_count(order);
+    const Eigen::Index count = points.cols();
+    if (output.rows() != static_cast<Eigen::Index>(basis_.function_count()) ||
+        output.cols() != panels * count) {
+        throw std::runtime_error("AO derivative batch output matrix has wrong dimensions");
+    }
+    // Scratch reused for every shell and point: primitive exponentials,
+    // powers x^m, y^m, z^m, the one-dimensional factors below, and the
+    // Cartesian components of pure shells before their transform.
+    const auto max_l = static_cast<std::size_t>(max_angular_momentum_);
+    const std::size_t degrees = max_l + 1;
+    std::vector<double> radial(max_primitive_count_);
+    std::vector<double> powers(3 * degrees);
+    // factors[((p * 3 + axis) * degrees + m) * 3 + q] holds, for primitive p
+    // with exponent a and coordinate x = r[axis], the one-dimensional factor
+    // x^m exp(-a x^2) and its first and second derivatives, divided by
+    // exp(-a x^2): q = 0: x^m; q = 1: m x^(m-1) - 2 a x^(m+1);
+    // q = 2: m (m-1) x^(m-2) - 2 a (2m+1) x^m + 4 a^2 x^(m+2).
+    std::vector<double> factors(max_primitive_count_ * 3 * degrees * 3);
+    const auto factor = [&](std::size_t p, int axis, int m) {
+        return &factors[((p * 3 + static_cast<std::size_t>(axis)) * degrees +
+                         static_cast<std::size_t>(m)) *
+                        3];
+    };
+    Eigen::MatrixXd pure_scratch(static_cast<Eigen::Index>(max_cartesian_count_), panels * count);
+
+    // Shells in the outer loop: each shell fills its rows for all points of
+    // the batch, so a pure shell needs a single transform per batch.
     // Differentiate the primitive Cartesian polynomial and its Gaussian factor
     // analytically. The contraction and pure-shell transform are linear and
     // therefore applied unchanged to every derivative component.
     for (const auto& block : blocks_) {
-        const Eigen::Vector3d r = point - block.origin;
-        const double r2 = r.squaredNorm();
         const auto nc = static_cast<Eigen::Index>(block.powers.size());
-        Eigen::MatrixXd cart = Eigen::MatrixXd::Zero(nc, order == 2 ? 10 : 4);
-        for (Eigen::Index k = 0; k < nc; ++k) {
-            const auto& power = block.powers[static_cast<std::size_t>(k)];
-            const int degrees[3] = {power.x, power.y, power.z};
-            for (std::size_t p = 0; p < block.exponents.size(); ++p) {
+        const auto nprim = block.exponents.size();
+        const int l_shell =
+            block.powers.front().x + block.powers.front().y + block.powers.front().z;
+        const bool pure = block.pure_transform.size() != 0;
+        const auto offset = static_cast<Eigen::Index>(block.output_offset);
+        // Cartesian shells are written straight to their output rows.
+        using Panel = Eigen::Ref<Eigen::MatrixXd>;
+        Panel target =
+            pure ? Panel(pure_scratch.topRows(nc)) : Panel(output.middleRows(offset, nc));
+        for (Eigen::Index j = 0; j < count; ++j) {
+            const Eigen::Vector3d r = points.col(j) - block.origin;
+            const double r2 = r.squaredNorm();
+            for (std::size_t p = 0; p < nprim; ++p)
+                radial[p] = std::exp(-block.exponents[p] * r2);
+            for (int axis = 0; axis < 3; ++axis) {
+                double* xp = &powers[static_cast<std::size_t>(axis) * degrees];
+                xp[0] = 1.0;
+                for (int m = 1; m <= l_shell; ++m)
+                    xp[m] = xp[m - 1] * r[axis];
+            }
+            for (std::size_t p = 0; p < nprim; ++p) {
                 const double a = block.exponents[p];
-                const double weight =
-                    block.primitive_weights(k, static_cast<Eigen::Index>(p)) * std::exp(-a * r2);
-                double v[3], d[3], dd[3];
                 for (int axis = 0; axis < 3; ++axis) {
-                    const int l = degrees[axis];
+                    const double* xp = &powers[static_cast<std::size_t>(axis) * degrees];
                     const double x = r[axis];
-                    const double xl = integer_power(x, l);
-                    v[axis] = xl;
-                    d[axis] = (l ? l * integer_power(x, l - 1) : 0.0) - 2.0 * a * x * xl;
-                    if (order == 2)
-                        dd[axis] = (l >= 2 ? l * (l - 1) * integer_power(x, l - 2) : 0.0) -
-                                   2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl;
-                }
-                cart(k, 0) += weight * v[0] * v[1] * v[2];
-                cart(k, 1) += weight * d[0] * v[1] * v[2];
-                cart(k, 2) += weight * v[0] * d[1] * v[2];
-                cart(k, 3) += weight * v[0] * v[1] * d[2];
-                if (order == 2) {
-                    cart(k, 4) += weight * dd[0] * v[1] * v[2];
-                    cart(k, 5) += weight * v[0] * dd[1] * v[2];
-                    cart(k, 6) += weight * v[0] * v[1] * dd[2];
-                    cart(k, 7) += weight * d[0] * d[1] * v[2];
-                    cart(k, 8) += weight * d[0] * v[1] * d[2];
-                    cart(k, 9) += weight * v[0] * d[1] * d[2];
+                    for (int l = 0; l <= l_shell; ++l) {
+                        double* f = factor(p, axis, l);
+                        const double xl = xp[l];
+                        f[0] = xl;
+                        f[1] = (l ? l * xp[l - 1] : 0.0) - 2.0 * a * x * xl;
+                        f[2] = order == 2
+                                   ? (l >= 2 ? l * (l - 1) * xp[l - 2] : 0.0) -
+                                         2.0 * a * (2 * l + 1) * xl + 4.0 * a * a * x * x * xl
+                                   : 0.0;
+                    }
                 }
             }
+            for (Eigen::Index k = 0; k < nc; ++k) {
+                const auto& power = block.powers[static_cast<std::size_t>(k)];
+                double sums[10] = {};
+                for (std::size_t p = 0; p < nprim; ++p) {
+                    const double weight =
+                        block.primitive_weights(k, static_cast<Eigen::Index>(p)) * radial[p];
+                    const double* fx = factor(p, 0, power.x);
+                    const double* fy = factor(p, 1, power.y);
+                    const double* fz = factor(p, 2, power.z);
+                    sums[0] += weight * fx[0] * fy[0] * fz[0];
+                    sums[1] += weight * fx[1] * fy[0] * fz[0];
+                    sums[2] += weight * fx[0] * fy[1] * fz[0];
+                    sums[3] += weight * fx[0] * fy[0] * fz[1];
+                    if (order == 2) {
+                        sums[4] += weight * fx[2] * fy[0] * fz[0];
+                        sums[5] += weight * fx[0] * fy[2] * fz[0];
+                        sums[6] += weight * fx[0] * fy[0] * fz[2];
+                        sums[7] += weight * fx[1] * fy[1] * fz[0];
+                        sums[8] += weight * fx[1] * fy[0] * fz[1];
+                        sums[9] += weight * fx[0] * fy[1] * fz[1];
+                    }
+                }
+                for (int c = 0; c < panels; ++c)
+                    target(k, c * count + j) = sums[c];
+            }
         }
-        const auto offset = static_cast<Eigen::Index>(block.output_offset);
-        Eigen::MatrixXd transformed;
-        if (block.pure_transform.size() == 0) {
-            transformed = std::move(cart);
-        } else {
-            transformed.noalias() = block.pure_transform * cart;
-        }
-        const auto count = static_cast<Eigen::Index>(block.output_count);
-        result.values.segment(offset, count) = transformed.col(0);
-        result.gradient.middleRows(offset, count) = transformed.middleCols(1, 3);
-        if (order == 2) result.hessian.middleRows(offset, count) = transformed.middleCols(4, 6);
+        if (pure)
+            output.middleRows(offset, static_cast<Eigen::Index>(block.output_count)).noalias() =
+                block.pure_transform * pure_scratch.topRows(nc);
     }
-    return result;
 }
 
 Eigen::VectorXd BasisEvaluator::evaluate(const Eigen::Vector3d& point) const {

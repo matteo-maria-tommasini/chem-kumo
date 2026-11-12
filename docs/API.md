@@ -82,6 +82,15 @@ structure: `values` (N AO), `gradient` (N AO x 3) and `hessian`
 (N AO x 6). The Hessian columns are **xx, yy, zz, xy, xz, yz**; the
 coordinate axes and units are Cartesian bohr. AO ordering follows the FCHK.
 
+`BasisEvaluator::evaluate_derivatives_batch(points, order, output)` computes
+the same quantities for a 3 x N batch of points without per-point
+allocations, which is how the library evaluates density and orbital
+derivatives on grids. `order` is 1 (values and gradient) or 2 (also the
+Hessian). `output` must be N AO x (panels * N), with
+`panels = BasisEvaluator::derivative_panel_count(order)` (4 or 10); it is
+filled with consecutive N AO x N panels in the order value, x, y, z, xx, yy,
+zz, xy, xz, yz, so component `c` at point `j` is column `c * N + j`.
+
 `Molecule::orbital_derivatives(point, index_one_based, channel)` returns
 `OrbitalDerivatives` with signed `value`, `gradient` (3-vector) and
 `hessian` (symmetric 3 x 3 matrix). The MO channel must be Alpha or Beta.

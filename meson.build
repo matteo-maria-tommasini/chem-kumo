@@ -295,6 +295,21 @@ test(
     timeout: 300,
 )
 
+# Batched AO derivatives agree with the single-point evaluator.
+test(
+    'ao-derivatives-batch',
+    executable(
+        'kumo-ao-derivatives-batch-test',
+        'tests/ao_derivatives_batch_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz',
+    ],
+)
+
 # Spatial AO derivatives (analytic implementation versus numerical oracle).
 test(
     'ao-spatial-derivatives',
