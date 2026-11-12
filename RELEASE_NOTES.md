@@ -1,3 +1,81 @@
+# chem-kumo 1.7.0 — release notes
+
+The command-line tool chooses the faster density contraction by default and
+can report its progress, and the Evaluator's derivative and AO-MO path now
+runs on all OpenMP threads. The public API is extended in a
+source-compatible way; rebuild code that links against libkumo (the layout
+of `EvaluationOptions` changed).
+
+Command-line changes:
+
+- `--backend auto|ao-p|ao-mo` selects the density contraction, and the
+  default is now `auto`, as in the Evaluator: the occupied-orbital
+  contraction (AO-MO) is used when the FCHK orbitals reproduce its density
+  matrices (checked when the file is loaded), and the AO density matrices
+  (AO-P) otherwise. **Behaviour change:** before 1.7.0 the CLI always used
+  AO-P. The two contractions agree to about 1e-9 relative, below the six
+  significant digits written to Cube files; on O2 and acrolein at most the
+  last printed digit of about 1% of the values changes. `--backend ao-p`
+  reproduces the Cube files of 1.6.0 digit for digit; `--backend ao-mo`
+  fails clearly for an ineligible FCHK. The second comment line of every
+  density Cube file names the contraction used.
+- `-v` / `--verbose` reports on standard error the file being read, a
+  summary of the molecule (atoms, basis functions, SCF reference and
+  occupations), the grid, the density contraction and why it was chosen,
+  each evaluation and writing step with its duration, and the total time.
+  On a terminal, evaluations show a progress bar with the elapsed and
+  estimated remaining time. Standard output still lists only the files
+  written, and the Cube files are identical with and without `--verbose`.
+
+Library changes:
+
+- `ProgressCallback` (`std::function<void(std::size_t done, std::size_t
+  total)>`, `<chem/kumo/density.hpp>`) is accepted as an optional last
+  parameter by `Molecule::densities_blocked` and `Molecule::orbitals` and as
+  `EvaluationOptions::progress`. It is called after each block of grid
+  points; calls are serialized (never concurrent), `done` increases up to
+  `total`, and an exception thrown by the callback aborts the evaluation
+  and reaches the caller. It does not change the results.
+- OpenMP: the Evaluator's point path (all density derivatives, and AO-MO
+  densities) evaluated its blocks one at a time, so it ran on a single
+  thread in OpenMP builds. Its blocks now run on worker threads; each block
+  is still passed to the same serial kernel on its own, so results are
+  bit-identical to the serial build for any thread count.
+
+Timings against 1.6.0 (HBC def2-TZVP, 1410 AOs, release OpenMP builds,
+MacPorts Clang 22, Apple M with 4 performance and 4 efficiency cores; the
+absolute numbers depend on the machine):
+
+| Evaluator, 50752 points | 1.6.0, 8 threads | 1.7.0, 8 threads | Speed-up |
+|---|---:|---:|---:|
+| AO_P gradient | 2.97 s | 0.68 s | ×4.4 |
+| AO_P Hessian + Laplacian + tau | 4.06 s | 0.99 s | ×4.1 |
+| AO_MO density | 0.43 s | 0.09 s | ×4.8 |
+| AO_MO gradient | 1.29 s | 0.30 s | ×4.3 |
+| AO_MO Hessian + Laplacian + tau | 3.13 s | 0.73 s | ×4.3 |
+
+With one thread the two versions take the same time.
+
+| `kumo` default grid, 1543260 points | 1.6.0 | 1.7.0 |
+|---|---:|---:|
+| total density, 1 thread | 17.2 s | 11.9 s |
+| total density, 8 threads | 4.9 s | 3.1 s |
+| `--property laplacian`, 1 thread | 85.3 s | 76.3 s |
+| `--property laplacian`, 8 threads | 85.3 s | 18.9 s |
+
+Validation:
+
+- 71/71 Meson tests passed on macOS ARM64 on 2026-11-12 (serial and
+  MacPorts Clang 22 OpenMP builds); CI builds and tests on ubuntu-latest
+  and macos-latest. New tests: `progress` (monotonic progress reports,
+  documented totals, bit-identical results, exception propagation) and
+  `evaluator-parallel` (Evaluator results bit-identical across thread
+  counts for AO_P and AO_MO, error propagation from worker blocks). The CLI
+  end-to-end test covers `--backend` and `--verbose`. No reference
+  tolerance was changed.
+
+---
+
 # chem-kumo 1.6.0 — release notes
 
 Density derivatives from the command line, and faster AO evaluation through
