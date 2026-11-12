@@ -9,6 +9,10 @@ Input basis data, density matrices and MO coefficients are shared read-only;
 per-block Eigen temporaries are private. Each block writes disjoint output
 indices. Exceptions are captured inside worker loops and rethrown after the
 parallel region. `EIGEN_DONT_PARALLELIZE` prevents nested Eigen threading.
+The `Evaluator` point path (all density derivatives, and AO_MO densities)
+runs its blocks of `block_size` grid points on worker threads with
+`schedule(dynamic)`; each block is passed to the serial block kernel on its
+own, so block boundaries and results do not depend on the thread count.
 The pointwise derivative APIs remain serial. No AO screening is introduced.
 
 ## Building and testing

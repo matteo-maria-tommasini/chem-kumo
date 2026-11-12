@@ -3,7 +3,9 @@
 #include "automatic_backend.hpp"
 #include "ao_screening.hpp"
 #include "grid_geometry.hpp"
+#include "parallel_blocks.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 #ifdef _OPENMP
@@ -81,6 +83,13 @@ void store_block(PropertyField& output, PropertyKind kind,
 // Point path. Grid points are processed in blocks of at most block_size, so
 // coordinate and derivative temporaries stay bounded. `evaluate_block`
 // returns the derivatives of the requested spin components on one block.
+//
+// Each kernel call receives exactly one block, so the block boundaries and
+// the arithmetic per block do not depend on the number of threads. With
+// OpenMP the blocks run on worker threads (the kernels then stay serial,
+// since their own parallel regions open only for more than one block); each
+// block writes a disjoint range of grid points, so the output is
+// bit-identical to the serial loop.
 template <typename BlockEvaluator>
 void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size,
                          const detail::EvaluationPlan& plan, Backend backend,
@@ -92,28 +101,42 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
         if (uses_point_path(plan_for(plan, component), backend))
             needed.push_back(spin_of(component));
 
-    const std::size_t block_capacity = std::min(n, block_size);
-    Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(block_capacity));
-    for (std::size_t start = 0; start < n; start += block_capacity) {
-        const std::size_t count = std::min(block_capacity, n - start);
-        for (std::size_t local = 0; local < count; ++local)
-            points.col(static_cast<Eigen::Index>(local)) = detail::grid_point(grid, start + local);
-        const auto block_points = points.leftCols(static_cast<Eigen::Index>(count)).eval();
-        const auto block = evaluate_block(block_points, needed);
+    const std::size_t nblocks =
+        detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
+    detail::FirstException worker_errors;
+    detail::Progress report(progress, n);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (nblocks > 1)
+#endif
+    for (std::int64_t index = 0; index < static_cast<std::int64_t>(nblocks); ++index) {
+        try {
+            const std::size_t start = static_cast<std::size_t>(index) * block_size;
+            const std::size_t count = std::min(block_size, n - start);
+            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
+            for (std::size_t local = 0; local < count; ++local)
+                points.col(static_cast<Eigen::Index>(local)) =
+                    detail::grid_point(grid, start + local);
+            const auto block = evaluate_block(points, needed);
 
-        for (auto component : all_components) {
-            if (!uses_point_path(plan_for(plan, component), backend)) continue;
-            const auto& derivatives = block.at(spin_of(component));
-            for (auto& [key, output] : fields) {
-                // AO-P densities come from the grid path instead.
-                if (key.component != component || key.kind == PropertyKind::Orbital ||
-                    (key.kind == PropertyKind::Density && backend == Backend::AO_P))
-                    continue;
-                store_block(output, key.kind, derivatives, start);
+            for (auto component : all_components) {
+                if (!uses_point_path(plan_for(plan, component), backend)) continue;
+                const auto& derivatives = block.at(spin_of(component));
+                for (auto& [key, output] : fields) {
+                    // AO-P densities come from the grid path instead.
+                    if (key.component != component || key.kind == PropertyKind::Orbital ||
+                        (key.kind == PropertyKind::Density && backend == Backend::AO_P))
+                        continue;
+                    store_block(output, key.kind, derivatives, start);
+                }
             }
+            // Serialized and monotonic; a throwing callback is captured
+            // like any other block error.
+            report.advance(count);
+        } catch (...) {
+            worker_errors.capture();
         }
-        if (progress) progress(start + count, n);
     }
+    worker_errors.rethrow_if_any();
 }
 } // namespace
 
