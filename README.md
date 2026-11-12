@@ -60,6 +60,9 @@ impose a binding policy. See [OpenMP guide](docs/OPENMP.md).
 kumo molecule.fchk                              # total SCF density
 kumo molecule.fchk.gz                           # transparent gzip input
 kumo o2.fchk --spin all                          # total, alpha, beta, spin difference
+kumo molecule.fchk --property laplacian          # Laplacian of the total density
+kumo molecule.fchk --property density,gradient,laplacian,tau
+kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -78,6 +81,16 @@ files are written to the current working directory unless the prefix includes
 a directory. `--mo` accepts 1-based orbital numbers, comma-separated lists,
 inclusive `A:B` ranges, `homo`, `lumo`, `frontier`, and offsets such as
 `homo-2` and `lumo+2`. Indices refer to the chosen spin channel.
+
+`--property` (density mode only) selects what to write for each density
+component, as a comma-separated list: `density` (default), `gradient` (the
+norm |grad rho|, in e/bohr^4), `laplacian` (e/bohr^5) and `tau` (positive
+kinetic energy density, hartree/bohr^3). Density files keep their names
+(`PREFIX_density.cube`, `PREFIX_alpha.cube`, ...); derivative files are named
+`PREFIX_<component>_<property>.cube`, for example
+`PREFIX_density_laplacian.cube` (total density) or `PREFIX_spin_tau.cube`
+(alpha minus beta). All CLI densities and derivatives use the AO density
+matrix contraction (AO_P), with the default AO screening.
 
 `--spin` selects a **density component** (`total`, `alpha`, `beta`,
 `difference`, `all`) in density mode; with `--mo` or `--list-mo`, it selects
@@ -167,7 +180,8 @@ The C++ `chem::kumo::Evaluator` provides typed requests for total, alpha, beta,
 and spin-difference electron density, gradients, Hessians, Laplacians and
 positive kinetic-energy density (`tau`), as well as orbital amplitudes. It
 returns component arrays on the requested grid. This API is separate from the
-existing `Molecule` convenience methods and is not a new CLI mode.
+existing `Molecule` convenience methods; the CLI uses it for `--property`
+derivative output.
 
 `EvaluationOptions::backend` selects `Backend::AUTO` (default), `Backend::AO_P`
 or `Backend::AO_MO`. `AUTO` prefers occupied-orbital AO-MO contractions when

@@ -18,6 +18,45 @@ for name in alpha_mo_9 alpha_mo_10 beta_mo_7 beta_mo_8; do
     test -s "$file" || { echo "Missing orbital cube: $file" >&2; exit 1; }
     awk 'NR==3 {if (NF<4 || $1>=0) exit 1} NR>=4 && NR<=6 {if (NF<4 || $1<=0) exit 1} END {if (NR<=8) exit 1}' "$file" || exit 1
 done
+# Density properties: --property density reproduces the default output
+# exactly, and derivative Cube files have valid headers and plausible signs
+# (|grad rho| and tau of the total density are nonnegative, the Laplacian of
+# the total density is negative near the nuclei).
+"$KUMO" "$FCHK" --spacing 1.0 --margin 1.0 --output "$TMP/default" > "$TMP/default.log"
+"$KUMO" "$FCHK" --spacing 1.0 --margin 1.0 --output "$TMP/explicit" --property density > "$TMP/explicit.log"
+tail -n +3 "$TMP/default_density.cube" > "$TMP/default.values"
+tail -n +3 "$TMP/explicit_density.cube" > "$TMP/explicit.values"
+cmp -s "$TMP/default.values" "$TMP/explicit.values" || {
+    echo '--property density differs from the default density output' >&2; exit 1; }
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --spin all \
+    --property gradient,laplacian,tau > "$TMP/derivatives.log"
+test "$(wc -l < "$TMP/derivatives.log")" -eq 12 || {
+    echo 'Expected 12 derivative Cube files' >&2; cat "$TMP/derivatives.log" >&2; exit 1; }
+for kind in density alpha beta spin; do
+    for property in gradient laplacian tau; do
+        file="${PREFIX}_${kind}_${property}.cube"
+        grep -Fqx "$file" "$TMP/derivatives.log" || { echo "Not reported: $file" >&2; exit 1; }
+        test -s "$file" || { echo "Missing derivative cube: $file" >&2; exit 1; }
+        awk 'NR==3 {if (NF<4 || $1<=0) exit 1} NR>=4 && NR<=6 {if (NF<4 || $1<=0) exit 1} END {if (NR<=7) exit 1}' "$file" || exit 1
+    done
+done
+values() { awk 'NR == 3 {skip = 6 + ($1 < 0 ? -$1 : $1)} NR > 6 && NR > skip {for (i = 1; i <= NF; ++i) print $i}' "$1"; }
+values "${PREFIX}_density_gradient.cube" | awk '$1 < 0 {exit 1}' || {
+    echo 'Negative gradient norm' >&2; exit 1; }
+values "${PREFIX}_density_tau.cube" | awk '$1 < 0 {exit 1}' || {
+    echo 'Negative total tau' >&2; exit 1; }
+values "${PREFIX}_density_laplacian.cube" | awk '$1 < 0 {found = 1} END {exit !found}' || {
+    echo 'Total-density Laplacian has no negative values' >&2; exit 1; }
+if "$KUMO" "$FCHK" --spacing 1 --property hessian --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo 'Unknown --property unexpectedly accepted' >&2; exit 1
+fi
+if "$KUMO" "$FCHK" --mo homo --property tau --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo '--property with --mo unexpectedly accepted' >&2; exit 1
+fi
+if "$KUMO" "$FCHK" --spacing 1 --property tau, --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo 'Trailing comma in --property unexpectedly accepted' >&2; exit 1
+fi
+
 if "$KUMO" "$FCHK" --spacing -1 --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo 'Invalid spacing unexpectedly accepted' >&2; exit 1
 fi
