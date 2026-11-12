@@ -58,8 +58,11 @@ jobs:
           done
           echo "::error::brew install failed after 3 attempts"
           exit 1
+      # Compiler warnings fail the build (GCC on Ubuntu, Clang on macOS), so
+      # that a new warning is caught here rather than by users. Warnings
+      # inside Eigen's headers are not reported (it is a system include).
       - name: Configure
-        run: meson setup build --buildtype=debugoptimized
+        run: meson setup build --buildtype=debugoptimized -Dwerror=true
       - name: Compile
         run: meson compile -C build
       - name: Test
