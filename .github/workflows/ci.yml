@@ -82,8 +82,13 @@ jobs:
           -Db_sanitize=address,undefined -Db_lundef=false
       - name: Compile
         run: meson compile -C build
+      # Sanitizer builds run several times slower: the slowest test
+      # (density-screening, 120 s limit) took longer than its limit on the
+      # hosted runner, so the per-test limits are multiplied by 5 there.
       - name: Test
-        run: meson test -C build --print-errorlogs
+        run: >-
+          meson test -C build --print-errorlogs
+          ${{ matrix.sanitize && '--timeout-multiplier 5' || '' }}
       - name: Installed consumer
         if: ${{ !matrix.sanitize }}
         run: ./tests/check-installed-consumer.sh
