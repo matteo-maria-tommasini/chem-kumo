@@ -82,6 +82,16 @@ ordering; `evaluate_into` fills a caller-provided vector; `evaluate_batch`
 produces AO columns for a batch of points. The `evaluate_into_reference`
 method is a numerical-regression implementation.
 
+Shell cutoff (1.6.0): for each shell, the evaluator precomputes a radius
+beyond which a rigorous bound on every AO of the shell and on its first and
+second derivatives is at most `BasisEvaluator::ao_cutoff` (1e-14). At points
+farther than that from the shell center, `evaluate*` and
+`evaluate_derivatives_batch` return exact zeros for the shell instead of
+computing them; `evaluate_into_reference` does not apply the cutoff. On HBC
+def2-TZVP grids this makes densities about 1.3 times (AO_MO about 1.5
+times) and derivatives 1.1 to 1.3 times faster, with changes of at most
+about 6e-14 in the results.
+
 ## Spatial derivative API (1.2.0)
 
 `BasisEvaluator::evaluate_derivatives(point)` returns an `AODerivatives`

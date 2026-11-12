@@ -295,6 +295,22 @@ test(
     timeout: 300,
 )
 
+# The AO shell cutoff zeroes only AOs and derivatives below ao_cutoff.
+test(
+    'ao-shell-cutoff',
+    executable(
+        'kumo-ao-shell-cutoff-test',
+        'tests/ao_shell_cutoff_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz',
+    ],
+    timeout: 120,
+)
+
 # Batched AO derivatives agree with the single-point evaluator.
 test(
     'ao-derivatives-batch',

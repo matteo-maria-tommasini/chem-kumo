@@ -92,6 +92,50 @@ double c2pcff(int l, int m, int lx, int ly) {
     return a * b * g;
 }
 
+// Radius beyond which every AO of a shell, and each of its first and second
+// Cartesian derivatives, is at most `cutoff` in magnitude.
+//
+// For a primitive with exponent a and Cartesian degree l, each factor of the
+// derivative kernel (x^m, m x^(m-1) - 2 a x^(m+1), and the second-derivative
+// factor) is bounded by r^(l-2), r^(l-1), ..., r^(l+2) with coefficients
+// built from l and a. For r >= 1 every such power is at most r^(l+2), so
+//   |AO or derivative| <= transform_norm * sum_p W_p C_p r^(l+2) exp(-a_p r^2),
+// with W_p the largest |contraction weight| of primitive p over the shell's
+// Cartesian functions, C_p = 1 + l + l^2 + 2 a_p (2l + 2) + 4 a_p^2, and
+// transform_norm the largest absolute row sum of the pure transform (1 for
+// Cartesian shells). Each term decreases for r > sqrt((l + 2) / (2 a_p)), so
+// the bound is found by bisection beyond the largest such radius.
+double shell_cutoff_radius(const std::vector<double>& exponents,
+                           const Eigen::MatrixXd& primitive_weights, int l, double transform_norm,
+                           double cutoff) {
+    const auto nprim = exponents.size();
+    std::vector<double> coefficient(nprim);
+    double start = 1.0;
+    for (std::size_t p = 0; p < nprim; ++p) {
+        const double a = exponents[p];
+        const double weight =
+            primitive_weights.col(static_cast<Eigen::Index>(p)).cwiseAbs().maxCoeff();
+        coefficient[p] =
+            transform_norm * weight * (1.0 + l + l * l + 2.0 * a * (2.0 * l + 2.0) + 4.0 * a * a);
+        start = std::max(start, std::sqrt((l + 2.0) / (2.0 * a)));
+    }
+    const auto bound = [&](double r) {
+        double sum = 0.0;
+        for (std::size_t p = 0; p < nprim; ++p)
+            sum += coefficient[p] * std::pow(r, l + 2) * std::exp(-exponents[p] * r * r);
+        return sum;
+    };
+    if (bound(start) <= cutoff) return start;
+    double low = start, high = 2.0 * start;
+    while (bound(high) > cutoff)
+        high *= 2.0;
+    for (int iteration = 0; iteration < 60; ++iteration) {
+        const double middle = 0.5 * (low + high);
+        (bound(middle) > cutoff ? low : high) = middle;
+    }
+    return high;
+}
+
 } // namespace
 
 // Order of Cartesian components within a shell in Gaussian FCHK files. For
@@ -176,6 +220,12 @@ BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
         } else {
             block.output_count = ncart;
         }
+        const double transform_norm =
+            block.pure_transform.size() ? block.pure_transform.cwiseAbs().rowwise().sum().maxCoeff()
+                                        : 1.0;
+        const double radius = shell_cutoff_radius(block.exponents, block.primitive_weights,
+                                                  angular_momentum, transform_norm, ao_cutoff);
+        block.cutoff_radius2 = radius * radius;
         max_cartesian_count = std::max(max_cartesian_count, ncart);
         max_primitive_count_ = std::max(max_primitive_count_, nprim);
         max_angular_momentum_ = std::max(max_angular_momentum_, angular_momentum);
@@ -416,6 +466,13 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
     for (const auto& block : blocks_) {
         const Eigen::Vector3d r = point - block.origin;
         const double r2 = r.squaredNorm();
+        if (r2 > block.cutoff_radius2) {
+            output
+                .segment(static_cast<Eigen::Index>(block.output_offset),
+                         static_cast<Eigen::Index>(block.output_count))
+                .setZero();
+            continue;
+        }
         const auto ncart = block.powers.size();
         const auto nprim = block.exponents.size();
 
@@ -520,9 +577,14 @@ void BasisEvaluator::evaluate_derivatives_batch(
                         3];
     };
     Eigen::MatrixXd pure_scratch(static_cast<Eigen::Index>(max_cartesian_count_), panels * count);
+    Eigen::MatrixXd pure_values(static_cast<Eigen::Index>(max_cartesian_count_), panels * count);
+    std::vector<Eigen::Index> inside;
+    inside.reserve(static_cast<std::size_t>(count));
 
     // Shells in the outer loop: each shell fills its rows for all points of
-    // the batch, so a pure shell needs a single transform per batch.
+    // the batch, so a pure shell needs a single transform per batch. Only the
+    // points within the shell cutoff radius are computed; the others get
+    // exact zeros (see ao_cutoff).
     // Differentiate the primitive Cartesian polynomial and its Gaussian factor
     // analytically. The contraction and pure-shell transform are linear and
     // therefore applied unchanged to every derivative component.
@@ -533,12 +595,28 @@ void BasisEvaluator::evaluate_derivatives_batch(
             block.powers.front().x + block.powers.front().y + block.powers.front().z;
         const bool pure = block.pure_transform.size() != 0;
         const auto offset = static_cast<Eigen::Index>(block.output_offset);
-        // Cartesian shells are written straight to their output rows.
+        const auto rows = static_cast<Eigen::Index>(block.output_count);
+        auto shell_output = output.middleRows(offset, rows);
+        inside.clear();
+        for (Eigen::Index j = 0; j < count; ++j)
+            if ((points.col(j) - block.origin).squaredNorm() <= block.cutoff_radius2)
+                inside.push_back(j);
+        const auto n_inside = static_cast<Eigen::Index>(inside.size());
+        // Points beyond the cutoff keep these zeros.
+        if (n_inside < count) shell_output.setZero();
+        if (n_inside == 0) continue;
+        // Cartesian shells are written straight to their output columns; pure
+        // shells to compact scratch columns (component c of the i-th point
+        // within the cutoff at c * n_inside + i), transformed below.
+        const auto column = [&](int c, Eigen::Index i) {
+            return pure ? c * n_inside + i : c * count + inside[static_cast<std::size_t>(i)];
+        };
         using Panel = Eigen::Ref<Eigen::MatrixXd>;
         Panel target =
             pure ? Panel(pure_scratch.topRows(nc)) : Panel(output.middleRows(offset, nc));
-        for (Eigen::Index j = 0; j < count; ++j) {
-            const Eigen::Vector3d r = points.col(j) - block.origin;
+        for (Eigen::Index i = 0; i < n_inside; ++i) {
+            const Eigen::Vector3d r =
+                points.col(inside[static_cast<std::size_t>(i)]) - block.origin;
             const double r2 = r.squaredNorm();
             for (std::size_t p = 0; p < nprim; ++p)
                 radial[p] = std::exp(-block.exponents[p] * r2);
@@ -588,12 +666,18 @@ void BasisEvaluator::evaluate_derivatives_batch(
                     }
                 }
                 for (int c = 0; c < panels; ++c)
-                    target(k, c * count + j) = sums[c];
+                    target(k, column(c, i)) = sums[c];
             }
         }
-        if (pure)
-            output.middleRows(offset, static_cast<Eigen::Index>(block.output_count)).noalias() =
-                block.pure_transform * pure_scratch.topRows(nc);
+        if (pure) {
+            auto transformed = pure_values.topLeftCorner(rows, panels * n_inside);
+            transformed.noalias() =
+                block.pure_transform * pure_scratch.topLeftCorner(nc, panels * n_inside);
+            for (int c = 0; c < panels; ++c)
+                for (Eigen::Index i = 0; i < n_inside; ++i)
+                    shell_output.col(c * count + inside[static_cast<std::size_t>(i)]) =
+                        transformed.col(c * n_inside + i);
+        }
     }
 }
 
