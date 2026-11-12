@@ -47,6 +47,61 @@ values "${PREFIX}_density_tau.cube" | awk '$1 < 0 {exit 1}' || {
     echo 'Negative total tau' >&2; exit 1; }
 values "${PREFIX}_density_laplacian.cube" | awk '$1 < 0 {found = 1} END {exit !found}' || {
     echo 'Total-density Laplacian has no negative values' >&2; exit 1; }
+# Density backends: the Cube comment names the contraction used, and the AO-MO
+# and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
+# selects AO-MO).
+for backend in auto ao-p ao-mo; do
+    "$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/$backend" --backend "$backend" \
+        --property density,laplacian > "$TMP/$backend.log"
+done
+for backend in auto ao-mo; do
+    sed -n 2p "$TMP/${backend}_density.cube" | grep -Fq 'AO-MO contraction' || {
+        echo "--backend $backend: Cube comment does not name the AO-MO contraction" >&2; exit 1; }
+done
+sed -n 2p "$TMP/ao-p_density_laplacian.cube" | grep -Fq 'AO density-matrix contraction' || {
+    echo '--backend ao-p: Cube comment does not name the density-matrix contraction' >&2; exit 1; }
+for name in density density_laplacian; do
+    values "$TMP/ao-p_${name}.cube" > "$TMP/ao-p.values"
+    values "$TMP/ao-mo_${name}.cube" > "$TMP/ao-mo.values"
+    paste "$TMP/ao-p.values" "$TMP/ao-mo.values" | awk '
+        { d = $1 - $2; if (d < 0) d = -d; s = ($1 < 0 ? -$1 : $1); if (s < 1) s = 1
+          if (d > 1e-6 * s) bad = 1 }
+        END { exit bad }' || { echo "AO-P and AO-MO $name Cube files disagree" >&2; exit 1; }
+done
+# --verbose: progress messages go to standard error only; standard output and
+# the Cube files are the same as without it. Standard error is not a
+# terminal here, so no progress bar (carriage returns) is drawn.
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/quiet" --spin all \
+    --property density,tau > "$TMP/quiet.out" 2> "$TMP/quiet.err"
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/loud" --spin all \
+    --property density,tau --verbose > "$TMP/loud.out" 2> "$TMP/loud.err"
+test ! -s "$TMP/quiet.err" || { echo 'Messages on stderr without --verbose' >&2; exit 1; }
+sed "s|$TMP/quiet|$TMP/loud|" "$TMP/quiet.out" | cmp -s - "$TMP/loud.out" || {
+    echo '--verbose changes standard output' >&2; exit 1; }
+for message in 'Reading formatted checkpoint' 'basis functions' 'Grid:' \
+    'Density contraction:' 'Evaluating the value and kinetic energy density tau' \
+    'Evaluated in' 'Writing 8 Cube files' 'Finished in'; do
+    grep -Fq "$message" "$TMP/loud.err" || {
+        echo "--verbose message missing: $message" >&2; cat "$TMP/loud.err" >&2; exit 1; }
+done
+if tr -d '\n' < "$TMP/loud.err" | grep -q "$(printf '\r')"; then
+    echo '--verbose drew a progress bar on a non-terminal' >&2; exit 1
+fi
+for name in density alpha beta spin density_tau alpha_tau beta_tau spin_tau; do
+    cmp -s "$TMP/quiet_${name}.cube" "$TMP/loud_${name}.cube" || {
+        echo "--verbose changes ${name} Cube file" >&2; exit 1; }
+done
+"$KUMO" "$FCHK" --mo homo -v --spacing 1.0 --margin 1.0 --output "$TMP/mo" \
+    > "$TMP/mo.out" 2> "$TMP/mo.err"
+grep -Fq 'Evaluating alpha molecular orbital 9' "$TMP/mo.err" || {
+    echo '--verbose --mo message missing' >&2; cat "$TMP/mo.err" >&2; exit 1; }
+
+if "$KUMO" "$FCHK" --spacing 1 --backend mo --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo 'Unknown --backend unexpectedly accepted' >&2; exit 1
+fi
+if "$KUMO" "$FCHK" --mo homo --backend ao-p --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo '--backend with --mo unexpectedly accepted' >&2; exit 1
+fi
 if "$KUMO" "$FCHK" --spacing 1 --property hessian --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo 'Unknown --property unexpectedly accepted' >&2; exit 1
 fi

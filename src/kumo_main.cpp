@@ -1,15 +1,25 @@
 #include "chem/kumo.hpp"
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#ifdef _WIN32
+#include <io.h>
+#define KUMO_ISATTY(stream) _isatty(_fileno(stream))
+#else
+#include <unistd.h>
+#define KUMO_ISATTY(stream) isatty(fileno(stream))
+#endif
 
 using chem::kumo::Molecule;
 using chem::kumo::Spin;
@@ -23,11 +33,13 @@ struct Options {
     std::string selector;
     std::string spin;
     std::string properties;
+    std::string backend;
     std::string prefix;
     double spacing = 0.20;
     double margin = 5.0;
     bool mo_mode = false;
     bool list = false;
+    bool verbose = false;
     bool output_set = false;
 };
 
@@ -40,6 +52,8 @@ void usage() {
               << "  --property density,gradient,laplacian,tau\n"
               << "                             Density properties to write (default density;\n"
               << "                             gradient is the norm |grad rho|)\n"
+              << "  --backend auto|ao-p|ao-mo  Density contraction (default auto: occupied MOs\n"
+              << "                             when they reproduce the FCHK density matrices)\n"
               << "  --mo N[,M:K,...]           Write 1-based molecular orbitals\n"
               << "  --mo homo|lumo|frontier    Frontier orbital selection\n"
               << "  --mo homo-2:lumo+2         Frontier-relative range\n"
@@ -48,6 +62,7 @@ void usage() {
               << "  --spacing BOHR             Grid step (default 0.20 bohr)\n"
               << "  --margin BOHR              Bounding-box margin (default 5.0 bohr)\n"
               << "  --output PREFIX            Output filename prefix\n"
+              << "  -v, --verbose              Report progress on standard error\n"
               << "  --help                     Show help\n"
               << "  --version                  Show version\n";
 }
@@ -64,6 +79,106 @@ double real(const std::string& s) {
     if (n != s.size() || !std::isfinite(v))
         throw std::invalid_argument("invalid real number: " + s);
     return v;
+}
+
+// Progress messages for --verbose, written to standard error so that standard
+// output keeps listing only the files written. On a terminal, evaluations
+// also show a progress bar that is redrawn in place; otherwise only the
+// start and the end of each step are reported.
+class Console {
+public:
+    using clock = std::chrono::steady_clock;
+
+    explicit Console(bool verbose)
+        : verbose_(verbose), terminal_(verbose && KUMO_ISATTY(stderr)), start_(clock::now()) {}
+
+    bool verbose() const noexcept { return verbose_; }
+
+    void say(const std::string& line) const {
+        if (verbose_) std::cerr << line << '\n' << std::flush;
+    }
+
+    /// Announce a step and start timing it.
+    void begin(const std::string& step) {
+        say(step);
+        step_start_ = clock::now();
+        last_percent_ = -1;
+        bar_drawn_ = false;
+    }
+
+    /// Progress callback for the current step (empty unless on a terminal).
+    chem::kumo::ProgressCallback progress() {
+        if (!terminal_) return {};
+        return [this](std::size_t done, std::size_t total) { draw(done, total); };
+    }
+
+    /// End the current step with a summary such as "Evaluated in".
+    void end(const std::string& summary) {
+        if (bar_drawn_) std::cerr << '\n';
+        say("  " + summary + " " + seconds(since(step_start_)));
+    }
+
+    void finish() const { say("Finished in " + seconds(since(start_))); }
+
+    static std::string seconds(double s) {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(s < 10 ? 2 : 1) << s << " s";
+        return out.str();
+    }
+
+    /// 1543260 -> "1,543,260".
+    static std::string grouped(std::size_t n) {
+        auto digits = std::to_string(n);
+        for (auto i = static_cast<std::ptrdiff_t>(digits.size()) - 3; i > 0; i -= 3)
+            digits.insert(static_cast<std::size_t>(i), ",");
+        return digits;
+    }
+
+private:
+    static double since(clock::time_point t) {
+        return std::chrono::duration<double>(clock::now() - t).count();
+    }
+
+    // "  [==========>         ]  52%  5.2 s elapsed, about 4.8 s left"
+    void draw(std::size_t done, std::size_t total) {
+        if (total == 0) return;
+        const int percent = static_cast<int>(100 * done / total);
+        if (percent == last_percent_) return;
+        last_percent_ = percent;
+        constexpr int width = 30;
+        const int filled = static_cast<int>(width * done / total);
+        std::string bar(static_cast<std::size_t>(filled), '=');
+        if (filled < width) bar += '>';
+        bar.resize(width, ' ');
+        const double elapsed = since(step_start_);
+        std::ostringstream line;
+        line << "\r  [" << bar << "] " << std::setw(3) << percent << "%  " << seconds(elapsed)
+             << " elapsed";
+        if (done > 0 && done < total)
+            line << ", about "
+                 << seconds(elapsed * static_cast<double>(total - done) / static_cast<double>(done))
+                 << " left";
+        line << "    ";
+        std::cerr << line.str() << std::flush;
+        bar_drawn_ = true;
+    }
+
+    bool verbose_;
+    bool terminal_;
+    clock::time_point start_;
+    clock::time_point step_start_ = clock::now();
+    int last_percent_ = -1;
+    bool bar_drawn_ = false;
+};
+
+// "a", "a and b", "a, b and c".
+std::string join(const std::vector<std::string>& items) {
+    std::string out;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        if (i > 0) out += i + 1 == items.size() ? " and " : ", ";
+        out += items[i];
+    }
+    return out;
 }
 
 Options parse(int argc, char** argv) {
@@ -85,6 +200,11 @@ Options parse(int argc, char** argv) {
             if (!o.properties.empty()) throw std::invalid_argument("--property specified twice");
             o.properties = lower(value());
             if (o.properties.empty()) throw std::invalid_argument("empty --property list");
+        } else if (a == "--backend") {
+            if (!o.backend.empty()) throw std::invalid_argument("--backend specified twice");
+            o.backend = lower(value());
+            if (o.backend != "auto" && o.backend != "ao-p" && o.backend != "ao-mo")
+                throw std::invalid_argument("--backend must be auto, ao-p or ao-mo");
         } else if (a == "--spacing")
             o.spacing = real(value());
         else if (a == "--margin")
@@ -94,6 +214,8 @@ Options parse(int argc, char** argv) {
             o.output_set = true;
         } else if (a == "--list-mo")
             o.list = true;
+        else if (a == "-v" || a == "--verbose")
+            o.verbose = true;
         else if (!a.empty() && a[0] == '-')
             throw std::invalid_argument("unknown option: " + a);
         else if (o.input.empty())
@@ -106,6 +228,9 @@ Options parse(int argc, char** argv) {
     if (!o.properties.empty() && (o.mo_mode || o.list))
         throw std::invalid_argument(
             "--property applies only to densities, not to --mo or --list-mo");
+    if (!o.backend.empty() && (o.mo_mode || o.list))
+        throw std::invalid_argument(
+            "--backend applies only to densities, not to --mo or --list-mo");
     if (!(o.spacing > 0) || o.margin < 0)
         throw std::invalid_argument("invalid grid spacing or margin");
     if (!o.output_set) o.prefix = o.input.stem().string();
@@ -206,9 +331,17 @@ void list_mos(const Molecule& mol, Spin channel) {
 }
 
 void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Options& o,
-                    Spin channel) {
+                    Spin channel, Console& console) {
     const auto indices = select_mos(o.selector, mol, channel);
-    auto fields = mol.orbitals(grid, indices, channel);
+    std::vector<std::string> numbers;
+    for (auto n : indices)
+        numbers.push_back(std::to_string(n));
+    console.begin("Evaluating " + spin_name(channel) + " molecular orbital" +
+                  (indices.size() > 1 ? "s " : " ") + join(numbers));
+    auto fields = mol.orbitals(grid, indices, channel, console.progress());
+    console.end("Evaluated in");
+    console.begin("Writing " + std::to_string(indices.size()) + " Cube file" +
+                  (indices.size() > 1 ? "s" : ""));
     for (std::size_t j = 0; j < indices.size(); ++j) {
         const auto n = indices[j];
         const auto filename =
@@ -218,6 +351,7 @@ void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Opt
                                          " MO " + std::to_string(n));
         std::cout << filename << "\n";
     }
+    console.end("Written in");
 }
 
 // Density property requested with --property, with its Cube filename suffix.
@@ -283,41 +417,139 @@ chem::kumo::Property density_property(Spin component, PropertyKind kind) {
     }
 }
 
-// Write gradient norms, Laplacians and tau for every requested density
-// component, evaluated together in one Evaluator request. The AO_P backend
-// is used, the same density-matrix contraction as the density Cube files.
-void write_density_derivatives(const Molecule& mol, const chem::kumo::Grid& grid,
-                               const std::vector<std::pair<Spin, std::string>>& components,
-                               const std::vector<DensityProperty>& properties,
-                               const std::string& prefix) {
+// Density contraction selected with --backend. AUTO uses the occupied MOs
+// (AO_MO) when they reproduce the FCHK density matrices, checked when the
+// FCHK is loaded, and the density matrices (AO_P) otherwise; AO_MO must not
+// be forced on an FCHK that fails that check.
+chem::kumo::Backend select_backend(const std::string& name, const Molecule& mol) {
+    if (name.empty() || name == "auto") return chem::kumo::Backend::AUTO;
+    if (name == "ao-p") return chem::kumo::Backend::AO_P;
+    if (!mol.electronic_structure_info().ao_mo_eligible())
+        throw std::invalid_argument("--backend ao-mo: the occupied orbitals in this FCHK do not "
+                                    "reproduce its density matrices; use auto or ao-p");
+    return chem::kumo::Backend::AO_MO;
+}
+
+std::string backend_label(chem::kumo::Backend backend) {
+    return backend == chem::kumo::Backend::AO_MO ? "AO-MO contraction"
+                                                 : "AO density-matrix contraction";
+}
+
+// "Evaluating the total electron density", or "Evaluating the gradient norm
+// and Laplacian of the total and alpha electron densities".
+std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& components,
+                               const std::vector<DensityProperty>& properties) {
+    std::vector<std::string> what, which;
+    for (const auto& property : properties)
+        what.push_back(property.kind == PropertyKind::Density     ? "value"
+                       : property.kind == PropertyKind::Gradient  ? "gradient norm"
+                       : property.kind == PropertyKind::Laplacian ? "Laplacian"
+                                                                  : "kinetic energy density tau");
+    for (const auto& component : components)
+        which.push_back(component_label(component.first));
+    const auto densities = join(which) + " electron densit" + (which.size() > 1 ? "ies" : "y");
+    if (what.size() == 1 && what.front() == "value") return "Evaluating the " + densities;
+    return "Evaluating the " + join(what) + " of the " + densities;
+}
+
+// Evaluate every requested property of every density component in one
+// Evaluator request and write one Cube file each: first the densities
+// (PREFIX_<component>.cube), then the derivatives
+// (PREFIX_<component>_<property>.cube). The gradient is written as its norm.
+// Each Cube comment names the quantity, its units, the component and the
+// contraction actually used.
+void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
+                              const std::vector<std::pair<Spin, std::string>>& components,
+                              const std::vector<DensityProperty>& properties,
+                              chem::kumo::Backend backend, const std::string& prefix,
+                              Console& console) {
     chem::kumo::Request request;
     for (const auto& [component, suffix] : components)
         for (const auto& property : properties)
-            if (property.kind != PropertyKind::Density)
-                request.add(density_property(component, property.kind));
-    if (request.properties().empty()) return;
+            request.add(density_property(component, property.kind));
+    console.begin(evaluation_summary(components, properties));
     chem::kumo::EvaluationOptions options;
-    options.backend = chem::kumo::Backend::AO_P;
+    options.backend = backend;
+    options.progress = console.progress();
     const auto results = chem::kumo::Evaluator(mol, options).evaluate(grid, request);
-    for (const auto& [component, suffix] : components) {
-        for (const auto& property : properties) {
-            if (property.kind == PropertyKind::Density) continue;
-            const auto& field = results.get(density_property(component, property.kind));
-            std::vector<double> values(field.points);
-            if (property.kind == PropertyKind::Gradient) {
-                for (std::size_t q = 0; q < field.points; ++q)
-                    values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
-                                          field.component(1)[q] * field.component(1)[q] +
-                                          field.component(2)[q] * field.component(2)[q]);
-            } else {
-                const auto source = field.component();
-                std::copy(source.begin(), source.end(), values.begin());
-            }
-            const auto filename = prefix + "_" + suffix + "_" + property.name + ".cube";
-            chem::kumo::Field(grid, mol.atoms(), std::move(values))
-                .write_cube(filename, property.description + ", " + component_label(component));
-            std::cout << filename << "\n";
+    console.end("Evaluated in");
+    const auto files = components.size() * properties.size();
+    console.begin("Writing " + std::to_string(files) + " Cube file" + (files > 1 ? "s" : ""));
+    const auto used = backend_label(results.backend_used());
+    const auto write = [&](Spin component, const std::string& suffix,
+                           const DensityProperty& property) {
+        const auto& field = results.get(density_property(component, property.kind));
+        std::vector<double> values(field.points);
+        if (property.kind == PropertyKind::Gradient) {
+            for (std::size_t q = 0; q < field.points; ++q)
+                values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
+                                      field.component(1)[q] * field.component(1)[q] +
+                                      field.component(2)[q] * field.component(2)[q]);
+        } else {
+            const auto source = field.component();
+            std::copy(source.begin(), source.end(), values.begin());
         }
+        const auto filename = prefix + "_" + suffix +
+                              (property.kind == PropertyKind::Density ? "" : "_" + property.name) +
+                              ".cube";
+        chem::kumo::Field(grid, mol.atoms(), std::move(values))
+            .write_cube(filename,
+                        property.description + ", " + component_label(component) + ", " + used);
+        std::cout << filename << "\n";
+    };
+    for (const auto& property : properties)
+        if (property.kind == PropertyKind::Density)
+            for (const auto& [component, suffix] : components)
+                write(component, suffix, property);
+    for (const auto& [component, suffix] : components)
+        for (const auto& property : properties)
+            if (property.kind != PropertyKind::Density) write(component, suffix, property);
+    console.end("Written in");
+}
+
+// "60 atoms, 1410 basis functions; restricted closed-shell SCF, 90 doubly
+// occupied orbitals".
+std::string molecule_summary(const Molecule& mol) {
+    const auto na = mol.occupied_count(Spin::Alpha), nb = mol.occupied_count(Spin::Beta);
+    std::string reference;
+    if (mol.unrestricted())
+        reference = "unrestricted SCF, " + std::to_string(na) + " alpha and " + std::to_string(nb) +
+                    " beta occupied orbitals";
+    else if (na == nb)
+        reference =
+            "restricted closed-shell SCF, " + std::to_string(na) + " doubly occupied orbitals";
+    else
+        reference = "restricted open-shell SCF, " + std::to_string(na) + " alpha and " +
+                    std::to_string(nb) + " beta occupied orbitals";
+    return std::to_string(mol.atoms().size()) + " atoms, " + std::to_string(mol.basis_size()) +
+           " basis functions; " + reference;
+}
+
+// "Grid: 170 x 178 x 51 = 1,543,260 points, spacing 0.200 bohr, margin 5.000 bohr".
+std::string grid_summary(const chem::kumo::Grid& grid, const Options& o) {
+    std::ostringstream out;
+    out << "Grid: " << grid.counts[0] << " x " << grid.counts[1] << " x " << grid.counts[2] << " = "
+        << Console::grouped(static_cast<std::size_t>(grid.counts[0]) *
+                            static_cast<std::size_t>(grid.counts[1]) *
+                            static_cast<std::size_t>(grid.counts[2]))
+        << " points, spacing " << std::fixed << std::setprecision(3) << o.spacing
+        << " bohr, margin " << o.margin << " bohr";
+    return out.str();
+}
+
+// Which contraction --backend resolves to, and why.
+std::string backend_summary(chem::kumo::Backend backend, const Molecule& mol) {
+    const bool eligible = mol.electronic_structure_info().ao_mo_eligible();
+    switch (backend) {
+    case chem::kumo::Backend::AO_P:
+        return "Density contraction: AO density matrices (requested with --backend ao-p)";
+    case chem::kumo::Backend::AO_MO:
+        return "Density contraction: occupied molecular orbitals (requested with --backend ao-mo)";
+    default:
+        return eligible ? "Density contraction: occupied molecular orbitals (AO-MO); they "
+                          "reproduce the FCHK density matrices"
+                        : "Density contraction: AO density matrices (AO-P); the occupied "
+                          "orbitals do not reproduce the FCHK density matrices";
     }
 }
 } // namespace
@@ -333,7 +565,12 @@ int main(int argc, char** argv) {
             return 0;
         }
         const auto o = parse(argc, argv);
+        Console console(o.verbose);
+        console.say("kumo " CHEM_KUMO_VERSION);
+        console.begin("Reading formatted checkpoint " + o.input.string());
         const auto mol = Molecule::from_fchk(o.input);
+        console.end("Read in");
+        console.say("  " + molecule_summary(mol));
         if (o.list) {
             if (o.spin.empty() || o.spin == "alpha" || o.spin == "both") list_mos(mol, Spin::Alpha);
             if (o.spin == "beta" || o.spin == "both") list_mos(mol, Spin::Beta);
@@ -342,12 +579,14 @@ int main(int argc, char** argv) {
             return 0;
         }
         const auto grid = chem::kumo::Grid::around(mol.atoms(), o.margin, o.spacing);
+        console.say(grid_summary(grid, o));
         if (o.mo_mode) {
             if (!(o.spin.empty() || o.spin == "alpha" || o.spin == "beta" || o.spin == "both"))
                 throw std::invalid_argument("--mo accepts --spin alpha, beta, or both");
             if (o.spin.empty() || o.spin == "alpha" || o.spin == "both")
-                write_orbitals(mol, grid, o, Spin::Alpha);
-            if (o.spin == "beta" || o.spin == "both") write_orbitals(mol, grid, o, Spin::Beta);
+                write_orbitals(mol, grid, o, Spin::Alpha, console);
+            if (o.spin == "beta" || o.spin == "both")
+                write_orbitals(mol, grid, o, Spin::Beta, console);
         } else {
             const auto spin = o.spin.empty() ? "total" : o.spin;
             std::vector<std::pair<Spin, std::string>> components;
@@ -361,29 +600,11 @@ int main(int argc, char** argv) {
                     "density --spin must be total, alpha, beta, difference, or all");
             const auto properties =
                 select_properties(o.properties.empty() ? "density" : o.properties);
-            const bool write_density =
-                std::any_of(properties.begin(), properties.end(), [](const DensityProperty& p) {
-                    return p.kind == PropertyKind::Density;
-                });
-            if (!write_density) {
-                // Derivative properties only.
-            } else if (spin == "all") {
-                auto fields = mol.spin_densities(grid);
-                fields.total.write_cube(o.prefix + "_density.cube");
-                fields.alpha.write_cube(o.prefix + "_alpha.cube");
-                fields.beta.write_cube(o.prefix + "_beta.cube");
-                fields.spin.write_cube(o.prefix + "_spin.cube");
-            } else {
-                mol.density(grid, components.front().first)
-                    .write_cube(o.prefix + "_" + components.front().second + ".cube");
-            }
-            if (write_density)
-                for (const auto& [component, suffix] : components) {
-                    (void)component;
-                    std::cout << o.prefix << "_" << suffix << ".cube\n";
-                }
-            write_density_derivatives(mol, grid, components, properties, o.prefix);
+            const auto backend = select_backend(o.backend, mol);
+            console.say(backend_summary(backend, mol));
+            write_density_properties(mol, grid, components, properties, backend, o.prefix, console);
         }
+        console.finish();
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "kumo: " << e.what() << "\nTry 'kumo --help'.\n";

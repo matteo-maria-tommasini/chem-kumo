@@ -36,9 +36,21 @@ Cube with an MO index record. `Field` stores values, atoms, and grid geometry.
 - `densities(grid, {components...})` computes selected fields with shared AO
   evaluation; duplicate component requests do not create duplicate fields.
 - `spin_densities(grid)` returns all four components in a named structure.
-- `densities_blocked(grid, components, block_size, screening_threshold)`
-  explicitly selects a block size (the default density path uses 128 points
-  per block) and an AO screening threshold.
+- `densities_blocked(grid, components, block_size, screening_threshold,
+  progress)` explicitly selects a block size (the default density path uses
+  128 points per block), an AO screening threshold and an optional progress
+  callback.
+- Progress reports: `ProgressCallback` (`<chem/kumo/density.hpp>`) is a
+  `std::function<void(std::size_t done, std::size_t total)>`, accepted by
+  `densities_blocked`, `orbitals` and `EvaluationOptions::progress`. It is
+  called after each block of grid points with the number of points done so
+  far and the total; calls are serialized (never concurrent, possibly from
+  an OpenMP worker thread), `done` increases up to `total`, and an
+  exception thrown by the callback aborts the evaluation and reaches the
+  caller. For `Evaluator::evaluate`, `total` counts the points of all passes
+  over the grid: the derivative or AO-MO pass, if any, plus one pass per
+  AO-P density or orbital field. The callback does not change the
+  results.
 - AO screening: in each block, AOs whose absolute value is at most
   `default_screening_threshold` (1e-12) at every point are left out of the
   density-matrix contraction. This makes large-basis densities several times

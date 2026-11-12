@@ -61,6 +61,8 @@ kumo molecule.fchk                              # total SCF density
 kumo molecule.fchk.gz                           # transparent gzip input
 kumo o2.fchk --spin all                          # total, alpha, beta, spin difference
 kumo molecule.fchk --property laplacian          # Laplacian of the total density
+kumo molecule.fchk --backend ao-p                # force the density-matrix contraction
+kumo molecule.fchk --property laplacian -v       # report progress on standard error
 kumo molecule.fchk --property density,gradient,laplacian,tau
 kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
 kumo molecule.fchk --mo homo                     # HOMO amplitude
@@ -89,8 +91,26 @@ kinetic energy density, hartree/bohr^3). Density files keep their names
 (`PREFIX_density.cube`, `PREFIX_alpha.cube`, ...); derivative files are named
 `PREFIX_<component>_<property>.cube`, for example
 `PREFIX_density_laplacian.cube` (total density) or `PREFIX_spin_tau.cube`
-(alpha minus beta). All CLI densities and derivatives use the AO density
-matrix contraction (AO_P), with the default AO screening.
+(alpha minus beta).
+
+`--backend` (density mode only) selects the density contraction: `auto`
+(default) uses the occupied molecular orbitals (AO-MO) when they reproduce
+the FCHK density matrices, which is checked when the file is loaded, and the
+AO density matrices otherwise; `ao-p` always uses the density matrices, as
+`kumo` did before 1.7.0; `ao-mo` requires the orbital contraction and fails
+if the check did not pass. The two contractions agree to about 1e-9
+relative, below the six significant digits written to Cube files (in tests,
+at most the last printed digit of about 1% of the values changes), and
+AO-MO is up to about 1.5 times faster for large basis sets. The second
+comment line of each Cube file names the contraction used.
+
+`-v` / `--verbose` reports on standard error what `kumo` is doing: the file
+being read and a summary of the molecule (atoms, basis functions, SCF
+reference and occupations), the grid, the density contraction and why it
+was chosen, each evaluation and writing step with its duration, and the
+total time. When standard error is a terminal, evaluations also show a
+progress bar with the elapsed and estimated remaining time. Standard output
+and the Cube files are the same with and without `--verbose`.
 
 `--spin` selects a **density component** (`total`, `alpha`, `beta`,
 `difference`, `all`) in density mode; with `--mo` or `--list-mo`, it selects
@@ -180,8 +200,8 @@ The C++ `chem::kumo::Evaluator` provides typed requests for total, alpha, beta,
 and spin-difference electron density, gradients, Hessians, Laplacians and
 positive kinetic-energy density (`tau`), as well as orbital amplitudes. It
 returns component arrays on the requested grid. This API is separate from the
-existing `Molecule` convenience methods; the CLI uses it for `--property`
-derivative output.
+existing `Molecule` convenience methods; the CLI uses it for all density
+output.
 
 `EvaluationOptions::backend` selects `Backend::AUTO` (default), `Backend::AO_P`
 or `Backend::AO_MO`. `AUTO` prefers occupied-orbital AO-MO contractions when

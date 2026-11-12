@@ -2,6 +2,7 @@
 #include "chem/kumo/basis_evaluator.hpp"
 #include <Eigen/Core>
 #include <filesystem>
+#include <functional>
 #include <initializer_list>
 #include <map>
 #include <span>
@@ -23,6 +24,13 @@ enum class Spin { Total, Alpha, Beta, Difference };
 /// level (about 1e-13 e/bohr^3 in the density in the tested systems).
 /// A threshold of 0 disables screening and gives the exact contraction.
 inline constexpr double default_screening_threshold = 1e-12;
+
+/// Progress report of a grid evaluation: called after each block of grid
+/// points with the number of points done so far and the total. Calls are
+/// serialized (never concurrent, possibly from an OpenMP worker thread) and
+/// `done` increases monotonically up to `total`. An exception thrown by the
+/// callback aborts the evaluation and is rethrown to the caller.
+using ProgressCallback = std::function<void(std::size_t done, std::size_t total)>;
 
 /// Atomic identity, explicit center charge (in units of e), and Cartesian position (bohr).
 /// The center charge is not an atomic partial charge and need not equal Z.
@@ -160,10 +168,12 @@ public:
     /// Explicit blocked Eigen path; block_size is in grid points (1 to 65536).
     /// screening_threshold must be finite and >= 0; 0 disables AO screening
     /// (see default_screening_threshold).
+    /// `progress`, if set, is called after each block (see ProgressCallback).
     [[nodiscard]] std::map<Spin, Field>
     densities_blocked(const Grid& grid, std::initializer_list<Spin> components,
                       std::size_t block_size = 128,
-                      double screening_threshold = default_screening_threshold) const;
+                      double screening_threshold = default_screening_threshold,
+                      const ProgressCallback& progress = {}) const;
 
     std::size_t basis_size() const noexcept { return evaluator_.basis_size(); }
 
@@ -196,10 +206,12 @@ public:
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
         std::size_t index_one_based, Spin channel = Spin::Alpha,
         std::size_t block_size = 128) const;
-    /// Evaluate several 1-based MOs with shared AO batches.
+    /// Evaluate several 1-based MOs with shared AO batches. `progress`, if
+    /// set, is called after each block of grid points (see ProgressCallback).
     [[nodiscard]] std::vector<Field> orbitals(const Grid& grid,
                                               const std::vector<std::size_t>& indices_one_based,
-                                              Spin channel = Spin::Alpha) const;
+                                              Spin channel = Spin::Alpha,
+                                              const ProgressCallback& progress = {}) const;
 
 private:
     friend class Evaluator;

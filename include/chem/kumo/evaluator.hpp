@@ -113,6 +113,10 @@ struct EvaluationOptions {
     /// both backends (see default_screening_threshold); must be finite and
     /// >= 0, and 0 gives the exact contraction.
     double screening_threshold = default_screening_threshold;
+    /// Optional progress report (see ProgressCallback). `total` counts grid
+    /// points over all passes of one evaluate() call: the derivative and
+    /// AO-MO pass, if any, and one pass per AO-P density or orbital field.
+    ProgressCallback progress = {};
 };
 
 /// Values of one property at all grid points, as one array per component

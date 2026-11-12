@@ -674,7 +674,8 @@ std::map<Spin, Field> Molecule::densities(const Grid& grid,
 std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                                                   std::initializer_list<Spin> components,
                                                   std::size_t block_size,
-                                                  double screening_threshold) const {
+                                                  double screening_threshold,
+                                                  const ProgressCallback& progress) const {
     const auto count = detail::validated_point_count(grid);
     if (block_size == 0 || block_size > 65536)
         throw std::invalid_argument("block_size must be in [1,65536]");
@@ -710,6 +711,7 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many grid blocks for parallel evaluation");
     detail::FirstException worker_errors;
+    detail::Progress report(progress, count);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if (nblocks > 1)
 #endif
@@ -743,6 +745,7 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                 else
                     out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
             }
+            report.advance(static_cast<std::size_t>(b));
         } catch (...) {
             worker_errors.capture();
         }
