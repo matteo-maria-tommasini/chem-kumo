@@ -593,21 +593,30 @@ test(
 
 # Electrostatic potential against closed forms, the multipole expansion and
 # the Poisson equation.
+electrostatic_potential_exe = executable(
+    'kumo-electrostatic-potential-test',
+    ['tests/electrostatic_potential_test.cpp'],
+    include_directories: include_directories('src'),
+    dependencies: kumo_dep,
+)
 test(
     'electrostatic-potential',
-    executable(
-        'kumo-electrostatic-potential-test',
-        ['tests/electrostatic_potential_test.cpp'],
-        include_directories: include_directories('src'),
-        dependencies: kumo_dep,
-    ),
+    electrostatic_potential_exe,
     args: [
         meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
         meson.current_source_dir() / 'tests/data/o2.fchk.gz',
         meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
-        # Cartesian d shells and SP shells.
-        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_631gdp.fchk.gz',
     ],
+    timeout: 120,
+)
+# HBC 6-31G(d,p) adds Cartesian d and SP shells. It is in the 'slow' suite,
+# which the sanitizer CI job skips: it took 90 s under AddressSanitizer
+# locally, several times more on the hosted runner.
+test(
+    'electrostatic-potential-hbc',
+    electrostatic_potential_exe,
+    args: [meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_631gdp.fchk.gz'],
+    suite: 'slow',
     timeout: 120,
 )
 
