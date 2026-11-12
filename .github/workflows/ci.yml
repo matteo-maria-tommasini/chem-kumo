@@ -6,6 +6,8 @@ on:
 
 jobs:
   test:
+    # The sanitizer entry gets its own name; the others keep "test (<os>)".
+    name: ${{ matrix.sanitize && format('sanitizers ({0})', matrix.os) || format('test ({0})', matrix.os) }}
     runs-on: ${{ matrix.os }}
     # A normal run takes about 5 minutes; fail stuck jobs instead of
     # letting them hang for the 6-hour GitHub default.
@@ -14,6 +16,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        sanitize: [false]
+        # AddressSanitizer and UndefinedBehaviorSanitizer (GCC on Ubuntu):
+        # memory errors such as use-after-free and undefined behaviour abort
+        # the test that triggers them (meson test sets halt_on_error=1).
+        include:
+          - os: ubuntu-latest
+            sanitize: true
     steps:
       - uses: actions/checkout@v4
       # Package mirrors and DNS on hosted runners occasionally fail for a few
@@ -62,10 +71,19 @@ jobs:
       # that a new warning is caught here rather than by users. Warnings
       # inside Eigen's headers are not reported (it is a system include).
       - name: Configure
+        if: ${{ !matrix.sanitize }}
         run: meson setup build --buildtype=debugoptimized -Dwerror=true
+      # Warnings are checked by the other jobs. Sanitizer instrumentation can
+      # make GCC report extra false-positive warnings, so they do not fail here.
+      - name: Configure (sanitizers)
+        if: ${{ matrix.sanitize }}
+        run: >-
+          meson setup build --buildtype=debugoptimized
+          -Db_sanitize=address,undefined -Db_lundef=false
       - name: Compile
         run: meson compile -C build
       - name: Test
         run: meson test -C build --print-errorlogs
       - name: Installed consumer
+        if: ${{ !matrix.sanitize }}
         run: ./tests/check-installed-consumer.sh
