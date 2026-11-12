@@ -1,4 +1,4 @@
-# chem-kumo 1.7.0
+# chem-kumo 1.7.1
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -262,8 +262,9 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.7.0 release registers **71 Meson tests**, all passing in the
-serial and OpenMP builds reported on macOS ARM64 on 2026-11-12. Coverage
+The 1.7.1 release registers **71 Meson tests**, all passing in the
+serial and OpenMP builds reported on macOS ARM64 on 2026-11-12, with both
+Clang 22 and GCC 15, without compiler warnings. Coverage
 includes AO, MO and density spatial derivatives against finite differences;
 independent MO versus AO-density-matrix reconstruction; backend selection;
 grid validation at every evaluation entry point; AO screening against the
