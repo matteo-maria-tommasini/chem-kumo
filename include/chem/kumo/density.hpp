@@ -15,11 +15,12 @@ struct AoMoTestAccess;
 /// For MO evaluation only Alpha and Beta are meaningful channels.
 enum class Spin { Total, Alpha, Beta, Difference };
 
-/// Default AO screening threshold for grid densities and, with AO_P, their
-/// derivatives. In each block of grid points, AOs whose absolute value (and,
-/// for derivatives, that of their derivatives) is at most this at every
-/// point are left out of the density-matrix contraction. The resulting change in the density
-/// is at rounding level (about 1e-13 e/bohr^3 in the tested systems).
+/// Default AO screening threshold for grid densities and their derivatives,
+/// with both the density-matrix (AO_P) and occupied-MO (AO_MO) contractions.
+/// In each block of grid points, AOs whose absolute value (and, for
+/// derivatives, that of their derivatives) is at most this at every point
+/// are left out of the contraction. The resulting change is at rounding
+/// level (about 1e-13 e/bohr^3 in the density in the tested systems).
 /// A threshold of 0 disables screening and gives the exact contraction.
 inline constexpr double default_screening_threshold = 1e-12;
 
@@ -211,7 +212,8 @@ private:
     [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>>
     density_derivatives_mo(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                            const std::vector<Spin>& components, std::size_t block_size,
-                           int ao_order = 2) const;
+                           int ao_order = 2,
+                           double screening_threshold = default_screening_threshold) const;
     Molecule(std::vector<Atom> atoms, BasisEvaluator evaluator, Eigen::MatrixXd total,
              Eigen::MatrixXd spin);
     std::vector<Atom> atoms_;

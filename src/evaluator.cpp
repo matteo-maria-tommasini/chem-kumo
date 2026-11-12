@@ -156,7 +156,8 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                                         const std::vector<Spin>& needed) {
             return backend == Backend::AO_MO
                        ? molecule_->density_derivatives_mo(points, needed, options_.block_size,
-                                                           std::max(0, plan.maximum_ao_order))
+                                                           std::max(0, plan.maximum_ao_order),
+                                                           options_.screening_threshold)
                        : molecule_->density_derivatives_shared(points, needed, options_.block_size,
                                                                plan.maximum_ao_order,
                                                                options_.screening_threshold);

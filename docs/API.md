@@ -50,7 +50,10 @@ Cube with an MO index record. `Field` stores values, atoms, and grid geometry.
   an AO is left out only if its value and all its derivatives are at most
   the threshold in the block; on HBC def2-TZVP this makes AO_P gradients and
   Hessians about five times faster, with relative changes of about 1e-15.
-  AO_MO is not screened yet.
+  The AO_MO contraction (densities and derivatives) is screened the same
+  way: negligible AOs are dropped from the AO panels and from the occupied
+  MO coefficients of each block (about 1.6 times faster on HBC
+  def2-TZVP, where AO evaluation then dominates).
 - `density_pointwise(grid, spin)` retains the original pointwise algorithm
   for regression comparisons.
 

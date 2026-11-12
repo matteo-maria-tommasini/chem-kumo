@@ -109,9 +109,9 @@ struct EvaluationOptions {
     int threads = 0;
     std::size_t block_size = 128; ///< grid points per evaluation block; must be > 0
     Backend backend = Backend::AUTO;
-    /// AO screening threshold for AO_P densities and density derivatives
-    /// (see default_screening_threshold); must be finite and >= 0, and 0
-    /// gives the exact contraction. AO_MO is not screened yet.
+    /// AO screening threshold for densities and density derivatives, with
+    /// both backends (see default_screening_threshold); must be finite and
+    /// >= 0, and 0 gives the exact contraction.
     double screening_threshold = default_screening_threshold;
 };
 

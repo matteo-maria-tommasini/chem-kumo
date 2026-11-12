@@ -1,4 +1,5 @@
-// AO screening of grid densities and AO_P density derivatives: with the
+// AO screening of grid densities and density derivatives (AO_P and AO_MO
+// contractions): with the
 // default threshold every result matches the exact contraction (threshold 0)
 // to rounding level, a large threshold really changes the result (so
 // screening is exercised), and invalid thresholds are rejected.
@@ -100,49 +101,59 @@ int main(int argc, char** argv) {
                              "threshold 0 (max difference " +
                              kumo_test::num(exact_match) + ")");
 
-        // Evaluator AO_P density derivatives. Their scale grows near the
-        // nuclei, so the error is measured relative to the largest value.
+        // Evaluator density derivatives, with each backend available for this
+        // molecule (AO_MO also contracts densities on this point path). The
+        // scale of derivatives grows near the nuclei, so the error is
+        // measured relative to the largest value of each component.
         Request derivatives;
         const Property derivative_properties[] = {
-            density::total.gradient(), density::total.hessian(), density::total.laplacian(),
-            density::total.tau(),      density::spin.gradient(), density::alpha.hessian()};
+            density::total.value(),   density::spin.value(),      density::total.gradient(),
+            density::total.hessian(), density::total.laplacian(), density::total.tau(),
+            density::spin.gradient(), density::alpha.hessian()};
         for (const auto& property : derivative_properties)
             derivatives.add(property);
-        const auto evaluate_derivatives = [&](double threshold) {
-            EvaluationOptions options;
-            options.backend = Backend::AO_P;
-            options.screening_threshold = threshold;
-            return Evaluator(molecule, options).evaluate(grid, derivatives);
-        };
-        const auto derivatives_screened = evaluate_derivatives(default_screening_threshold);
-        const auto derivatives_exact = evaluate_derivatives(0.0);
-        const auto derivatives_coarse = evaluate_derivatives(1e-3);
-        double derivative_error = 0.0, derivative_change = 0.0;
-        for (const auto& property : derivative_properties) {
-            const auto& exact_field = derivatives_exact.get(property);
-            for (std::size_t c = 0; c < exact_field.components.size(); ++c) {
-                const auto exact_values = exact_field.component(c);
-                const double scale = std::max(1.0, max_magnitude(exact_values));
-                derivative_error = std::max(
-                    derivative_error,
-                    max_difference(derivatives_screened.get(property).component(c), exact_values) /
-                        scale);
-                derivative_change = std::max(
-                    derivative_change,
-                    max_difference(derivatives_coarse.get(property).component(c), exact_values) /
-                        scale);
+        std::vector<Backend> backends{Backend::AO_P};
+        if (molecule.electronic_structure_info().ao_mo_eligible())
+            backends.push_back(Backend::AO_MO);
+        for (Backend backend : backends) {
+            const std::string backend_name = backend == Backend::AO_P ? "AO_P" : "AO_MO";
+            const auto evaluate_derivatives = [&](double threshold) {
+                EvaluationOptions options;
+                options.backend = backend;
+                options.screening_threshold = threshold;
+                return Evaluator(molecule, options).evaluate(grid, derivatives);
+            };
+            const auto derivatives_screened = evaluate_derivatives(default_screening_threshold);
+            const auto derivatives_exact = evaluate_derivatives(0.0);
+            const auto derivatives_coarse = evaluate_derivatives(1e-3);
+            double derivative_error = 0.0, derivative_change = 0.0;
+            for (const auto& property : derivative_properties) {
+                const auto& exact_field = derivatives_exact.get(property);
+                for (std::size_t c = 0; c < exact_field.components.size(); ++c) {
+                    const auto exact_values = exact_field.component(c);
+                    const double scale = std::max(1.0, max_magnitude(exact_values));
+                    derivative_error =
+                        std::max(derivative_error,
+                                 max_difference(derivatives_screened.get(property).component(c),
+                                                exact_values) /
+                                     scale);
+                    derivative_change =
+                        std::max(derivative_change,
+                                 max_difference(derivatives_coarse.get(property).component(c),
+                                                exact_values) /
+                                     scale);
+                }
             }
+            kumo_test::check(derivative_error <= 1e-12,
+                             file + ": Evaluator " + backend_name +
+                                 " screening matches the exact contraction within 1e-12 "
+                                 "relative (max " +
+                                 kumo_test::num(derivative_error) + ")");
+            kumo_test::check(derivative_change > 1e-10,
+                             file + ": threshold 1e-3 changes the " + backend_name +
+                                 " results, so AOs are screened (max relative change " +
+                                 kumo_test::num(derivative_change) + ")");
         }
-        kumo_test::check(derivative_error <= 1e-12,
-                         file +
-                             ": Evaluator AO_P derivative screening matches the exact "
-                             "contraction within 1e-12 relative (max " +
-                             kumo_test::num(derivative_error) + ")");
-        kumo_test::check(derivative_change > 1e-10,
-                         file +
-                             ": threshold 1e-3 changes the AO_P derivatives, so AOs are "
-                             "screened (max relative change " +
-                             kumo_test::num(derivative_change) + ")");
 
         // Molecule::density_derivatives_blocked uses the same screening; test
         // it on 300 points along the diagonal of the grid box.
