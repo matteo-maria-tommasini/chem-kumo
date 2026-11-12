@@ -41,6 +41,8 @@ void check_all(const Molecule& molecule, const Grid& grid, const std::string& na
     derivatives.add(density::total.gradient());
     Request orbital_request;
     orbital_request.add(orbital::alpha(1).value());
+    Request potential_request;
+    potential_request.add(density::total.electrostatic_potential());
     const Evaluator evaluator(molecule, {.threads = 1, .block_size = 4});
 
     const std::function<void()> calls[] = {
@@ -48,9 +50,11 @@ void check_all(const Molecule& molecule, const Grid& grid, const std::string& na
         [&] { (void)molecule.orbital(grid, 1, Spin::Alpha); },
         [&] { (void)evaluator.evaluate(grid, derivatives); },
         [&] { (void)evaluator.evaluate(grid, orbital_request); },
+        [&] { (void)evaluator.evaluate(grid, potential_request); },
     };
     const char* labels[] = {"Molecule::density", "Molecule::orbital",
-                            "Evaluator (density gradient)", "Evaluator (orbital)"};
+                            "Evaluator (density gradient)", "Evaluator (orbital)",
+                            "Evaluator (electrostatic potential)"};
     for (std::size_t i = 0; i < std::size(calls); ++i) {
         const std::string label = name + " / " + labels[i];
         if (valid)

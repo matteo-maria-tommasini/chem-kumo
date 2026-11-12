@@ -69,6 +69,7 @@ kumo molecule.fchk --property density,gradient,laplacian,tau
 kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
 kumo molecule.fchk --property elf                # electron localization function
 kumo molecule.fchk --property rdg,sign-lambda2-rho  # NCI analysis
+kumo molecule.fchk --property density,esp        # electrostatic potential
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -108,6 +109,17 @@ Three derived properties are available too:
 The `rdg` and `sign-lambda2-rho` files are the inputs of an NCI analysis:
 an isosurface of s (for example 0.5), colored by sign(lambda2) rho. The
 definitions are in [docs/API.md](docs/API.md).
+
+`esp` writes the molecular electrostatic potential (nuclear plus
+electronic, in hartree/e) to `PREFIX_density_esp.cube`, for the total
+density only. It is computed with exact Coulomb integrals over the AO
+density matrix. Together with the density it gives the usual ESP map: an
+isosurface of the density (for example 0.001 e/bohr^3) colored by the ESP.
+At a grid point on a nucleus, which kumo's default grids often contain, the
+nucleus's own singular term is left out, so the value is the potential at
+that nucleus. The cost grows with the number of grid points times the number
+of primitive pairs: about 2 s for water (def2-TZVP) on the default grid on
+one core, far more for large molecules.
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce
@@ -215,7 +227,8 @@ For a method-by-method guide and contracts, see [docs/API.md](docs/API.md).
 The C++ `chem::kumo::Evaluator` provides typed requests for total, alpha, beta,
 and spin-difference electron density, gradients, Hessians, Laplacians and
 positive kinetic-energy density (`tau`), the derived ELF, reduced density
-gradient and sign(lambda2) rho (1.8.0), as well as orbital amplitudes. It
+gradient and sign(lambda2) rho (1.8.0), the electrostatic potential, as well
+as orbital amplitudes. It
 returns component arrays on the requested grid. This API is separate from the
 existing `Molecule` convenience methods; the CLI uses it for all density
 output.
