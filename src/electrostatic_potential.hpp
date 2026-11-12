@@ -55,28 +55,51 @@ public:
 
     [[nodiscard]] std::size_t primitive_pair_count() const noexcept { return pairs_.size(); }
 
-    /// Order K of the local Taylor expansions of far primitive pairs.
+    /// Order K of the local Taylor expansions of individual primitive pairs.
     static constexpr int local_order = 6;
+    /// Total order N of the multipole-to-local expansions of source clusters.
+    static constexpr int multipole_order = 10;
 
-    /// For clusters of points within `radius` of a centre: the squared
-    /// distance from the centre beyond which each primitive pair is
-    /// represented by its local expansion (infinite: always exact).
+    /// Precomputed data for clusters of points within `radius` of a centre.
     struct FarFieldPlan {
+        static constexpr int level_count = 33;
+        static constexpr double cell_size = 2.0; ///< bohr, edge of the source cells
         double radius = 0.0;
-        std::vector<double> far_distance2;
+        double tolerance = 0.0;
+        /// Budget of the individually expanded pairs and its error levels,
+        /// pair_tolerance * 10^(-j/2).
+        double pair_tolerance = 0.0;
+        std::array<double, level_count> levels{};
+        /// Per pair and level: squared distance from a cluster centre beyond
+        /// which the expansion error of the pair is at most that level
+        /// (infinite if never).
+        std::vector<float> level_distance2;
+
+        /// Pairs grouped by cell and exponent, with their multipole moments.
+        struct SourceCluster {
+            Eigen::Vector3d center = Eigen::Vector3d::Zero();
+            double radius = 0.0;       ///< largest distance of a pair centre
+            double min_distance = 0.0; ///< translate only from at least this far
+            std::vector<std::size_t> pairs;
+            std::vector<double> moments; ///< (multipole_order + 1) x moment_count
+        };
+
+        std::vector<SourceCluster> clusters;
+        std::size_t moment_count = 0;
     };
 
-    /// Plan for clusters of the given radius (bohr) such that the
-    /// approximation error at every point is at most `tolerance` (hartree/e):
-    /// each of the N pairs is expanded only where its error bound (see
-    /// electrostatic_potential.cpp) is at most tolerance / N. A tolerance of 0
-    /// keeps every pair exact.
+    /// Plan for clusters of points within `radius` (bohr) of their centre,
+    /// with an error of at most `tolerance` (hartree/e) at every point; a
+    /// tolerance of 0 keeps every pair exact. See electrostatic_potential.cpp
+    /// for the error bounds.
     [[nodiscard]] FarFieldPlan far_field_plan(double radius, double tolerance) const;
 
     /// Total potential at the columns of `points`, which must lie within
-    /// plan.radius of `center`: pairs far from the centre contribute through
-    /// one Taylor expansion of order local_order about it, the others exactly.
-    /// Each value depends only on the point, the centre and the plan.
+    /// plan.radius of `center`. Source clusters far from the centre contribute
+    /// through one multipole-to-local translation each; of the other pairs,
+    /// those whose error bounds fit in the budget through individual Taylor
+    /// expansions about the centre; the rest exactly. Each value depends only
+    /// on the point, the centre and the plan.
     void evaluate_cluster(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                           const Eigen::Vector3d& center, const FarFieldPlan& plan,
                           std::span<double> output) const;
@@ -96,6 +119,8 @@ private:
     void prepare(Scratch& scratch) const;
     void hermite_integrals(double exponent, const Eigen::Vector3d& pc, int L,
                            Scratch& scratch) const;
+    void coulomb_derivatives(const Eigen::Vector3d& x, int L, Scratch& scratch) const;
+    void hermite_recursion(const Eigen::Vector3d& pc, int L, Scratch& scratch) const;
     [[nodiscard]] double pair_potential(const PrimitivePair& pair, const Eigen::Vector3d& point,
                                         Scratch& scratch) const;
     [[nodiscard]] double electronic(const Eigen::Vector3d& point, Scratch& scratch) const;
@@ -106,8 +131,9 @@ private:
     /// side_^3 table.
     std::vector<std::vector<int>> hermite_indices_;
     int max_order_ = 0; ///< largest la + lb
-    int side_ = 1;      ///< max_order_ + local_order + 1
+    int side_ = 1;      ///< max_order_ + multipole_order + 1
     std::vector<int> local_offsets_;
+    std::vector<int> moment_offsets_;
     std::vector<double> local_factors_;
     std::vector<std::array<int, 3>> local_powers_;
     std::vector<Atom> atoms_;

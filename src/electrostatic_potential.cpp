@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -148,7 +149,7 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
     const auto blocks = blocks_of(basis);
     for (const auto& block : blocks)
         max_order_ = std::max(max_order_, 2 * block.angular_momentum);
-    side_ = max_order_ + local_order + 1;
+    side_ = max_order_ + multipole_order + 1;
     const int side = side_;
     hermite_indices_.resize(static_cast<std::size_t>(max_order_ + 1));
     std::vector<std::vector<HermiteIndex>> triples(static_cast<std::size_t>(max_order_ + 1));
@@ -159,10 +160,10 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
                                                                     h.v);
     }
 
-    // Local expansion terms beta, |beta| <= local_order: their offsets in the
-    // Hermite table (added to those of alpha), (-1)^|beta| / beta!, and the
-    // powers of h.
-    for (const auto& h : hermite_triples(local_order)) {
+    // Local expansion terms beta, |beta| <= multipole_order (pairs use the
+    // first ones, |beta| <= local_order): their offsets in the Hermite table
+    // (added to those of alpha), (-1)^|beta| / beta!, and the powers of h.
+    for (const auto& h : hermite_triples(multipole_order)) {
         local_offsets_.push_back((h.t * side + h.u) * side + h.v);
         double factor = ((h.t + h.u + h.v) % 2 == 0) ? 1.0 : -1.0;
         for (int j = 2; j <= h.t; ++j)
@@ -174,6 +175,10 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
         local_factors_.push_back(factor);
         local_powers_.push_back({h.t, h.u, h.v});
     }
+
+    // Offsets of the moment indices nu, |nu| <= max_order_ + multipole_order.
+    for (const auto& h : hermite_triples(max_order_ + multipole_order))
+        moment_offsets_.push_back((h.t * side + h.u) * side + h.v);
 
     std::vector<double> pair_coefficients;
     for (std::size_t a = 0; a < blocks.size(); ++a) {
@@ -277,25 +282,47 @@ void ElectrostaticPotential::prepare(Scratch& scratch) const {
 // is (2 pi / p) R^0_tuv; the factor 2 pi / p is in the stored coefficients.
 void ElectrostaticPotential::hermite_integrals(double exponent, const Eigen::Vector3d& pc, int L,
                                                Scratch& scratch) const {
+    const std::span<double> seeds(scratch.boys.data(), static_cast<std::size_t>(L + 1));
+    boys_function(exponent * pc.squaredNorm(), seeds);
+    double power = 1.0;
+    for (int n = 1; n <= L; ++n) {
+        power *= -2.0 * exponent;
+        seeds[static_cast<std::size_t>(n)] *= power;
+    }
+    hermite_recursion(pc, L, scratch);
+}
+
+// Derivatives of 1/|X|: the same recursion with R^n_000 = (-1)^n (2n-1)!! /
+// |X|^(2n+1), the limit of the Hermite integrals for a point charge.
+void ElectrostaticPotential::coulomb_derivatives(const Eigen::Vector3d& x, int L,
+                                                 Scratch& scratch) const {
+    const double inverse = 1.0 / x.norm(), inverse2 = inverse * inverse;
+    double seed = inverse;
+    for (int n = 0; n <= L; ++n) {
+        scratch.boys[static_cast<std::size_t>(n)] = seed;
+        seed *= -(2.0 * n + 1.0) * inverse2;
+    }
+    hermite_recursion(x, L, scratch);
+}
+
+// R^n_(t+1,u,v) = t R^(n+1)_(t-1,u,v) + X_t R^(n+1)_(t,u,v), and likewise for
+// u and v, from n = L down to 0, starting from R^n_000 = scratch.boys[n].
+void ElectrostaticPotential::hermite_recursion(const Eigen::Vector3d& pc, int L,
+                                               Scratch& scratch) const {
     const int side = side_;
     const auto offset = [side](const HermiteIndex& h) {
         return static_cast<std::size_t>((h.t * side + h.u) * side + h.v);
     };
-    const std::span<double> boys(scratch.boys.data(), static_cast<std::size_t>(L + 1));
-    boys_function(exponent * pc.squaredNorm(), boys);
     // Triples with t + u + v <= s are the first C(s + 3, 3) entries.
     const auto count = [](int s) {
         return static_cast<std::size_t>((s + 1) * (s + 2) * (s + 3) / 6);
     };
-    double power = 1.0;
-    for (int n = 0; n < L; ++n)
-        power *= -2.0 * exponent;
     // Level n holds R^n for t + u + v <= L - n.
     for (int n = L; n >= 0; --n) {
         std::swap(scratch.previous, scratch.current);
         auto& current = scratch.current;
         const auto& previous = scratch.previous;
-        current[0] = power * boys[static_cast<std::size_t>(n)];
+        current[0] = scratch.boys[static_cast<std::size_t>(n)];
         const std::size_t entries = count(L - n);
         for (std::size_t k = 1; k < entries; ++k) {
             const auto& h = scratch.triples[k];
@@ -312,7 +339,6 @@ void ElectrostaticPotential::hermite_integrals(double exponent, const Eigen::Vec
             }
             current[offset(h)] = value;
         }
-        if (n > 0) power /= -2.0 * exponent;
     }
 }
 
@@ -446,6 +472,30 @@ double taylor_remainder_bound(int L, int K, double rho, double d) {
 }
 } // namespace
 
+namespace {
+// Smallest d on [low, high] with bound(d) <= allowed, for a bound that
+// decreases with d; infinity if bound(high) > allowed.
+template <typename Bound>
+double smallest_distance(const Bound& bound, double low, double high, double allowed) {
+    while (high < 1e4 && !(bound(high) <= allowed))
+        high *= 2.0;
+    if (!(bound(high) <= allowed)) return std::numeric_limits<double>::infinity();
+    for (int iteration = 0; iteration < 40 && high - low > 1e-3 * high; ++iteration) {
+        const double middle = 0.5 * (low + high);
+        (bound(middle) <= allowed ? high : low) = middle;
+    }
+    return high;
+}
+
+// A squared distance as a float no smaller than it.
+float upward_float(double value) {
+    const auto f = static_cast<float>(value);
+    return static_cast<double>(f) < value
+               ? std::nextafter(f, std::numeric_limits<float>::infinity())
+               : f;
+}
+} // namespace
+
 ElectrostaticPotential::FarFieldPlan
 ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
     if (!std::isfinite(radius) || radius < 0.0)
@@ -455,14 +505,18 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
             "electrostatic potential tolerance must be finite and nonnegative");
     FarFieldPlan plan;
     plan.radius = radius;
-    plan.far_distance2.assign(pairs_.size(), std::numeric_limits<double>::infinity());
+    plan.tolerance = tolerance;
+    constexpr int levels = FarFieldPlan::level_count;
+    plan.level_distance2.assign(pairs_.size() * levels, std::numeric_limits<float>::infinity());
     if (tolerance == 0.0 || pairs_.empty()) return plan;
-    // The total error at a point is at most the sum of the pair bounds.
-    const double allowed = tolerance / static_cast<double>(pairs_.size());
-    constexpr int K = local_order;
-    std::vector<double> weights, near_bounds, far_bounds;
-    for (std::size_t i = 0; i < pairs_.size(); ++i) {
-        const auto& pair = pairs_[i];
+    // Half of the tolerance for pairs expanded individually, a quarter each
+    // for the truncation and the erfc terms of the source clusters.
+    plan.pair_tolerance = 0.5 * tolerance;
+    for (int j = 0; j < levels; ++j)
+        plan.levels[static_cast<std::size_t>(j)] = plan.pair_tolerance * std::pow(10.0, -0.5 * j);
+
+    // Multipole weights W_L of each pair: sum of |e_k| over terms of order L.
+    const auto pair_weights = [&](const PrimitivePair& pair, std::vector<double>& weights) {
         const int L = pair.order;
         weights.assign(static_cast<std::size_t>(L + 1), 0.0);
         const double* c = coefficients_.data() + pair.first_coefficient;
@@ -471,9 +525,26 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
         for (int order = 0; order <= L; ++order)
             for (int j = 0; j < (order + 1) * (order + 2) / 2; ++j, ++k)
                 weights[static_cast<std::size_t>(order)] += std::abs(c[k]) * to_multipole;
+    };
+
+    // Individual pairs: the bound on a geometric grid of distances, then the
+    // smallest grid distance at which it is below each level.
+    constexpr int K = local_order;
+    constexpr int grid_points = 64;
+    const double first = std::max(1.25 * radius, 0.05);
+    const double ratio = std::pow(400.0 / first, 1.0 / (grid_points - 1));
+    std::vector<double> distances(grid_points), bounds(grid_points);
+    for (int g = 0; g < grid_points; ++g)
+        distances[static_cast<std::size_t>(g)] = first * std::pow(ratio, g);
+    std::vector<double> weights, near_bounds, far_bounds;
+    for (std::size_t i = 0; i < pairs_.size(); ++i) {
+        const auto& pair = pairs_[i];
+        const int L = pair.order;
+        pair_weights(pair, weights);
         near_bounds.assign(static_cast<std::size_t>(L + 1), 0.0);
         far_bounds.assign(static_cast<std::size_t>(L + K + 1), 0.0);
-        const auto bound = [&](double d) {
+        for (int g = 0; g < grid_points; ++g) {
+            const double d = distances[static_cast<std::size_t>(g)];
             erfc_derivative_bounds(pair.exponent, d - radius, near_bounds);
             erfc_derivative_bounds(pair.exponent, d, far_bounds);
             double total = 0.0;
@@ -489,20 +560,135 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
                 }
                 total += w * term;
             }
+            bounds[static_cast<std::size_t>(g)] = total;
+        }
+        // The bound decreases with d, so each level is reached at or beyond
+        // the previous one.
+        int g = 0;
+        for (int j = 0; j < levels; ++j) {
+            while (g < grid_points && !(bounds[static_cast<std::size_t>(g)] <=
+                                        plan.levels[static_cast<std::size_t>(j)]))
+                ++g;
+            if (g == grid_points) break;
+            const double d = distances[static_cast<std::size_t>(g)];
+            plan.level_distance2[i * levels + static_cast<std::size_t>(j)] = upward_float(d * d);
+        }
+    }
+
+    // Source clusters: pairs grouped by cell of their centre and by exponent
+    // (a factor of 4 per class), in order of first appearance.
+    //
+    // For a cluster with centre c and a target cluster with centre b, write
+    // P - C = X0 + z with X0 = c - b and z = (P - c) - (C - b), |z| <= a + rho
+    // (a: cluster radius). Each 1/R term d^alpha (1/|P - C|) is expanded in z
+    // about X0 to total order N; expanding z^gamma binomially in u = P - c
+    // and h = C - b is exact, so the error is the Taylor remainder in z,
+    // bounded by T_L(N, a + rho, |X0|) as for single pairs. The erfc terms
+    // are left out; every pair centre is at least |X0| - a - rho from the
+    // points, where they are bounded by G_L for the smallest exponent of the
+    // cluster (G decreases with the exponent and the distance).
+    std::map<std::array<long, 4>, std::size_t> index;
+    for (std::size_t i = 0; i < pairs_.size(); ++i) {
+        const auto& pair = pairs_[i];
+        std::array<long, 4> key{};
+        for (int a = 0; a < 3; ++a)
+            key[static_cast<std::size_t>(a)] =
+                static_cast<long>(std::floor(pair.center[a] / FarFieldPlan::cell_size));
+        key[3] = static_cast<long>(std::floor(std::log2(pair.exponent) / 2.0));
+        const auto [it, inserted] = index.try_emplace(key, plan.clusters.size());
+        if (inserted) plan.clusters.emplace_back();
+        plan.clusters[it->second].pairs.push_back(i);
+    }
+    const double share = 0.25 * tolerance / static_cast<double>(plan.clusters.size());
+    const int N = multipole_order;
+    const int moment_order = max_order_ + N;
+    const auto moments = hermite_triples(moment_order);
+    plan.moment_count = moments.size();
+    // Compact index of each (t, u, v) with t + u + v <= moment_order.
+    std::vector<int> compact(static_cast<std::size_t>(side_ * side_ * side_), -1);
+    for (std::size_t m = 0; m < moments.size(); ++m)
+        compact[static_cast<std::size_t>((moments[m].t * side_ + moments[m].u) * side_ +
+                                         moments[m].v)] = static_cast<int>(m);
+    const auto delta = hermite_triples(N);
+    std::vector<double> cluster_weights;
+    for (auto& cluster : plan.clusters) {
+        Eigen::Vector3d low = pairs_[cluster.pairs.front()].center, high = low;
+        double smallest_exponent = std::numeric_limits<double>::infinity();
+        int largest_order = 0;
+        for (const std::size_t i : cluster.pairs) {
+            low = low.cwiseMin(pairs_[i].center);
+            high = high.cwiseMax(pairs_[i].center);
+            smallest_exponent = std::min(smallest_exponent, pairs_[i].exponent);
+            largest_order = std::max(largest_order, pairs_[i].order);
+        }
+        cluster.center = 0.5 * (low + high);
+        cluster.radius = 0.0;
+        cluster_weights.assign(static_cast<std::size_t>(largest_order + 1), 0.0);
+        // Moments Q^(m)_nu = sum e_k u^delta / delta! over alpha_k + delta = nu
+        // and |delta| <= m, stored for m = 0..N (cumulative in m).
+        cluster.moments.assign(static_cast<std::size_t>(N + 1) * moments.size(), 0.0);
+        std::vector<double> by_order(static_cast<std::size_t>(N + 1) * moments.size(), 0.0);
+        for (const std::size_t i : cluster.pairs) {
+            const auto& pair = pairs_[i];
+            const Eigen::Vector3d u = pair.center - cluster.center;
+            cluster.radius = std::max(cluster.radius, u.norm());
+            pair_weights(pair, weights);
+            for (std::size_t o = 0; o < weights.size(); ++o)
+                cluster_weights[o] += weights[o];
+            const double to_multipole = 0.5 * std::sqrt(std::numbers::pi / pair.exponent);
+            const double* c = coefficients_.data() + pair.first_coefficient;
+            const auto& alphas = hermite_indices_[static_cast<std::size_t>(pair.order)];
+            const auto alpha_triples = hermite_triples(pair.order);
+            for (std::size_t k = 0; k < alphas.size(); ++k) {
+                const double e = c[k] * to_multipole;
+                if (e == 0.0) continue;
+                const auto& a = alpha_triples[k];
+                for (const auto& d : delta) {
+                    double term = e;
+                    for (int j = 1; j <= d.t; ++j)
+                        term *= u.x() / j;
+                    for (int j = 1; j <= d.u; ++j)
+                        term *= u.y() / j;
+                    for (int j = 1; j <= d.v; ++j)
+                        term *= u.z() / j;
+                    const int nu = compact[static_cast<std::size_t>(
+                        ((a.t + d.t) * side_ + a.u + d.u) * side_ + a.v + d.v)];
+                    by_order[static_cast<std::size_t>(d.t + d.u + d.v) * moments.size() +
+                             static_cast<std::size_t>(nu)] += term;
+                }
+            }
+        }
+        for (int m = 0; m <= N; ++m)
+            for (std::size_t nu = 0; nu < moments.size(); ++nu)
+                cluster.moments[static_cast<std::size_t>(m) * moments.size() + nu] =
+                    (m > 0 ? cluster.moments[static_cast<std::size_t>(m - 1) * moments.size() + nu]
+                           : 0.0) +
+                    by_order[static_cast<std::size_t>(m) * moments.size() + nu];
+        // Truncation: sum_L W_L T_L(N, a + rho, D) <= share; erfc terms:
+        // sum_L W_L G_L(p_min, r) <= share for r >= erfc_radius (G decreases
+        // with p and r).
+        const double reach = cluster.radius + radius;
+        const auto truncation = [&](double D) {
+            double total = 0.0;
+            for (std::size_t o = 0; o < cluster_weights.size(); ++o)
+                if (cluster_weights[o] > 0.0)
+                    total += cluster_weights[o] *
+                             taylor_remainder_bound(static_cast<int>(o), N, reach, D);
             return total;
         };
-        // Smallest distance with bound <= allowed, by bisection; the bound
-        // decreases with d. Pairs that never qualify stay exact.
-        double high = std::max(2.0 * radius, radius + 1.0 / std::sqrt(pair.exponent));
-        while (high < 1e4 && !(bound(high) <= allowed))
-            high *= 2.0;
-        if (!(bound(high) <= allowed)) continue;
-        double low = radius;
-        for (int iteration = 0; iteration < 30 && high - low > 1e-2 * high; ++iteration) {
-            const double middle = 0.5 * (low + high);
-            (bound(middle) <= allowed ? high : low) = middle;
-        }
-        plan.far_distance2[i] = high * high;
+        std::vector<double> g(cluster_weights.size());
+        const auto erfc_terms = [&](double r) {
+            erfc_derivative_bounds(smallest_exponent, r, g);
+            double total = 0.0;
+            for (std::size_t o = 0; o < cluster_weights.size(); ++o)
+                total += cluster_weights[o] * g[o];
+            return total;
+        };
+        const double truncation_distance =
+            smallest_distance(truncation, 1.25 * reach, 2.5 * reach + 1e-3, share);
+        const double erfc_radius =
+            smallest_distance(erfc_terms, 0.0, 1.0 / std::sqrt(smallest_exponent), share);
+        cluster.min_distance = std::max(truncation_distance, reach + erfc_radius);
     }
     return plan;
 }
@@ -510,10 +696,11 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
 void ElectrostaticPotential::evaluate_cluster(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     const Eigen::Vector3d& center, const FarFieldPlan& plan, std::span<double> output) const {
+    constexpr int levels = FarFieldPlan::level_count;
     if (output.size() != static_cast<std::size_t>(points.cols()))
         throw std::invalid_argument(
             "electrostatic potential output size does not match the points");
-    if (plan.far_distance2.size() != pairs_.size())
+    if (plan.level_distance2.size() != pairs_.size() * levels)
         throw std::invalid_argument("far-field plan does not match the potential");
     if (!center.allFinite()) throw std::invalid_argument("cluster centre must be finite");
     for (Eigen::Index j = 0; j < points.cols(); ++j) {
@@ -525,23 +712,87 @@ void ElectrostaticPotential::evaluate_cluster(
     }
     Scratch scratch;
     prepare(scratch);
-    // Far pairs: one local Taylor expansion about the centre,
-    //   sum_k c_k R_alpha(P - b - h) = sum_beta h^beta (-1)^|beta| / beta!
-    //                                   sum_k c_k R_(alpha+beta)(P - b).
     std::fill(scratch.local.begin(), scratch.local.end(), 0.0);
+    const auto count = [](int s) {
+        return static_cast<std::size_t>((s + 1) * (s + 2) * (s + 3) / 6);
+    };
+
+    // Source clusters far enough away: one multipole-to-local translation each,
+    //   local_beta += sum_nu Q^(N - |beta|)_nu d^(nu+beta) (1/|X|) at X = c_S - b
+    // (the factors (-1)^|beta| / beta! are applied below with the others).
+    std::vector<char> handled(pairs_.size(), 0);
+    const int N = multipole_order;
+    for (const auto& cluster : plan.clusters) {
+        const Eigen::Vector3d x = cluster.center - center;
+        if (!(x.norm() >= cluster.min_distance)) continue;
+        coulomb_derivatives(x, max_order_ + N, scratch);
+        for (std::size_t b = 0; b < local_offsets_.size(); ++b) {
+            const auto& beta = local_powers_[b];
+            const int m = N - (beta[0] + beta[1] + beta[2]);
+            const double* q =
+                cluster.moments.data() + static_cast<std::size_t>(m) * plan.moment_count;
+            const std::size_t terms = count(max_order_ + m);
+            double sum = 0.0;
+            for (std::size_t nu = 0; nu < terms; ++nu)
+                sum += q[nu] * scratch.current[static_cast<std::size_t>(moment_offsets_[nu]) +
+                                               static_cast<std::size_t>(local_offsets_[b])];
+            scratch.local[b] += sum;
+        }
+        for (const std::size_t i : cluster.pairs)
+            handled[i] = 1;
+    }
+
+    // Remaining pairs: the level of each (its bound at this distance is at
+    // most levels[j]); the pairs with the smallest levels are expanded while
+    // the sum of their levels stays within pair_tolerance, the others are
+    // evaluated exactly. Ties at the last level go in pair order.
+    std::vector<signed char> level(pairs_.size(), -1);
+    std::array<std::size_t, levels> population{};
+    for (std::size_t i = 0; i < pairs_.size(); ++i) {
+        if (handled[i]) continue;
+        const double d2 = (pairs_[i].center - center).squaredNorm();
+        const float* limits = plan.level_distance2.data() + i * levels;
+        int j = -1;
+        while (j + 1 < levels && d2 >= static_cast<double>(limits[j + 1]))
+            ++j;
+        level[i] = static_cast<signed char>(j);
+        if (j >= 0) ++population[static_cast<std::size_t>(j)];
+    }
+    int cut = levels; // levels > cut are expanded in full
+    std::size_t partial = 0;
+    double used = 0.0;
+    for (int j = levels - 1; j >= 0; --j) {
+        const double value = plan.levels[static_cast<std::size_t>(j)];
+        const std::size_t n = population[static_cast<std::size_t>(j)];
+        if (used + static_cast<double>(n) * value <= plan.pair_tolerance) {
+            used += static_cast<double>(n) * value;
+            cut = j - 1;
+            continue;
+        }
+        partial = static_cast<std::size_t>(std::floor((plan.pair_tolerance - used) / value));
+        cut = j;
+        break;
+    }
     std::vector<std::size_t> near;
     for (std::size_t i = 0; i < pairs_.size(); ++i) {
-        const auto& pair = pairs_[i];
-        if ((pair.center - center).squaredNorm() < plan.far_distance2[i]) {
+        if (handled[i]) continue;
+        bool expand = level[i] >= 0 && level[i] > cut;
+        if (!expand && level[i] >= 0 && level[i] == cut && partial > 0) {
+            expand = true;
+            --partial;
+        }
+        if (!expand) {
             near.push_back(i);
             continue;
         }
+        const auto& pair = pairs_[i];
         hermite_integrals(pair.exponent, pair.center - center, pair.order + local_order, scratch);
         const auto& indices = hermite_indices_[static_cast<std::size_t>(pair.order)];
         const double* c = coefficients_.data() + pair.first_coefficient;
+        const std::size_t terms = count(local_order);
         for (std::size_t k = 0; k < indices.size(); ++k) {
             const double* r = scratch.current.data() + indices[k];
-            for (std::size_t b = 0; b < local_offsets_.size(); ++b)
+            for (std::size_t b = 0; b < terms; ++b)
                 scratch.local[b] += c[k] * r[local_offsets_[b]];
         }
     }
@@ -552,10 +803,10 @@ void ElectrostaticPotential::evaluate_cluster(
         const Eigen::Vector3d point = points.col(j);
         const Eigen::Vector3d h = point - center;
         // Powers of the components of h, then the polynomial.
-        std::array<std::array<double, local_order + 1>, 3> powers{};
+        std::array<std::array<double, multipole_order + 1>, 3> powers{};
         for (int a = 0; a < 3; ++a) {
             powers[static_cast<std::size_t>(a)][0] = 1.0;
-            for (int e = 1; e <= local_order; ++e)
+            for (int e = 1; e <= multipole_order; ++e)
                 powers[static_cast<std::size_t>(a)][static_cast<std::size_t>(e)] =
                     powers[static_cast<std::size_t>(a)][static_cast<std::size_t>(e - 1)] * h[a];
         }

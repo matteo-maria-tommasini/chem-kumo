@@ -167,10 +167,11 @@ struct EvaluationOptions {
     /// Bound on the error of the electrostatic potential at each grid point,
     /// in hartree/e; must be finite and >= 0, and 0 evaluates every pair of
     /// Gaussian primitives exactly at every point. The grid is processed in
-    /// clusters of 8 x 8 x 8 points: primitive pairs far from a cluster enter
-    /// through one Taylor expansion about its centre, the others exactly, and
-    /// the sum of rigorous error bounds of the expanded pairs is at most this
-    /// value (see docs/API.md). The default 1e-8 is below the six significant
+    /// clusters of 8 x 8 x 8 points: far groups of primitive pairs enter
+    /// through multipole-to-local translations, far pairs through Taylor
+    /// expansions about the cluster centre, the others exactly, and the sum
+    /// of rigorous error bounds of the approximations is at most this value
+    /// (see docs/API.md). The default 1e-8 is below the six significant
     /// digits of Cube files wherever |V| >= 2e-3.
     double potential_tolerance = 1e-8;
     /// Optional progress report (see ProgressCallback). `total` counts grid
