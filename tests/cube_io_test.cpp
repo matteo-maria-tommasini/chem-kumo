@@ -48,6 +48,21 @@ int main() {
             chem::kumo::Field(grid, {{26, 16.0, Eigen::Vector3d(0.1, 0.2, 0.3)}}, samples),
             {"first comment", "second comment", true}};
         chem::kumo::write_cube(cube, base);
+        // Both writers reject nonfinite samples (fail closed): Cube readers,
+        // read_cube() included, would not accept them.
+        for (const double invalid : {std::nan(""), HUGE_VAL, -HUGE_VAL}) {
+            std::vector<double> broken = samples;
+            broken[5] = invalid;
+            const chem::kumo::Field field(grid, cube.field.atoms(), broken);
+            bool rejected = false;
+            try {
+                field.write_cube(bad);
+            } catch (const std::invalid_argument&) {
+                rejected = true;
+            }
+            if (!rejected)
+                throw std::runtime_error("Field::write_cube accepted a nonfinite sample");
+        }
         // Compress the exact serialized Cube; gzip and plain must agree.
         {
             std::ifstream in(base, std::ios::binary);

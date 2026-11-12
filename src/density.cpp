@@ -156,6 +156,9 @@ void write_field_cube(const std::filesystem::path& path, const std::string& comm
                       const Grid& grid, const std::vector<Atom>& atoms,
                       const std::vector<double>& values, std::size_t orbital_index = 0) {
     const bool orbital = orbital_index != 0;
+    // Fail closed: Cube readers, read_cube() included, reject such values.
+    if (!std::all_of(values.begin(), values.end(), [](double v) { return std::isfinite(v); }))
+        throw std::invalid_argument("nonfinite Cube sample");
     std::ofstream out(path);
     if (!out)
         throw std::runtime_error(orbital ? "cannot open orbital cube output"
