@@ -1,4 +1,4 @@
-# chem-kumo 1.4.1
+# chem-kumo 1.5.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -13,7 +13,7 @@ Cube files, including gzip-compressed Cube input.
 
 ## Requirements and build
 
-- C++20 compiler; Eigen 3.4; zlib; Meson (>= 0.63) and Ninja for building.
+- C++20 compiler; Eigen 3.4 or 5 (both tested in CI); zlib; Meson (>= 0.63) and Ninja for building.
 - No Gaussian installation or external BLAS/LAPACK is needed to use KUMO.
 
 ```sh
@@ -181,6 +181,19 @@ The Evaluator's `threads` option currently accepts `0` (runtime default) and
 the runtime environment such as `OMP_NUM_THREADS` to control parallelism.
 The grid evaluation uses bounded coordinate blocks controlled by `block_size`.
 
+### AO screening and performance (1.5.0)
+
+Grid densities and density derivatives skip, in each block of grid points,
+the AOs that are negligible at every point of the block (value and
+derivatives at most `default_screening_threshold` = 1e-12). The results
+change only at rounding level; `EvaluationOptions::screening_threshold`
+(and a parameter of `densities_blocked` and `density_derivatives_blocked`)
+sets the threshold, and 0 gives the exact contraction. Together with batched
+AO derivative evaluation, this makes 1.5.0 several times faster than 1.4.1
+for large basis sets: on HBC def2-TZVP (1410 AOs), the total density is
+about 10 times faster and density gradients and Hessians 4 to 6 times
+faster. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the measurements.
+
 ### Additional numerical APIs (1.4.0)
 
 The library also provides analytic AO overlap integrals, spin-resolved
@@ -208,11 +221,12 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.4.1 release registers **66 Meson tests**, all passing in the
-serial and OpenMP builds reported on macOS ARM64 on 2026-11-11. Coverage
+The 1.5.0 release registers **68 Meson tests**, all passing in the
+serial and OpenMP builds reported on macOS ARM64 on 2026-11-12. Coverage
 includes AO, MO and density spatial derivatives against finite differences;
 independent MO versus AO-density-matrix reconstruction; backend selection;
-grid validation at every evaluation entry point; blocked and pointwise
+grid validation at every evaluation entry point; AO screening against the
+exact contraction; batched versus single-point AO derivatives; blocked and pointwise
 evaluation, including error propagation from OpenMP workers; analytic
 overlaps and moments; scalar-field operations; and Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
@@ -281,6 +295,14 @@ Claude Code), which also implemented the resulting changes: consistent grid
 validation, shared internal helpers, clearer error messages and test
 diagnostics, and more robust CI. Every change was reviewed and approved by
 Matteo Tommasini and verified against bit-identical numerical outputs.
+
+The transition from version 1.4.1 to 1.5.0, a speed optimization of the
+density and density-derivative evaluation, was likewise carried out with
+Claude: profiling, a single density-matrix product per request, AO
+screening, batched AO derivatives and AO-MO improvements. Matteo Tommasini
+reviewed and approved every change; each optimization was checked against
+the exact results (bit-identical, or rounding-level differences for AO
+screening) and measured on the HBC reference systems.
 
 ## License
 

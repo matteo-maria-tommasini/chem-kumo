@@ -1,3 +1,67 @@
+# chem-kumo 1.5.0 — release notes
+
+A performance release: grid densities and density derivatives are several
+times faster, most of all for large basis sets. The public API is extended
+in a backward-compatible way at source level; rebuild code that links
+against libkumo (the layout of `BasisEvaluator` changed).
+
+Timings against 1.4.1 (same program, one thread, release builds, best of
+repeated runs, macOS ARM64; the absolute numbers depend on the machine):
+
+| HBC def2-TZVP (1410 AOs), 50752 points | 1.4.1 | 1.5.0 | Speed-up |
+|---|---:|---:|---:|
+| `Molecule::density` | 10.7 s | 1.10 s | ×9.7 |
+| `Molecule::spin_densities` | 10.7 s | 1.69 s | ×6.3 |
+| Evaluator AO_P gradient | 22.6 s | 3.54 s | ×6.4 |
+| Evaluator AO_P Hessian + Laplacian + tau | 23.9 s | 4.76 s | ×5.0 |
+| Evaluator AO_MO density | 1.52 s | 0.69 s | ×2.2 |
+| Evaluator AO_MO gradient | 6.55 s | 1.76 s | ×3.7 |
+| Evaluator AO_MO Hessian + Laplacian + tau | 13.9 s | 3.81 s | ×3.6 |
+
+On a small molecule (acrolein, 303072 points) the same operations are 1.2
+to 2.1 times faster.
+
+Performance changes:
+
+- AO screening (new, on by default): in each block of grid points, AOs
+  whose value (and, for derivatives, all their evaluated derivatives) is at
+  most `default_screening_threshold` = 1e-12 at every point are left out of
+  the contraction, for densities and derivatives with both the AO_P and
+  AO_MO backends. The change in the results is at rounding level: at most
+  about 1e-15 relative to the largest value in the tested systems (about
+  1e-13 e/bohr^3 in the density). A threshold of 0 gives the exact
+  contraction.
+- Total or spin density alone uses a single density-matrix product; alpha
+  and beta densities are contracted directly, and total and difference are
+  derived from them, so no request needs more than two products.
+- AO derivatives are evaluated in batches with shells in the outer loop, so
+  each pure shell needs one Cartesian-to-pure transform per batch and no
+  buffers are allocated per point. Results are bit-identical to 1.4.1.
+- AO_MO: closed-shell molecules reuse the alpha projection for beta, and
+  AO values for density-only requests are evaluated in batches
+  (bit-identical results).
+
+API additions:
+
+- `default_screening_threshold` (`<chem/kumo/density.hpp>`) and
+  `EvaluationOptions::screening_threshold`; a negative or nonfinite value
+  is rejected with `std::invalid_argument`.
+- A defaulted `screening_threshold` parameter for
+  `Molecule::densities_blocked` and `Molecule::density_derivatives_blocked`.
+- `BasisEvaluator::evaluate_derivatives_batch(points, order, output)` and
+  `BasisEvaluator::derivative_panel_count(order)` evaluate AO values and
+  derivatives for a batch of points into consecutive panels.
+
+Validation:
+
+- 68/68 Meson tests passed on macOS ARM64 on 2026-11-12 (serial and
+  MacPorts Clang 22 OpenMP builds); CI builds and tests on ubuntu-latest
+  and macos-latest (Homebrew now ships Eigen 5, which is supported). New
+  tests: `density-screening` and `ao-derivatives-batch`. No reference
+  tolerance was changed.
+
+---
+
 # chem-kumo 1.4.1 — release notes
 
 A maintenance release: stricter and more consistent input validation,
