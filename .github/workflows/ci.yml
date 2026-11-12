@@ -82,13 +82,14 @@ jobs:
           -Db_sanitize=address,undefined -Db_lundef=false
       - name: Compile
         run: meson compile -C build
-      # Sanitizer builds run several times slower: the slowest test
-      # (density-screening, 120 s limit) took longer than its limit on the
-      # hosted runner, so the per-test limits are multiplied by 5 there.
+      # Sanitizer builds run several times slower, so the per-test limits are
+      # multiplied by 5 there. The 'slow' suite (screening tests on the large
+      # HBC molecule) took 6 to over 10 minutes under GCC sanitizers on hosted
+      # runners; the sanitizer job skips it, the other jobs run it.
       - name: Test
         run: >-
           meson test -C build --print-errorlogs
-          ${{ matrix.sanitize && '--timeout-multiplier 5' || '' }}
+          ${{ matrix.sanitize && '--timeout-multiplier 5 --no-suite slow' || '' }}
       - name: Installed consumer
         if: ${{ !matrix.sanitize }}
         run: ./tests/check-installed-consumer.sh

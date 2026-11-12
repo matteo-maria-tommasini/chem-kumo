@@ -141,18 +141,26 @@ test(
     ],
 )
 
+density_screening_test_exe = executable(
+    'kumo-density-screening-test',
+    'tests/density_screening_test.cpp',
+    dependencies: kumo_dep,
+)
 test(
     'density-screening',
-    executable(
-        'kumo-density-screening-test',
-        'tests/density_screening_test.cpp',
-        dependencies: kumo_dep,
-    ),
+    density_screening_test_exe,
     args: [
         meson.current_source_dir() / 'tests/data/o2.fchk.gz',
         meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
-        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz',
     ],
+    timeout: 120,
+)
+# The large HBC case is in the 'slow' suite, which the sanitizer CI job skips.
+test(
+    'density-screening-hbc',
+    density_screening_test_exe,
+    args: [meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz'],
+    suite: 'slow',
     timeout: 120,
 )
 if benchmarks_enabled
@@ -341,18 +349,26 @@ test(
 )
 
 # The AO shell cutoff zeroes only AOs and derivatives below ao_cutoff.
+ao_shell_cutoff_test_exe = executable(
+    'kumo-ao-shell-cutoff-test',
+    'tests/ao_shell_cutoff_test.cpp',
+    dependencies: kumo_dep,
+)
 test(
     'ao-shell-cutoff',
-    executable(
-        'kumo-ao-shell-cutoff-test',
-        'tests/ao_shell_cutoff_test.cpp',
-        dependencies: kumo_dep,
-    ),
+    ao_shell_cutoff_test_exe,
     args: [
         meson.current_source_dir() / 'tests/data/o2.fchk.gz',
         meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
-        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz',
     ],
+    timeout: 120,
+)
+# The large HBC case is in the 'slow' suite, which the sanitizer CI job skips.
+test(
+    'ao-shell-cutoff-hbc',
+    ao_shell_cutoff_test_exe,
+    args: [meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_def2svp.fchk.gz'],
+    suite: 'slow',
     timeout: 120,
 )
 
