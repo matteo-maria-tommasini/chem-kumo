@@ -64,6 +64,18 @@ public:
     /// Input: 3 x N point columns; output: nAO x N AO values.
     void evaluate_batch(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                         Eigen::Ref<Eigen::MatrixXd> output) const;
+    /// Number of output panels of evaluate_derivatives_batch(): 4 for order 1
+    /// (value, x, y, z), 10 for order 2 (followed by xx, yy, zz, xy, xz, yz).
+    [[nodiscard]] static int derivative_panel_count(int order);
+    /// AO values and derivatives through `order` (1 or 2) at 3 x N points,
+    /// without per-point allocations. `output` is nAO x (panels * N), with
+    /// panels = derivative_panel_count(order), stored as consecutive nAO x N
+    /// panels: component c at point j is column c * N + j. Components follow
+    /// AODerivatives: value, gradient x, y, z, then the Hessian in the order
+    /// xx, yy, zz, xy, xz, yz. evaluate_derivatives() uses the same kernel.
+    void evaluate_derivatives_batch(
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, int order,
+        Eigen::Ref<Eigen::MatrixXd> output) const;
 
 private:
     struct PreparedBlock {
@@ -88,6 +100,7 @@ private:
     std::vector<PreparedBlock> blocks_;
     std::size_t max_cartesian_count_ = 0;
     std::size_t max_primitive_count_ = 0;
+    int max_angular_momentum_ = 0;
 };
 
 enum class OrbitalSpin {
