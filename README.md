@@ -1,4 +1,4 @@
-# chem-kumo 1.7.1
+# chem-kumo 1.8.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -277,9 +277,11 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.7.1 release registers **71 Meson tests**, all passing in the
+The 1.8.0 release registers **75 Meson tests**, all passing in the
 serial and OpenMP builds reported on macOS ARM64 on 2026-11-12, with both
-Clang 22 and GCC 15, without compiler warnings. Coverage
+Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
+AddressSanitizer and UndefinedBehaviorSanitizer (except the two HBC screening
+cases of the `slow` suite). Coverage
 includes AO, MO and density spatial derivatives against finite differences;
 independent MO versus AO-density-matrix reconstruction; backend selection;
 grid validation at every evaluation entry point; AO screening against the
@@ -288,7 +290,10 @@ derivatives; command-line density and derivative Cube output, backend
 selection and verbose mode; progress reports; blocked and pointwise
 evaluation, including thread-count independence of the Evaluator and error
 propagation from OpenMP workers; analytic
-overlaps and moments; scalar-field operations; and Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
+overlaps and moments; ELF, the reduced density gradient and
+sign(lambda2) rho against their formulas, an independent orbital form of the
+Pauli term and Multiwfn reference Cube files; scalar-field operations; and
+Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
 density components remain in the suite.
 See [tests/REFERENCE_CUBES.md](tests/REFERENCE_CUBES.md) for reference details.
@@ -368,7 +373,8 @@ Version 1.6.0, which adds density-derivative Cube output to the CLI and the
 AO shell cutoff, was developed in the same way with Claude and reviewed and
 approved by Matteo Tommasini, as was version 1.7.0 (CLI backend selection,
 verbose mode with progress reports, and OpenMP parallelism of the Evaluator's
-derivative path).
+derivative path) and version 1.8.0 (ELF, reduced density gradient and
+sign(lambda2) rho, validated against Multiwfn).
 
 ## License
 
