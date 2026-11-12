@@ -533,9 +533,11 @@ void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
         const auto filename = prefix + "_" + suffix +
                               (property.kind == PropertyKind::Density ? "" : "_" + property.name) +
                               ".cube";
-        // The electrostatic potential always uses the AO density matrix.
+        // The electrostatic potential always uses the AO density matrix, with
+        // the Evaluator's default error bound.
         const auto method = property.kind == PropertyKind::ElectrostaticPotential
-                                ? std::string("exact integrals over the AO density matrix")
+                                ? std::string("Coulomb integrals over the AO density matrix, "
+                                              "error <= 1e-8 hartree/e")
                                 : used;
         chem::kumo::Field(grid, mol.atoms(), std::move(values))
             .write_cube(filename,

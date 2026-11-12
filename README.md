@@ -112,14 +112,15 @@ definitions are in [docs/API.md](docs/API.md).
 
 `esp` writes the molecular electrostatic potential (nuclear plus
 electronic, in hartree/e) to `PREFIX_density_esp.cube`, for the total
-density only. It is computed with exact Coulomb integrals over the AO
-density matrix. Together with the density it gives the usual ESP map: an
+density only. It is computed from Coulomb integrals over the AO density
+matrix, with an error of at most 1e-8 hartree/e per point. Together with the density it gives the usual ESP map: an
 isosurface of the density (for example 0.001 e/bohr^3) colored by the ESP.
 At a grid point on a nucleus, which kumo's default grids often contain, the
 nucleus's own singular term is left out, so the value is the potential at
 that nucleus. The cost grows with the number of grid points times the number
 of primitive pairs: about 2 s for water (def2-TZVP) on the default grid on
-one core, far more for large molecules.
+one core, and about 4 minutes for HBC (def2-SVP, 1.5 million points) on 8
+cores.
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce

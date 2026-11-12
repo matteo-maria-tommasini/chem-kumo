@@ -227,6 +227,7 @@ void evaluator(const std::string& label, const BasisSet& basis, const Molecule& 
     request.add(key).add(density::total.value()).add(density::total.elf());
     std::size_t last_done = 0, last_total = 0;
     const Results results = Evaluator(molecule, {.block_size = 17,
+                                                 .potential_tolerance = 0.0,
                                                  .progress =
                                                      [&](std::size_t done, std::size_t total) {
                                                          last_done = done;
@@ -241,16 +242,40 @@ void evaluator(const std::string& label, const BasisSet& basis, const Molecule& 
             grid.origin + grid.steps * Eigen::Vector3d(double(i), double(j), double(k));
         same = values[p] == potential(point);
     }
-    kumo_test::check(same, label + ": Evaluator values equal the engine at every grid point");
+    kumo_test::check(same, label + ": with tolerance 0, Evaluator values equal the exact engine "
+                                   "at every grid point");
     kumo_test::check(last_total > 0 && last_done == last_total,
                      label + ": progress reaches the total");
 
     Request alone;
     alone.add(key);
-    const Results single = Evaluator(molecule, {.block_size = 1000}).evaluate(grid, alone);
+    const Results single =
+        Evaluator(molecule, {.block_size = 1000, .potential_tolerance = 0.0}).evaluate(grid, alone);
     const auto again = single.get(key).component();
     kumo_test::check(std::equal(values.begin(), values.end(), again.begin(), again.end()),
                      label + ": the result does not depend on the block size or the request");
+
+    // Default tolerance: within 1e-8 of the exact values, independently of the
+    // block size and of the other properties requested.
+    const Results fast = Evaluator(molecule).evaluate(grid, request);
+    const Results fast_alone = Evaluator(molecule, {.block_size = 5}).evaluate(grid, alone);
+    const auto approximate = fast.get(key).component();
+    const auto approximate_alone = fast_alone.get(key).component();
+    double worst = 0.0;
+    for (std::size_t p = 0; p < values.size(); ++p)
+        worst = std::max(worst, std::abs(approximate[p] - values[p]));
+    std::cout << label << ": Evaluator with the default tolerance, max difference " << worst
+              << '\n';
+    kumo_test::check(worst <= 1e-8,
+                     label + ": with the default tolerance, within 1e-8 of the exact values (" +
+                         kumo_test::num(worst) + ")");
+    kumo_test::check(std::equal(approximate.begin(), approximate.end(), approximate_alone.begin(),
+                                approximate_alone.end()),
+                     label + ": the approximate result does not depend on the block size or the "
+                             "request");
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { Evaluator(molecule, {.potential_tolerance = -1e-9}); },
+        label + ": a negative potential tolerance is rejected");
 
     for (const auto component : {density::alpha, density::beta, density::spin}) {
         Request wrong;
@@ -264,10 +289,73 @@ void evaluator(const std::string& label, const BasisSet& basis, const Molecule& 
     on_nucleus.steps = Eigen::Matrix3d::Identity() * 0.5;
     on_nucleus.counts = Eigen::Vector3i(3, 3, 3);
     const Results through = Evaluator(molecule).evaluate(on_nucleus, alone);
-    kumo_test::check(through.get(key).component()[13] ==
-                         potential(molecule.atoms().back().position),
+    kumo_test::check(std::abs(through.get(key).component()[13] -
+                              potential(molecule.atoms().back().position)) <= 1e-8,
                      label + ": on a grid through a nucleus, the point on it gets the potential "
                              "at the nucleus");
+}
+
+// Far-field plans and cluster evaluation: the error is within the tolerance,
+// some pairs are expanded, tolerance 0 is exact, and invalid use is rejected.
+void clusters(const std::string& label, const BasisSet& basis, const Molecule& molecule) {
+    const ElectrostaticPotential potential(basis, molecule.density_matrix(Spin::Total),
+                                           molecule.atoms());
+    const double radius = 1.2;
+    // Points on a sphere and inside it, around centres in and far from the molecule.
+    const auto& atoms = molecule.atoms();
+    const Eigen::Vector3d centres[] = {atoms.front().position + Eigen::Vector3d(0.3, 0.2, -0.4),
+                                       atoms.back().position + Eigen::Vector3d(-2.0, 1.0, 1.5),
+                                       Eigen::Vector3d(9.0, -7.0, 4.0)};
+    Eigen::Matrix<double, 3, Eigen::Dynamic> offsets(3, 27);
+    int q = 0;
+    for (int i = -1; i <= 1; ++i)
+        for (int j = -1; j <= 1; ++j)
+            for (int k = -1; k <= 1; ++k, ++q) {
+                // The centre, then directions alternately on the sphere and at 0.6 of it.
+                const double scale = (i == 0 && j == 0 && k == 0) ? 0.0 : (q % 2 ? 1.0 : 0.6);
+                offsets.col(q) = Eigen::Vector3d(i, j, k).normalized() * radius * scale;
+            }
+    std::vector<double> exact(27), approximate(27);
+    for (const double tolerance : {0.0, 1e-4, 1e-8}) {
+        const auto plan = potential.far_field_plan(radius, tolerance);
+        const auto expanded = std::count_if(plan.far_distance2.begin(), plan.far_distance2.end(),
+                                            [](double d2) { return std::isfinite(d2); });
+        kumo_test::check(tolerance == 0.0 ? expanded == 0 : expanded > 0,
+                         label + ": tolerance " + kumo_test::num(tolerance) +
+                             (tolerance == 0.0 ? " expands no pair" : " expands some pairs"));
+        double worst = 0.0;
+        for (const auto& centre : centres) {
+            Eigen::Matrix<double, 3, Eigen::Dynamic> points = offsets.colwise() + centre;
+            potential.evaluate_cluster(points, centre, plan, approximate);
+            for (Eigen::Index p = 0; p < points.cols(); ++p) {
+                exact[static_cast<std::size_t>(p)] = potential(points.col(p));
+                worst = std::max(worst, std::abs(approximate[static_cast<std::size_t>(p)] -
+                                                 exact[static_cast<std::size_t>(p)]));
+            }
+        }
+        std::cout << label << ": clusters with tolerance " << tolerance << ", max difference "
+                  << worst << '\n';
+        kumo_test::check(worst <= tolerance, label + ": cluster values within the tolerance " +
+                                                 kumo_test::num(tolerance) + " (" +
+                                                 kumo_test::num(worst) + ")");
+    }
+    const auto plan = potential.far_field_plan(radius, 1e-8);
+    Eigen::Matrix<double, 3, Eigen::Dynamic> outside(3, 1);
+    outside.col(0) = centres[0] + Eigen::Vector3d(0.0, 0.0, 1.3);
+    std::vector<double> one(1);
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { potential.evaluate_cluster(outside, centres[0], plan, one); },
+        label + ": a point outside the planned radius is rejected");
+    ElectrostaticPotential::FarFieldPlan wrong = plan;
+    wrong.far_distance2.pop_back();
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] {
+            potential.evaluate_cluster(offsets.colwise() + centres[0], centres[0], wrong, exact);
+        },
+        label + ": a plan for another potential is rejected");
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { (void)potential.far_field_plan(radius, -1.0); },
+        label + ": a negative tolerance is rejected");
 }
 } // namespace
 
@@ -286,6 +374,7 @@ int main(int argc, char** argv) {
         poisson(label, basis, molecule);
         nuclear_term(label, basis, molecule);
         evaluator(label, basis, molecule);
+        clusters(label, basis, molecule);
         const auto n = static_cast<Eigen::Index>(basis.function_count());
         kumo_test::check_throws<std::invalid_argument>(
             [&] { ElectrostaticPotential(basis, Eigen::MatrixXd::Zero(n + 1, n + 1), {}); },

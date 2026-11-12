@@ -23,7 +23,8 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///    lambda2 is the middle eigenvalue of its Hessian. Total only.
 ///  - ElectrostaticPotential: molecular electrostatic potential in hartree/e,
 ///    nuclear plus electronic, from the nuclear charges and the total AO
-///    density matrix (exact integrals, no screening). At a grid point within
+///    density matrix, within EvaluationOptions::potential_tolerance of the
+///    exact Coulomb integrals. At a grid point within
 ///    1e-8 bohr of a nucleus, that nucleus's own singular term is left out
 ///    (the potential at the nucleus). Total only.
 /// Requesting a derived kind for a component it is not defined for makes
@@ -163,6 +164,15 @@ struct EvaluationOptions {
     /// both backends (see default_screening_threshold); must be finite and
     /// >= 0, and 0 gives the exact contraction.
     double screening_threshold = default_screening_threshold;
+    /// Bound on the error of the electrostatic potential at each grid point,
+    /// in hartree/e; must be finite and >= 0, and 0 evaluates every pair of
+    /// Gaussian primitives exactly at every point. The grid is processed in
+    /// clusters of 8 x 8 x 8 points: primitive pairs far from a cluster enter
+    /// through one Taylor expansion about its centre, the others exactly, and
+    /// the sum of rigorous error bounds of the expanded pairs is at most this
+    /// value (see docs/API.md). The default 1e-8 is below the six significant
+    /// digits of Cube files wherever |V| >= 2e-3.
+    double potential_tolerance = 1e-8;
     /// Optional progress report (see ProgressCallback). `total` counts grid
     /// points over all passes of one evaluate() call: the derivative and
     /// AO-MO pass, if any, and one pass per AO-P density or orbital field.
@@ -213,9 +223,9 @@ private:
 class Evaluator {
 public:
     /// Throws std::invalid_argument for invalid options: block_size == 0,
-    /// threads < 0 or > 1, a negative or nonfinite screening_threshold, an
-    /// unknown backend, or AO_MO requested for a molecule whose orbitals are
-    /// not AO-MO eligible.
+    /// threads < 0 or > 1, a negative or nonfinite screening_threshold or
+    /// potential_tolerance, an unknown backend, or AO_MO requested for a molecule whose orbitals
+    /// are not AO-MO eligible.
     explicit Evaluator(const Molecule& molecule, EvaluationOptions options = {});
 
     /// Evaluate every property in `request` at all grid points, in Field

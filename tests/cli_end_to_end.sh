@@ -73,7 +73,7 @@ values "${PREFIX}_density_sign-lambda2-rho.cube" | awk '$1 < 0 {found = 1} END {
 "$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --property esp > "$TMP/esp.log"
 grep -Fqx "${PREFIX}_density_esp.cube" "$TMP/esp.log" || {
     echo "Not reported: ${PREFIX}_density_esp.cube" >&2; exit 1; }
-sed -n 2p "${PREFIX}_density_esp.cube" | grep -Fq 'exact integrals over the AO density matrix' || {
+sed -n 2p "${PREFIX}_density_esp.cube" | grep -Fq 'Coulomb integrals over the AO density matrix, error <= 1e-8 hartree/e' || {
     echo 'ESP Cube comment does not name the method' >&2; exit 1; }
 values "${PREFIX}_density_esp.cube" | awk '$1 + 0 != $1 || $1 > 1e3 {exit 1} $1 > 1 {found = 1} END {exit !found}' || {
     echo 'ESP values not finite, or none above 1 hartree/e near the nuclei' >&2; exit 1; }
