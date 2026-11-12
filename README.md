@@ -62,6 +62,7 @@ kumo molecule.fchk.gz                           # transparent gzip input
 kumo o2.fchk --spin all                          # total, alpha, beta, spin difference
 kumo molecule.fchk --property laplacian          # Laplacian of the total density
 kumo molecule.fchk --backend ao-p                # force the density-matrix contraction
+kumo molecule.fchk --property laplacian -v       # report progress on standard error
 kumo molecule.fchk --property density,gradient,laplacian,tau
 kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
 kumo molecule.fchk --mo homo                     # HOMO amplitude
@@ -102,6 +103,14 @@ relative, below the six significant digits written to Cube files (in tests,
 at most the last printed digit of about 1% of the values changes), and
 AO-MO is up to about 1.5 times faster for large basis sets. The second
 comment line of each Cube file names the contraction used.
+
+`-v` / `--verbose` reports on standard error what `kumo` is doing: the file
+being read and a summary of the molecule (atoms, basis functions, SCF
+reference and occupations), the grid, the density contraction and why it
+was chosen, each evaluation and writing step with its duration, and the
+total time. When standard error is a terminal, evaluations also show a
+progress bar with the elapsed and estimated remaining time. Standard output
+and the Cube files are the same with and without `--verbose`.
 
 `--spin` selects a **density component** (`total`, `alpha`, `beta`,
 `difference`, `all`) in density mode; with `--mo` or `--list-mo`, it selects

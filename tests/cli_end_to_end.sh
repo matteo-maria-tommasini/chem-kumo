@@ -68,6 +68,34 @@ for name in density density_laplacian; do
           if (d > 1e-6 * s) bad = 1 }
         END { exit bad }' || { echo "AO-P and AO-MO $name Cube files disagree" >&2; exit 1; }
 done
+# --verbose: progress messages go to standard error only; standard output and
+# the Cube files are the same as without it. Standard error is not a
+# terminal here, so no progress bar (carriage returns) is drawn.
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/quiet" --spin all \
+    --property density,tau > "$TMP/quiet.out" 2> "$TMP/quiet.err"
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/loud" --spin all \
+    --property density,tau --verbose > "$TMP/loud.out" 2> "$TMP/loud.err"
+test ! -s "$TMP/quiet.err" || { echo 'Messages on stderr without --verbose' >&2; exit 1; }
+sed "s|$TMP/quiet|$TMP/loud|" "$TMP/quiet.out" | cmp -s - "$TMP/loud.out" || {
+    echo '--verbose changes standard output' >&2; exit 1; }
+for message in 'Reading formatted checkpoint' 'basis functions' 'Grid:' \
+    'Density contraction:' 'Evaluating the value and kinetic energy density tau' \
+    'Evaluated in' 'Writing 8 Cube files' 'Finished in'; do
+    grep -Fq "$message" "$TMP/loud.err" || {
+        echo "--verbose message missing: $message" >&2; cat "$TMP/loud.err" >&2; exit 1; }
+done
+if tr -d '\n' < "$TMP/loud.err" | grep -q "$(printf '\r')"; then
+    echo '--verbose drew a progress bar on a non-terminal' >&2; exit 1
+fi
+for name in density alpha beta spin density_tau alpha_tau beta_tau spin_tau; do
+    cmp -s "$TMP/quiet_${name}.cube" "$TMP/loud_${name}.cube" || {
+        echo "--verbose changes ${name} Cube file" >&2; exit 1; }
+done
+"$KUMO" "$FCHK" --mo homo -v --spacing 1.0 --margin 1.0 --output "$TMP/mo" \
+    > "$TMP/mo.out" 2> "$TMP/mo.err"
+grep -Fq 'Evaluating alpha molecular orbital 9' "$TMP/mo.err" || {
+    echo '--verbose --mo message missing' >&2; cat "$TMP/mo.err" >&2; exit 1; }
+
 if "$KUMO" "$FCHK" --spacing 1 --backend mo --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo 'Unknown --backend unexpectedly accepted' >&2; exit 1
 fi
