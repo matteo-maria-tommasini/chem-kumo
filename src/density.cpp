@@ -43,6 +43,29 @@ Eigen::MatrixXd unpack(const std::vector<double>& packed, std::size_t n) {
 constexpr const char* alpha_count_label = "Number of alpha electrons";
 constexpr const char* beta_count_label = "Number of beta electrons";
 
+// Density derivatives at point j of a block of b points, from the AO panels
+// `ao` (values, then x, y, z gradients, then, for ao_order 2, the six
+// Hessian panels in ao_hessian_column order) and product = P [values x y z].
+// `out` must start zeroed; Hessians are left zero for ao_order 1.
+void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
+                          const Eigen::Ref<const Eigen::MatrixXd>& product, Eigen::Index b,
+                          Eigen::Index j, int ao_order, DensityDerivatives& out) {
+    const auto y = product.col(j);
+    out.value = ao.col(j).dot(y);
+    for (int a = 0; a < 3; ++a) {
+        const auto ga = ao.col((a + 1) * b + j);
+        out.gradient[a] = 2.0 * ga.dot(y);
+        out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
+        if (ao_order == 2)
+            for (int c = a; c < 3; ++c) {
+                const auto hac = ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
+                const double v = 2.0 * (hac.dot(y) + ga.dot(product.col((c + 1) * b + j)));
+                out.hessian(a, c) = out.hessian(c, a) = v;
+            }
+    }
+    out.laplacian = out.hessian.trace();
+}
+
 // Atoms from the FCHK geometry, in bohr.
 std::vector<Atom> read_atoms(const FormattedCheckpoint& f) {
     const auto& zs = f.integers("Atomic numbers");
@@ -358,24 +381,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                 // applies P to all four, improving reuse of the (potentially large) P.
                 auto product = product_storage.topLeftCorner(m, 4 * b);
                 product.noalias() = pk * ao.leftCols(4 * b);
-                const auto phi = ao.middleCols(0, b);
-                const auto y = product.middleCols(0, b);
-                for (Eigen::Index j = 0; j < b; ++j) {
-                    auto& out = result[start + static_cast<std::size_t>(j)];
-                    out.value = phi.col(j).dot(y.col(j));
-                    for (int a = 0; a < 3; ++a) {
-                        const auto ga = ao.col((a + 1) * b + j);
-                        out.gradient[a] = 2.0 * ga.dot(y.col(j));
-                        out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
-                        for (int c = a; c < 3; ++c) {
-                            const auto hac = ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
-                            const double v =
-                                2.0 * (hac.dot(y.col(j)) + ga.dot(product.col((c + 1) * b + j)));
-                            out.hessian(a, c) = out.hessian(c, a) = v;
-                        }
-                    }
-                    out.laplacian = out.hessian.trace();
-                }
+                for (Eigen::Index j = 0; j < b; ++j)
+                    contract_derivatives(ao, product, b, j, 2,
+                                         result[start + static_cast<std::size_t>(j)]);
             } catch (...) {
                 worker_errors.capture();
             }
@@ -443,7 +451,6 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                     detail::significant_aos(input.leftCols(panels * b), screening_threshold);
                 const auto ao = detail::kept_rows(input.leftCols(panels * b), kept, ao_kept);
                 const auto m = static_cast<Eigen::Index>(kept.size());
-                const auto phi = ao.middleCols(0, b);
                 // P times the value and gradient panels (empty if not needed).
                 const auto product_panel = [&](Eigen::MatrixXd& storage, bool needed) {
                     return storage.topLeftCorner(needed ? m : 0, needed ? 4 * b : 0);
@@ -460,27 +467,8 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                 // linear primitive properties for alpha/beta as needed.
                 for (Eigen::Index j = 0; j < b; ++j) {
                     DensityDerivatives t, s;
-                    const auto contract = [&](const Eigen::Ref<const Eigen::MatrixXd>& product,
-                                              DensityDerivatives& out) {
-                        const auto y = product.col(j);
-                        out.value = phi.col(j).dot(y);
-                        for (int a = 0; a < 3; ++a) {
-                            const auto ga = ao.col((a + 1) * b + j);
-                            out.gradient[a] = 2.0 * ga.dot(y);
-                            out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
-                            if (ao_order == 2)
-                                for (int c = a; c < 3; ++c) {
-                                    const auto hac =
-                                        ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
-                                    const double v =
-                                        2.0 * (hac.dot(y) + ga.dot(product.col((c + 1) * b + j)));
-                                    out.hessian(a, c) = out.hessian(c, a) = v;
-                                }
-                        }
-                        out.laplacian = out.hessian.trace();
-                    };
-                    if (total_needed) contract(product_total, t);
-                    if (spin_needed) contract(product_spin, s);
+                    if (total_needed) contract_derivatives(ao, product_total, b, j, ao_order, t);
+                    if (spin_needed) contract_derivatives(ao, product_spin, b, j, ao_order, s);
                     const auto combine = [&](double sign) {
                         DensityDerivatives d;
                         d.value = 0.5 * (t.value + sign * s.value);
