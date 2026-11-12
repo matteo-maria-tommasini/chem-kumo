@@ -12,60 +12,15 @@
 
 namespace chem::kumo::detail {
 namespace {
-// One block of AOs with a single angular momentum, laid out exactly as in
-// BasisEvaluator: SP shells become an s block followed by a p block.
-struct Block {
-    Eigen::Vector3d origin;
-    int angular_momentum = 0;
-    std::vector<double> exponents;
-    std::vector<CartesianPower> powers;
-    Eigen::MatrixXd weights;   ///< Cartesian component x primitive, normalized
-    Eigen::MatrixXd transform; ///< pure x Cartesian, or empty for Cartesian
-    Eigen::Index offset = 0;
-    Eigen::Index count = 0;
-};
-
-std::vector<Block> blocks_of(const BasisSet& basis) {
-    std::vector<Block> blocks;
-    Eigen::Index offset = 0;
-    const auto add = [&](const Shell& shell, int l, const std::vector<double>& coefficients,
-                         ShellRepresentation representation) {
-        // Expansions of a pair need Boys orders up to la + lb + local_order.
-        constexpr int largest = (boys_max_order - ElectrostaticPotential::local_order) / 2;
-        if (l > largest)
+// The normalized AO blocks of the basis, checking the angular momentum:
+// expansions of a pair need Boys orders up to la + lb + local_order.
+std::vector<NormalizedBlock> blocks_of(const BasisSet& basis) {
+    constexpr int largest = (boys_max_order - ElectrostaticPotential::local_order) / 2;
+    auto blocks = normalized_blocks(basis);
+    for (const auto& block : blocks)
+        if (block.angular_momentum > largest)
             throw std::invalid_argument("the electrostatic potential supports shells up to l = " +
                                         std::to_string(largest));
-        Block block;
-        block.origin = shell.origin;
-        block.angular_momentum = l;
-        block.exponents = shell.exponents;
-        block.powers = gaussian_cartesian_order(l);
-        const auto ncart = static_cast<Eigen::Index>(block.powers.size());
-        const auto nprim = static_cast<Eigen::Index>(block.exponents.size());
-        block.weights.resize(ncart, nprim);
-        for (Eigen::Index k = 0; k < ncart; ++k)
-            for (Eigen::Index p = 0; p < nprim; ++p)
-                block.weights(k, p) =
-                    coefficients[static_cast<std::size_t>(p)] *
-                    cartesian_primitive_normalization(block.exponents[static_cast<std::size_t>(p)],
-                                                      block.powers[static_cast<std::size_t>(k)]);
-        if (representation == ShellRepresentation::Pure && l >= 2)
-            block.transform = gaussian_cartesian_to_pure(l);
-        block.offset = offset;
-        block.count = block.transform.size() ? block.transform.rows() : ncart;
-        offset += block.count;
-        blocks.push_back(std::move(block));
-    };
-    for (const auto& shell : basis.shells()) {
-        if (shell.is_sp) {
-            add(shell, 0, shell.coefficients, ShellRepresentation::Cartesian);
-            add(shell, 1, shell.p_coefficients, ShellRepresentation::Cartesian);
-        } else {
-            add(shell, shell.angular_momentum, shell.coefficients, shell.representation);
-        }
-    }
-    if (static_cast<std::size_t>(offset) != basis.function_count())
-        throw std::logic_error("electrostatic potential blocks do not match the basis size");
     return blocks;
 }
 
@@ -184,14 +139,17 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
 
     std::vector<double> pair_coefficients;
     for (std::size_t a = 0; a < blocks.size(); ++a) {
-        const Block& A = blocks[a];
+        const NormalizedBlock& A = blocks[a];
         for (std::size_t b = a; b < blocks.size(); ++b) {
-            const Block& B = blocks[b];
+            const NormalizedBlock& B = blocks[b];
             // Cartesian density block; the (b, a) block is its transpose and
             // gives the same contribution, hence the factor 2.
-            Eigen::MatrixXd cartesian = density_matrix.block(A.offset, B.offset, A.count, B.count);
-            if (A.transform.size()) cartesian = (A.transform.transpose() * cartesian).eval();
-            if (B.transform.size()) cartesian = (cartesian * B.transform).eval();
+            Eigen::MatrixXd cartesian = density_matrix.block(
+                static_cast<Eigen::Index>(A.offset), static_cast<Eigen::Index>(B.offset),
+                static_cast<Eigen::Index>(A.count), static_cast<Eigen::Index>(B.count));
+            if (A.pure_transform.size())
+                cartesian = (A.pure_transform.transpose() * cartesian).eval();
+            if (B.pure_transform.size()) cartesian = (cartesian * B.pure_transform).eval();
             if (a != b) cartesian *= 2.0;
             if ((cartesian.array() == 0.0).all()) continue;
 

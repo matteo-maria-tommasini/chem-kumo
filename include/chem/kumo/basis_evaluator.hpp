@@ -100,6 +100,7 @@ public:
 private:
     struct PreparedBlock {
         Eigen::Vector3d origin = Eigen::Vector3d::Zero();
+        int angular_momentum = 0;
         std::vector<double> exponents;
         std::vector<CartesianPower> powers;
         Eigen::MatrixXd primitive_weights;

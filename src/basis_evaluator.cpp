@@ -28,19 +28,6 @@ double integer_power(double x, int n) noexcept {
     return result;
 }
 
-// All Cartesian powers (lx, ly, lz) with lx + ly + lz = l, enumerated with lx
-// in the outer loop and ly in the inner loop, both ascending ("PRISM" order).
-// Used only to check that every Gaussian component has a c2pcff() mapping.
-std::vector<CartesianPower> prism_cartesian_order(int l) {
-    std::vector<CartesianPower> result;
-    for (int lx = 0; lx <= l; ++lx) {
-        for (int ly = 0; ly <= l - lx; ++ly) {
-            result.push_back(CartesianPower{lx, ly, l - lx - ly});
-        }
-    }
-    return result;
-}
-
 // Coefficient of the Cartesian Gaussian x^lx y^ly z^lz (lz = l - lx - ly) in
 // the real pure (spherical harmonic) Gaussian with angular momentum l and
 // order m, for -l <= m <= l. m = 0 is the zonal function; m > 0 and m < 0 are
@@ -168,17 +155,12 @@ std::vector<CartesianPower> gaussian_cartesian_order(int l) {
 Eigen::MatrixXd gaussian_cartesian_to_pure(int l) {
     if (l < 2) throw std::runtime_error("pure transformation requested below d shell");
     const auto gaussian = gaussian_cartesian_order(l);
-    const auto prism = prism_cartesian_order(l);
     Eigen::MatrixXd transform(static_cast<Eigen::Index>(2 * l + 1),
                               static_cast<Eigen::Index>(gaussian.size()));
     transform.setZero();
 
     for (std::size_t g = 0; g < gaussian.size(); ++g) {
-        const auto it = std::find_if(prism.begin(), prism.end(), [&](const CartesianPower& p) {
-            return p.x == gaussian[g].x && p.y == gaussian[g].y && p.z == gaussian[g].z;
-        });
-        if (it == prism.end()) throw std::runtime_error("Gaussian/PRISM Cartesian mapping failed");
-        const auto& p = *it;
+        const auto& p = gaussian[g];
         transform(0, static_cast<Eigen::Index>(g)) = c2pcff(l, 0, p.x, p.y);
         for (int m = 1; m <= l; ++m) {
             transform(2 * m - 1, static_cast<Eigen::Index>(g)) = c2pcff(l, m, p.x, p.y);
@@ -189,65 +171,29 @@ Eigen::MatrixXd gaussian_cartesian_to_pure(int l) {
 }
 
 BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
-    std::size_t output_offset = 0;
-
-    const auto add_block = [&](const Shell& shell, int angular_momentum,
-                               const std::vector<double>& coefficients,
-                               ShellRepresentation representation,
-                               std::vector<PreparedBlock>& blocks, std::size_t& max_cartesian_count,
-                               std::size_t& offset) {
+    auto normalized = detail::normalized_blocks(basis_);
+    blocks_.reserve(normalized.size());
+    for (auto& source : normalized) {
         PreparedBlock block;
-        block.origin = shell.origin;
-        block.exponents = shell.exponents;
-        block.powers = gaussian_cartesian_order(angular_momentum);
-        block.output_offset = offset;
-
-        const auto ncart = block.powers.size();
-        const auto nprim = block.exponents.size();
-        block.primitive_weights.resize(static_cast<Eigen::Index>(ncart),
-                                       static_cast<Eigen::Index>(nprim));
-        for (std::size_t k = 0; k < ncart; ++k) {
-            for (std::size_t p = 0; p < nprim; ++p) {
-                block.primitive_weights(static_cast<Eigen::Index>(k),
-                                        static_cast<Eigen::Index>(p)) =
-                    coefficients[p] *
-                    detail::cartesian_primitive_normalization(block.exponents[p], block.powers[k]);
-            }
-        }
-
-        if (representation == ShellRepresentation::Pure && angular_momentum >= 2) {
-            block.pure_transform = gaussian_cartesian_to_pure(angular_momentum);
-            block.output_count = static_cast<std::size_t>(block.pure_transform.rows());
-        } else {
-            block.output_count = ncart;
-        }
+        block.origin = source.origin;
+        block.angular_momentum = source.angular_momentum;
+        block.exponents = std::move(source.exponents);
+        block.powers = std::move(source.powers);
+        block.primitive_weights = std::move(source.weights);
+        block.pure_transform = std::move(source.pure_transform);
+        block.output_offset = source.offset;
+        block.output_count = source.count;
         const double transform_norm =
             block.pure_transform.size() ? block.pure_transform.cwiseAbs().rowwise().sum().maxCoeff()
                                         : 1.0;
-        const double radius = shell_cutoff_radius(block.exponents, block.primitive_weights,
-                                                  angular_momentum, transform_norm, ao_cutoff);
+        const double radius =
+            shell_cutoff_radius(block.exponents, block.primitive_weights, block.angular_momentum,
+                                transform_norm, ao_cutoff);
         block.cutoff_radius2 = radius * radius;
-        max_cartesian_count = std::max(max_cartesian_count, ncart);
-        max_primitive_count_ = std::max(max_primitive_count_, nprim);
-        max_angular_momentum_ = std::max(max_angular_momentum_, angular_momentum);
-        offset += block.output_count;
-        blocks.push_back(std::move(block));
-    };
-
-    blocks_.reserve(basis_.shells().size() + 4U);
-    for (const auto& shell : basis_.shells()) {
-        if (shell.is_sp) {
-            add_block(shell, 0, shell.coefficients, ShellRepresentation::Cartesian, blocks_,
-                      max_cartesian_count_, output_offset);
-            add_block(shell, 1, shell.p_coefficients, ShellRepresentation::Cartesian, blocks_,
-                      max_cartesian_count_, output_offset);
-        } else {
-            add_block(shell, shell.angular_momentum, shell.coefficients, shell.representation,
-                      blocks_, max_cartesian_count_, output_offset);
-        }
-    }
-    if (output_offset != basis_.function_count()) {
-        throw std::logic_error("prepared AO evaluator size does not match basis size");
+        max_cartesian_count_ = std::max(max_cartesian_count_, block.powers.size());
+        max_primitive_count_ = std::max(max_primitive_count_, block.exponents.size());
+        max_angular_momentum_ = std::max(max_angular_momentum_, block.angular_momentum);
+        blocks_.push_back(std::move(block));
     }
 }
 
@@ -482,9 +428,7 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
         }
         // Reuse Cartesian powers across all functions in this shell.
         // Preserve the original primitive summation order for reproducibility.
-        const int l = block.powers.empty() ? 0
-                                           : block.powers.front().x + block.powers.front().y +
-                                                 block.powers.front().z;
+        const int l = block.angular_momentum;
         double xp_stack[32], yp_stack[32], zp_stack[32];
         std::vector<double> xp_heap, yp_heap, zp_heap;
         double *xp = xp_stack, *yp = yp_stack, *zp = zp_stack;
@@ -592,8 +536,7 @@ void BasisEvaluator::evaluate_derivatives_batch(
     for (const auto& block : blocks_) {
         const auto nc = static_cast<Eigen::Index>(block.powers.size());
         const auto nprim = block.exponents.size();
-        const int l_shell =
-            block.powers.front().x + block.powers.front().y + block.powers.front().z;
+        const int l_shell = block.angular_momentum;
         const bool pure = block.pure_transform.size() != 0;
         const auto offset = static_cast<Eigen::Index>(block.output_offset);
         const auto rows = static_cast<Eigen::Index>(block.output_count);
