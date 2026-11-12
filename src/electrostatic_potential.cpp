@@ -30,9 +30,11 @@ std::vector<Block> blocks_of(const BasisSet& basis) {
     Eigen::Index offset = 0;
     const auto add = [&](const Shell& shell, int l, const std::vector<double>& coefficients,
                          ShellRepresentation representation) {
-        if (l > boys_max_order / 2)
+        // Expansions of a pair need Boys orders up to la + lb + local_order.
+        constexpr int largest = (boys_max_order - ElectrostaticPotential::local_order) / 2;
+        if (l > largest)
             throw std::invalid_argument("the electrostatic potential supports shells up to l = " +
-                                        std::to_string(boys_max_order / 2));
+                                        std::to_string(largest));
         Block block;
         block.origin = shell.origin;
         block.angular_momentum = l;

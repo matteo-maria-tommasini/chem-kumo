@@ -35,7 +35,7 @@ public:
     static constexpr double nucleus_exclusion_radius = 1e-8; ///< bohr
 
     /// Throws std::invalid_argument if P does not match the basis, is not
-    /// finite, or a shell has an angular momentum above 16.
+    /// finite, or a shell has an angular momentum above 13.
     ElectrostaticPotential(const BasisSet& basis, const Eigen::MatrixXd& density_matrix,
                            std::vector<Atom> atoms);
 

@@ -17,7 +17,7 @@ Library changes:
   `std::invalid_argument`.
 - The electronic term uses McMurchie-Davidson Hermite expansions and a new
   Boys function (Taylor table below T = 40, closed form above; agrees with
-  quadrature to 2.3e-15). Shells up to l = 16 are supported.
+  quadrature to 2.3e-15). Shells up to l = 13 are supported.
 - At a grid point within 1e-8 bohr of a nucleus, that nucleus's own
   singular term is left out, so the value is the potential at the nucleus.
   Regular grids, including kumo's default grids, often contain nuclei.
