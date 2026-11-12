@@ -39,7 +39,9 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
 
     Request request;
     request.add(key);
-    const auto actual = Evaluator(molecule).evaluate(grid, request).get(key).component();
+    // Keep the Results alive: component() is a view into it.
+    const Results results = Evaluator(molecule).evaluate(grid, request);
+    const auto actual = results.get(key).component();
     if (!kumo_test::check(actual.size() == expected.size(),
                           label + ": the Evaluator returns one value per Cube point"))
         return;
