@@ -254,33 +254,44 @@ primitive pair, one Boys function F_m(T), the Hermite Coulomb integrals
 R_tuv and a dot product. Pure shells are handled by transforming P to
 Cartesian components. Shells up to l = 16 are supported.
 
-Far primitive pairs. The Evaluator processes the grid in clusters of
-8 x 8 x 8 points. A primitive pair far from a cluster contributes through
-one Taylor expansion of its potential, of order 6, about the cluster
-centre: its coefficients are the Hermite integrals R_tuv of order up to
-la + lb + 6 at the centre, computed once per cluster, and each point then
-needs only a polynomial. The other pairs are evaluated exactly at every
-point. A pair is far when a rigorous bound of its expansion error over the
-cluster is at most `potential_tolerance` divided by the number of pairs, so
-the error at every point is at most `potential_tolerance`
-(EvaluationOptions, default 1e-8 hartree/e; 0 evaluates every pair exactly).
-The bound, in `src/electrostatic_potential.cpp`, splits the potential of a
+Far field. The Evaluator processes the grid in clusters of 8 x 8 x 8
+points and splits the error budget `potential_tolerance` (EvaluationOptions,
+default 1e-8 hartree/e; 0 evaluates every pair exactly at every point)
+between two approximations, each with a rigorous error bound:
+
+- Source clusters (half of the budget). Primitive pairs are grouped by the
+  2-bohr cell of their product centre and by exponent (a factor of 4 per
+  group). The point-multipole moments of each group about its centre are
+  computed once, and a group far enough from a cluster of points
+  contributes through one multipole-to-local translation of total order 10.
+  A group is used when the Taylor remainder of that translation and the
+  neglected erfc terms of its Gaussians are each at most a quarter of the
+  budget divided by the number of groups.
+- Individual pairs (the other half). Each remaining pair has a bound of the
+  error of its own Taylor expansion of order 6 about the cluster centre,
+  tabulated at error levels 10^(-j/2) times the budget. In each cluster the
+  pairs with the smallest bounds are expanded while the sum of their bounds
+  fits in the budget; the rest are evaluated exactly at every point.
+
+The bounds, in `src/electrostatic_potential.cpp`, split the potential of a
 Hermite Gaussian into point-multipole (1/R) and erfc parts. The Taylor
-remainder of the first uses the bound m! / |x|^(m+1) on the derivatives of
+remainders of the first use the bound m! / |x|^(m+1) on the derivatives of
 order m of 1/|x|; the second is bounded through the integral representation
-of erfc and Cramer's inequality for Hermite functions. The bound is
-conservative: on the test molecules the actual errors are 1e-11 to 1e-13
+of erfc and Cramer's inequality for Hermite functions. The bounds are
+conservative: on the test molecules the actual errors are at most 4e-10
 with the default tolerance. Cluster boundaries depend only on the grid, so
 the values do not depend on the block size or the number of threads.
 
 Cost. Per grid point on one core: water (def2-TZVP, 556 primitive pairs)
-about 23 microseconds; HBC (def2-SVP, 177,315 pairs) 3.4 ms exactly and
-0.68 ms with the default tolerance, averaged over six sample clusters
-inside and around the molecule (Apple M, release build). The whole default
-grid of HBC (1.5 million points) took 255 s on 8 cores; exactly it would
-take about 86 minutes on one core. Pairs expanded per cluster and pairs
-still evaluated exactly cost about the same in total, so larger gains would
-need clusters of source pairs as well (fast multipole methods).
+about 23 microseconds exactly; HBC (def2-SVP, 177,315 pairs) about 3.7 ms
+exactly, 0.50 ms with the default tolerance and 0.29 ms with 1e-6, averaged
+over six sample clusters inside and around the molecule (Apple M, release
+build; actual errors 4e-11 and 2e-8). The whole default grid of HBC
+(1.5 million points) took 191 s on 8 cores with the default tolerance and
+108 s with 1e-6; exactly it would take about 95 minutes on one core. The
+error budget, not the arithmetic, limits the gain: with an absolute bound
+of 1e-8 for a molecule with 234 electrons, the far field must be resolved to
+about 1e-11 relative.
 
 The Boys function uses a seventh-order Taylor expansion about a table with
 spacing 0.05 for T < 40 and the closed form of F_0 with upward recursion
@@ -300,10 +311,10 @@ acrolein and HBC 6-31G(d,p), which has Cartesian d and SP shells):
   (16 times smaller when the step is halved);
 - with `potential_tolerance` 0 the Evaluator returns the same values as
   the exact pointwise engine, and with the default tolerance values within
-  1e-8 of them (observed: at most 5e-13), for any block size, request and
+  1e-8 of them (observed: at most 3e-10), for any block size, request and
   number of threads;
 - clusters with tolerances 1e-4 and 1e-8, centred in and far from the
-  molecule, stay within the tolerance (observed: at most 6e-7 and 8e-11).
+  molecule, stay within the tolerance (observed: at most 4e-6 and 4e-10).
 
 The test `multiwfn-reference` also compares the ESP of water and O2 with
 Multiwfn 2026.9.1 Cube files (its original analytic ESP code), point by

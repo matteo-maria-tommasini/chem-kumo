@@ -73,10 +73,28 @@ values "${PREFIX}_density_sign-lambda2-rho.cube" | awk '$1 < 0 {found = 1} END {
 "$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --property esp > "$TMP/esp.log"
 grep -Fqx "${PREFIX}_density_esp.cube" "$TMP/esp.log" || {
     echo "Not reported: ${PREFIX}_density_esp.cube" >&2; exit 1; }
-sed -n 2p "${PREFIX}_density_esp.cube" | grep -Fq 'Coulomb integrals over the AO density matrix, error <= 1e-8 hartree/e' || {
+sed -n 2p "${PREFIX}_density_esp.cube" | grep -Fq 'Coulomb integrals over the AO density matrix, error <= 1e-08 hartree/e' || {
     echo 'ESP Cube comment does not name the method' >&2; exit 1; }
 values "${PREFIX}_density_esp.cube" | awk '$1 + 0 != $1 || $1 > 1e3 {exit 1} $1 > 1 {found = 1} END {exit !found}' || {
     echo 'ESP values not finite, or none above 1 hartree/e near the nuclei' >&2; exit 1; }
+# --esp-tolerance 0 is exact; the printed values agree with the default
+# (error bound 1e-8) to the six digits of the Cube file, give or take one
+# unit of the last digit.
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/exact" --property esp \
+    --esp-tolerance 0 > "$TMP/esp-exact.log"
+sed -n 2p "$TMP/exact_density_esp.cube" | grep -Fq 'exact Coulomb integrals' || {
+    echo 'Exact ESP Cube comment does not say exact' >&2; exit 1; }
+paste "$TMP/exact_density_esp.cube" "${PREFIX}_density_esp.cube" | awk 'NR > 8 {
+    n = NF / 2; for (i = 1; i <= n; ++i) { d = $i - $(i + n); if (d < 0) d = -d;
+    s = ($i < 0 ? -$i : $i); if (d > 1e-5 * s + 1e-12) exit 1 } }' || {
+    echo 'ESP with --esp-tolerance 0 differs from the default' >&2; exit 1; }
+if "$KUMO" "$FCHK" --spacing 1 --esp-tolerance 1e-6 --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo '--esp-tolerance without --property esp unexpectedly accepted' >&2; exit 1
+fi
+if "$KUMO" "$FCHK" --spacing 1 --property esp --esp-tolerance -1 --output "$TMP/bad" \
+    > "$TMP/error.log" 2>&1; then
+    echo 'Negative --esp-tolerance unexpectedly accepted' >&2; exit 1
+fi
 # Density backends: the Cube comment names the contraction used, and the AO-MO
 # and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
 # selects AO-MO).

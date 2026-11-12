@@ -37,6 +37,8 @@ struct Options {
     std::string prefix;
     double spacing = 0.20;
     double margin = 5.0;
+    double esp_tolerance = 1e-8; // Evaluator default
+    bool esp_tolerance_set = false;
     bool mo_mode = false;
     bool list = false;
     bool verbose = false;
@@ -55,6 +57,8 @@ void usage() {
               << "                             alpha or beta; rdg, sign-lambda2-rho and esp,\n"
               << "                             the electrostatic potential, for the total\n"
               << "                             density only)\n"
+              << "  --esp-tolerance HARTREE    Error bound of --property esp at each point\n"
+              << "                             (default 1e-8; 0 is exact and slowest)\n"
               << "  --backend auto|ao-p|ao-mo  Density contraction (default auto: occupied MOs\n"
               << "                             when they reproduce the FCHK density matrices)\n"
               << "  --mo N[,M:K,...]           Write 1-based molecular orbitals\n"
@@ -208,6 +212,10 @@ Options parse(int argc, char** argv) {
             o.backend = lower(value());
             if (o.backend != "auto" && o.backend != "ao-p" && o.backend != "ao-mo")
                 throw std::invalid_argument("--backend must be auto, ao-p or ao-mo");
+        } else if (a == "--esp-tolerance") {
+            if (o.esp_tolerance_set) throw std::invalid_argument("--esp-tolerance specified twice");
+            o.esp_tolerance = real(value());
+            o.esp_tolerance_set = true;
         } else if (a == "--spacing")
             o.spacing = real(value());
         else if (a == "--margin")
@@ -236,6 +244,8 @@ Options parse(int argc, char** argv) {
             "--backend applies only to densities, not to --mo or --list-mo");
     if (!(o.spacing > 0) || o.margin < 0)
         throw std::invalid_argument("invalid grid spacing or margin");
+    if (!std::isfinite(o.esp_tolerance) || o.esp_tolerance < 0)
+        throw std::invalid_argument("--esp-tolerance must be finite and nonnegative");
     if (!o.output_set) o.prefix = o.input.stem().string();
     if (o.prefix.empty()) throw std::invalid_argument("empty output prefix");
     return o;
@@ -502,8 +512,8 @@ std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& 
 void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
                               const std::vector<std::pair<Spin, std::string>>& components,
                               const std::vector<DensityProperty>& properties,
-                              chem::kumo::Backend backend, const std::string& prefix,
-                              Console& console) {
+                              chem::kumo::Backend backend, double esp_tolerance,
+                              const std::string& prefix, Console& console) {
     chem::kumo::Request request;
     for (const auto& [component, suffix] : components)
         for (const auto& property : properties)
@@ -511,6 +521,7 @@ void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
     console.begin(evaluation_summary(components, properties));
     chem::kumo::EvaluationOptions options;
     options.backend = backend;
+    options.potential_tolerance = esp_tolerance;
     options.progress = console.progress();
     const auto results = chem::kumo::Evaluator(mol, options).evaluate(grid, request);
     console.end("Evaluated in");
@@ -533,12 +544,13 @@ void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
         const auto filename = prefix + "_" + suffix +
                               (property.kind == PropertyKind::Density ? "" : "_" + property.name) +
                               ".cube";
-        // The electrostatic potential always uses the AO density matrix, with
-        // the Evaluator's default error bound.
-        const auto method = property.kind == PropertyKind::ElectrostaticPotential
-                                ? std::string("Coulomb integrals over the AO density matrix, "
-                                              "error <= 1e-8 hartree/e")
-                                : used;
+        // The electrostatic potential always uses the AO density matrix.
+        std::ostringstream bound;
+        bound << "error <= " << esp_tolerance << " hartree/e";
+        const auto method = property.kind != PropertyKind::ElectrostaticPotential ? used
+                            : esp_tolerance == 0.0
+                                ? std::string("exact Coulomb integrals over the AO density matrix")
+                                : "Coulomb integrals over the AO density matrix, " + bound.str();
         chem::kumo::Field(grid, mol.atoms(), std::move(values))
             .write_cube(filename,
                         property.description + ", " + component_label(component) + ", " + method);
@@ -648,9 +660,15 @@ int main(int argc, char** argv) {
             const auto properties =
                 select_properties(o.properties.empty() ? "density" : o.properties);
             check_components(components, properties);
+            if (o.esp_tolerance_set &&
+                std::none_of(properties.begin(), properties.end(), [](const DensityProperty& p) {
+                    return p.kind == PropertyKind::ElectrostaticPotential;
+                }))
+                throw std::invalid_argument("--esp-tolerance applies only to --property esp");
             const auto backend = select_backend(o.backend, mol);
             console.say(backend_summary(backend, mol));
-            write_density_properties(mol, grid, components, properties, backend, o.prefix, console);
+            write_density_properties(mol, grid, components, properties, backend, o.esp_tolerance,
+                                     o.prefix, console);
         }
         console.finish();
         return 0;

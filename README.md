@@ -70,6 +70,7 @@ kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
 kumo molecule.fchk --property elf                # electron localization function
 kumo molecule.fchk --property rdg,sign-lambda2-rho  # NCI analysis
 kumo molecule.fchk --property density,esp        # electrostatic potential
+kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -117,10 +118,11 @@ matrix, with an error of at most 1e-8 hartree/e per point. Together with the den
 isosurface of the density (for example 0.001 e/bohr^3) colored by the ESP.
 At a grid point on a nucleus, which kumo's default grids often contain, the
 nucleus's own singular term is left out, so the value is the potential at
-that nucleus. The cost grows with the number of grid points times the number
-of primitive pairs: about 2 s for water (def2-TZVP) on the default grid on
-one core, and about 4 minutes for HBC (def2-SVP, 1.5 million points) on 8
-cores.
+that nucleus. `--esp-tolerance` sets the error bound at each point (default
+1e-8 hartree/e; 0 is exact): far primitive pairs are approximated within
+it. On the default grid, water (def2-TZVP) takes about 2 s on one core and
+HBC (def2-SVP, 1.5 million points) about 3 minutes on 8 cores, or 2
+minutes with `--esp-tolerance 1e-6`.
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce

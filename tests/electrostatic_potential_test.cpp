@@ -318,8 +318,10 @@ void clusters(const std::string& label, const BasisSet& basis, const Molecule& m
     std::vector<double> exact(27), approximate(27);
     for (const double tolerance : {0.0, 1e-4, 1e-8}) {
         const auto plan = potential.far_field_plan(radius, tolerance);
-        const auto expanded = std::count_if(plan.far_distance2.begin(), plan.far_distance2.end(),
-                                            [](double d2) { return std::isfinite(d2); });
+        const auto expanded =
+            std::count_if(plan.level_distance2.begin(), plan.level_distance2.end(),
+                          [](float d2) { return std::isfinite(d2); }) +
+            static_cast<long>(plan.clusters.size());
         kumo_test::check(tolerance == 0.0 ? expanded == 0 : expanded > 0,
                          label + ": tolerance " + kumo_test::num(tolerance) +
                              (tolerance == 0.0 ? " expands no pair" : " expands some pairs"));
@@ -347,7 +349,7 @@ void clusters(const std::string& label, const BasisSet& basis, const Molecule& m
         [&] { potential.evaluate_cluster(outside, centres[0], plan, one); },
         label + ": a point outside the planned radius is rejected");
     ElectrostaticPotential::FarFieldPlan wrong = plan;
-    wrong.far_distance2.pop_back();
+    wrong.level_distance2.pop_back();
     kumo_test::check_throws<std::invalid_argument>(
         [&] {
             potential.evaluate_cluster(offsets.colwise() + centres[0], centres[0], wrong, exact);
