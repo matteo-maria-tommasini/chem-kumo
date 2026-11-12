@@ -445,6 +445,22 @@ test(
     timeout: 300,
 )
 
+# Evaluator point path: bit-identical results across OpenMP worker counts.
+evaluator_parallel_test = executable(
+    'kumo-evaluator-parallel-test',
+    'tests/evaluator_parallel_test.cpp',
+    dependencies: kumo_dep,
+)
+test(
+    'evaluator-parallel',
+    evaluator_parallel_test,
+    args: [
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+    ],
+    timeout: 300,
+)
+
 # MO grid and spatial-derivative consistency across OpenMP worker counts.
 parallel_orbitals_test = executable(
     'kumo-parallel-orbitals-test',
