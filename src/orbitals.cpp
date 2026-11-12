@@ -139,30 +139,21 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
     constexpr std::size_t block_size = 128;
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many orbital blocks for parallel evaluation");
-    detail::FirstException worker_errors;
     detail::Progress report(progress, count);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) if (nblocks > 1)
-#endif
-    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(block) * block_size;
-            const auto size = std::min(block_size, count - start);
-            const auto b = static_cast<Eigen::Index>(size);
-            const auto points = detail::grid_points(grid, start, size);
-            Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
-            evaluator_.evaluate_batch(points, phi);
-            const Eigen::MatrixXd psi = selected.transpose() * phi;
-            for (std::size_t mo = 0; mo < indices.size(); ++mo)
-                for (Eigen::Index t = 0; t < b; ++t)
-                    buffers[mo][start + static_cast<std::size_t>(t)] =
-                        psi(static_cast<Eigen::Index>(mo), t);
-            report.advance(size);
-        } catch (...) {
-            worker_errors.capture();
-        }
-    }
-    worker_errors.rethrow_if_any();
+    detail::for_each_block<detail::Schedule::Static>(nblocks, [&](std::size_t block) {
+        const std::size_t start = static_cast<std::size_t>(block) * block_size;
+        const auto size = std::min(block_size, count - start);
+        const auto b = static_cast<Eigen::Index>(size);
+        const auto points = detail::grid_points(grid, start, size);
+        Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
+        evaluator_.evaluate_batch(points, phi);
+        const Eigen::MatrixXd psi = selected.transpose() * phi;
+        for (std::size_t mo = 0; mo < indices.size(); ++mo)
+            for (Eigen::Index t = 0; t < b; ++t)
+                buffers[mo][start + static_cast<std::size_t>(t)] =
+                    psi(static_cast<Eigen::Index>(mo), t);
+        report.advance(size);
+    });
     std::vector<Field> result;
     result.reserve(indices.size());
     for (auto& buffer : buffers)

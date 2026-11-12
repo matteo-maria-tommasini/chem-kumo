@@ -698,45 +698,36 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     // Keep the same arithmetic and point ordering in serial and OpenMP builds.
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many grid blocks for parallel evaluation");
-    detail::FirstException worker_errors;
     detail::Progress report(progress, count);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) if (nblocks > 1)
-#endif
-    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(block) * block_size;
-            const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-            const auto points = detail::grid_points(grid, start, static_cast<std::size_t>(b));
-            Eigen::MatrixXd phi(m, b);
-            evaluator_.evaluate_batch(points, phi);
-            // Contract only the AOs that are significant somewhere in the
-            // block; if all of them are, use the full matrices as they are.
-            const auto kept = detail::significant_aos(phi, screening_threshold);
-            const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
-            if (screened) phi = detail::select_rows(phi, kept);
-            std::map<Spin, Eigen::VectorXd> rho;
-            for (std::size_t i = 0; i < contracted.size(); ++i) {
-                const Eigen::MatrixXd y =
-                    screened ? Eigen::MatrixXd(detail::select_submatrix(*matrices[i], kept) * phi)
-                             : Eigen::MatrixXd(*matrices[i] * phi);
-                rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
-            }
-            for (auto& [spin, values] : buffers) {
-                Eigen::Map<Eigen::VectorXd> out(values.data() + start, b);
-                if (rho.contains(spin))
-                    out = rho.at(spin);
-                else if (spin == Spin::Total)
-                    out = rho.at(Spin::Alpha) + rho.at(Spin::Beta);
-                else
-                    out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
-            }
-            report.advance(static_cast<std::size_t>(b));
-        } catch (...) {
-            worker_errors.capture();
+    detail::for_each_block<detail::Schedule::Static>(nblocks, [&](std::size_t block) {
+        const std::size_t start = static_cast<std::size_t>(block) * block_size;
+        const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
+        const auto points = detail::grid_points(grid, start, static_cast<std::size_t>(b));
+        Eigen::MatrixXd phi(m, b);
+        evaluator_.evaluate_batch(points, phi);
+        // Contract only the AOs that are significant somewhere in the
+        // block; if all of them are, use the full matrices as they are.
+        const auto kept = detail::significant_aos(phi, screening_threshold);
+        const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
+        if (screened) phi = detail::select_rows(phi, kept);
+        std::map<Spin, Eigen::VectorXd> rho;
+        for (std::size_t i = 0; i < contracted.size(); ++i) {
+            const Eigen::MatrixXd y =
+                screened ? Eigen::MatrixXd(detail::select_submatrix(*matrices[i], kept) * phi)
+                         : Eigen::MatrixXd(*matrices[i] * phi);
+            rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
         }
-    }
-    worker_errors.rethrow_if_any();
+        for (auto& [spin, values] : buffers) {
+            Eigen::Map<Eigen::VectorXd> out(values.data() + start, b);
+            if (rho.contains(spin))
+                out = rho.at(spin);
+            else if (spin == Spin::Total)
+                out = rho.at(Spin::Alpha) + rho.at(Spin::Beta);
+            else
+                out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
+        }
+        report.advance(static_cast<std::size_t>(b));
+    });
     std::map<Spin, Field> result;
     for (auto& [spin, values] : buffers)
         result.emplace(spin, Field(grid, atoms_, std::move(values)));

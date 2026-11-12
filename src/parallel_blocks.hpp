@@ -95,4 +95,38 @@ private:
     std::size_t done_ = 0;
 };
 
+/// How blocks are assigned to OpenMP threads.
+enum class Schedule { Static, Dynamic };
+
+/// Call body(block) for block = 0, ..., nblocks - 1, on OpenMP threads when
+/// there is more than one block. The first exception thrown by any block is
+/// rethrown after all blocks have run; blocks must write disjoint outputs.
+template <Schedule S, typename Body> void for_each_block(std::size_t nblocks, const Body& body) {
+    FirstException errors;
+    if constexpr (S == Schedule::Dynamic) {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (nblocks > 1)
+#endif
+        for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+            try {
+                body(static_cast<std::size_t>(block));
+            } catch (...) {
+                errors.capture();
+            }
+        }
+    } else {
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) if (nblocks > 1)
+#endif
+        for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+            try {
+                body(static_cast<std::size_t>(block));
+            } catch (...) {
+                errors.capture();
+            }
+        }
+    }
+    errors.rethrow_if_any();
+}
+
 } // namespace chem::kumo::detail

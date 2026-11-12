@@ -178,33 +178,24 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
 
     const std::size_t nblocks =
         detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
-    detail::FirstException worker_errors;
     detail::Progress report(progress, n);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if (nblocks > 1)
-#endif
-    for (std::int64_t index = 0; index < static_cast<std::int64_t>(nblocks); ++index) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(index) * block_size;
-            const std::size_t count = std::min(block_size, n - start);
-            const auto points = detail::grid_points(grid, start, count);
-            const auto block = evaluate_block(points, needed);
+    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t index) {
+        const std::size_t start = static_cast<std::size_t>(index) * block_size;
+        const std::size_t count = std::min(block_size, n - start);
+        const auto points = detail::grid_points(grid, start, count);
+        const auto block = evaluate_block(points, needed);
 
-            for (auto& [key, output] : fields) {
-                // Orbitals and AO-P densities come from the grid path, and
-                // the electrostatic potential from its own pass.
-                if (on_grid_path(key, backend) || key.kind == PropertyKind::ElectrostaticPotential)
-                    continue;
-                store_block(output, key, block, count, start);
-            }
-            // Serialized and monotonic; a throwing callback is captured
-            // like any other block error.
-            report.advance(count);
-        } catch (...) {
-            worker_errors.capture();
+        for (auto& [key, output] : fields) {
+            // Orbitals and AO-P densities come from the grid path, and
+            // the electrostatic potential from its own pass.
+            if (on_grid_path(key, backend) || key.kind == PropertyKind::ElectrostaticPotential)
+                continue;
+            store_block(output, key, block, count, start);
         }
-    }
-    worker_errors.rethrow_if_any();
+        // Serialized and monotonic; a throwing callback is captured
+        // like any other block error.
+        report.advance(count);
+    });
 }
 
 // Electrostatic potential pass. The grid is split into clusters of up to
@@ -236,47 +227,41 @@ void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double to
     // Slightly enlarged to cover rounding in the point coordinates.
     const auto plan = potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);
 
-    const auto ntiles = static_cast<std::int64_t>(tiles[0]) * tiles[1] * tiles[2];
-    detail::FirstException worker_errors;
+    const auto ntiles = static_cast<std::size_t>(tiles[0]) * static_cast<std::size_t>(tiles[1]) *
+                        static_cast<std::size_t>(tiles[2]);
     detail::Progress report(progress, n);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if (ntiles > 1)
-#endif
-    for (std::int64_t index = 0; index < ntiles; ++index) {
-        try {
-            const Eigen::Vector3i tile(static_cast<int>(index / (tiles[1] * tiles[2])),
-                                       static_cast<int>((index / tiles[2]) % tiles[1]),
-                                       static_cast<int>(index % tiles[2]));
-            Eigen::Vector3i begin, end;
-            for (int a = 0; a < 3; ++a) {
-                begin[a] = tile[a] * cluster_side;
-                end[a] = std::min(begin[a] + cluster_side, grid.counts[a]);
-            }
-            const Eigen::Vector3i size = end - begin;
-            const auto count = static_cast<std::size_t>(size.prod());
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
-            std::vector<std::size_t> targets(count);
-            std::size_t local = 0;
-            for (int i = begin[0]; i < end[0]; ++i)
-                for (int j = begin[1]; j < end[1]; ++j)
-                    for (int k = begin[2]; k < end[2]; ++k, ++local) {
-                        points.col(static_cast<Eigen::Index>(local)) =
-                            grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
-                        targets[local] = detail::grid_index(grid, i, j, k);
-                    }
-            const Eigen::Vector3d center =
-                grid.origin +
-                grid.steps * (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>());
-            std::vector<double> values(count);
-            potential.evaluate_cluster(points, center, plan, values);
-            for (std::size_t p = 0; p < count; ++p)
-                output[targets[p]] = values[p];
-            report.advance(count);
-        } catch (...) {
-            worker_errors.capture();
+    detail::for_each_block<detail::Schedule::Dynamic>(ntiles, [&](std::size_t index) {
+        const auto per_plane = static_cast<std::size_t>(tiles[1] * tiles[2]);
+        const Eigen::Vector3i tile(static_cast<int>(index / per_plane),
+                                   static_cast<int>((index / static_cast<std::size_t>(tiles[2])) %
+                                                    static_cast<std::size_t>(tiles[1])),
+                                   static_cast<int>(index % static_cast<std::size_t>(tiles[2])));
+        Eigen::Vector3i begin, end;
+        for (int a = 0; a < 3; ++a) {
+            begin[a] = tile[a] * cluster_side;
+            end[a] = std::min(begin[a] + cluster_side, grid.counts[a]);
         }
-    }
-    worker_errors.rethrow_if_any();
+        const Eigen::Vector3i size = end - begin;
+        const auto count = static_cast<std::size_t>(size.prod());
+        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
+        std::vector<std::size_t> targets(count);
+        std::size_t local = 0;
+        for (int i = begin[0]; i < end[0]; ++i)
+            for (int j = begin[1]; j < end[1]; ++j)
+                for (int k = begin[2]; k < end[2]; ++k, ++local) {
+                    points.col(static_cast<Eigen::Index>(local)) =
+                        grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
+                    targets[local] = detail::grid_index(grid, i, j, k);
+                }
+        const Eigen::Vector3d center =
+            grid.origin +
+            grid.steps * (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>());
+        std::vector<double> values(count);
+        potential.evaluate_cluster(points, center, plan, values);
+        for (std::size_t p = 0; p < count; ++p)
+            output[targets[p]] = values[p];
+        report.advance(count);
+    });
 }
 } // namespace
 
