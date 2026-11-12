@@ -8,9 +8,11 @@ int main() {
         const auto density_plan =
             detail::EvaluationPlan::from(Request{}.add(density::total.value()));
         const auto empty_plan = detail::EvaluationPlan::from(Request{});
-        auto select = [&](Backend b, bool eligible, std::size_t nao, std::size_t a, std::size_t c,
-                          const detail::EvaluationPlan& plan) {
-            return detail::choose_backend(b, eligible, nao, a, c, plan);
+        // The AO and occupied-orbital counts are kept in the calls below
+        // for readability; they do not affect the choice.
+        auto select = [&](Backend b, bool eligible, std::size_t /*nao*/, std::size_t /*nalpha*/,
+                          std::size_t /*nbeta*/, const detail::EvaluationPlan& plan) {
+            return detail::choose_backend(b, eligible, plan);
         };
         if (select(Backend::AUTO, false, 1410, 135, 135, density_plan) != Backend::AO_P ||
             select(Backend::AUTO, true, 1410, 135, 135, density_plan) != Backend::AO_MO ||

@@ -305,9 +305,7 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
     // Plan the requested properties before resolving the electronic backend.
     const auto plan = detail::EvaluationPlan::from(request);
     const auto& info = molecule_->electronic_structure_info();
-    const Backend backend =
-        detail::choose_backend(options_.backend, info.ao_mo_eligible(), molecule_->basis_size(),
-                               info.occupied_alpha, info.occupied_beta, plan);
+    const Backend backend = detail::choose_backend(options_.backend, info.ao_mo_eligible(), plan);
     Results result;
     result.backend_used_ = backend;
     for (auto key : request.properties()) {

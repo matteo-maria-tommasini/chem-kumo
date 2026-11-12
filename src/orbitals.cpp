@@ -22,10 +22,14 @@ void check_channel(Spin s) {
 }
 } // namespace
 
-std::size_t Molecule::orbital_count(Spin channel) const {
+// Restricted calculations have one set of MOs for both channels.
+const Eigen::MatrixXd& Molecule::mo_coefficients(Spin channel) const {
     check_channel(channel);
-    const auto& matrix = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
-    return static_cast<std::size_t>(matrix.cols());
+    return (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+}
+
+std::size_t Molecule::orbital_count(Spin channel) const {
+    return static_cast<std::size_t>(mo_coefficients(channel).cols());
 }
 
 int Molecule::occupied_count(Spin channel) const {
@@ -40,9 +44,8 @@ const std::vector<double>& Molecule::orbital_energies(Spin channel) const {
 
 OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, std::size_t index,
                                                  Spin channel) const {
-    check_channel(channel);
+    const auto& coeff = mo_coefficients(channel);
     if (!point.allFinite()) throw std::invalid_argument("MO evaluation point must be finite");
-    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
     if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
         throw std::out_of_range("MO index outside available coefficient range");
     const auto ao = evaluator_.evaluate_derivatives(point);
@@ -63,8 +66,7 @@ OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, s
 std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, std::size_t index,
     Spin channel, std::size_t block_size) const {
-    check_channel(channel);
-    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+    const auto& coeff = mo_coefficients(channel);
     if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
         throw std::out_of_range("MO index outside available coefficient range");
     if (block_size == 0)
@@ -122,8 +124,7 @@ Field Molecule::orbital(const Grid& grid, std::size_t index, Spin channel) const
 
 std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::size_t>& indices,
                                       Spin channel, const ProgressCallback& progress) const {
-    check_channel(channel);
-    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+    const auto& coeff = mo_coefficients(channel);
     if (coeff.cols() == 0) throw std::runtime_error("FCHK has no MO coefficients");
     for (auto i : indices)
         if (i == 0 || i > static_cast<std::size_t>(coeff.cols()))

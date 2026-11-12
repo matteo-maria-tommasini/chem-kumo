@@ -18,6 +18,13 @@
 
 namespace chem::kumo {
 namespace {
+// Atom records of a Cube file: element 0 (ghost) to 118, finite charge and
+// position.
+bool valid_atom(const Atom& atom) {
+    return atom.atomic_number >= 0 && atom.atomic_number <= 118 &&
+           std::isfinite(atom.nuclear_charge) && atom.position.allFinite();
+}
+
 constexpr double angstrom_to_bohr = 1.8897261246257702;
 
 std::istringstream header_row(std::istream& input) {
@@ -123,9 +130,7 @@ CubeData parse_cube(std::istream& input) {
               atom.position[1] >> atom.position[2]))
             throw std::runtime_error("invalid Cube atom record");
         end_row(row);
-        if (atom.atomic_number < 0 || atom.atomic_number > 118 ||
-            !std::isfinite(atom.nuclear_charge) || !atom.position.allFinite())
-            throw std::runtime_error("invalid Cube atom");
+        if (!valid_atom(atom)) throw std::runtime_error("invalid Cube atom");
         atoms.push_back(atom);
     }
     if (metadata.coordinates_in_angstrom) {
@@ -177,9 +182,7 @@ void write_cube(const CubeData& cube, const std::filesystem::path& path) {
         output << '\n';
     }
     for (const auto& atom : atoms) {
-        if (atom.atomic_number < 0 || atom.atomic_number > 118 ||
-            !std::isfinite(atom.nuclear_charge) || !atom.position.allFinite())
-            throw std::invalid_argument("invalid Cube atom");
+        if (!valid_atom(atom)) throw std::invalid_argument("invalid Cube atom");
         output << atom.atomic_number << ' ' << atom.nuclear_charge;
         for (int k = 0; k < 3; ++k)
             output << ' ' << atom.position[k] * factor;

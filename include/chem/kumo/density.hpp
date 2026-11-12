@@ -255,6 +255,8 @@ private:
     BasisEvaluator evaluator_;
     Eigen::MatrixXd total_, spin_;
     Eigen::MatrixXd alpha_mos_, beta_mos_;
+    /// MO coefficients of a channel (Alpha or Beta, else throws).
+    [[nodiscard]] const Eigen::MatrixXd& mo_coefficients(Spin channel) const;
     std::vector<double> alpha_energies_, beta_energies_;
     int nalpha_ = 0, nbeta_ = 0;
     bool unrestricted_ = false;
