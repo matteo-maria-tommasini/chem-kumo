@@ -1,3 +1,73 @@
+# chem-kumo 1.9.0 — release notes
+
+The Evaluator and the `kumo` CLI compute the molecular electrostatic
+potential (ESP), with exact Coulomb integrals near each point and far-field
+approximations within an explicit error bound. The public API is extended
+in a source-compatible way; rebuild code that links against libkumo
+(`PropertyKind` has a new value and `EvaluationOptions` a new member).
+Existing outputs are unchanged.
+
+Library changes:
+
+- `density::total.electrostatic_potential()`
+  (`PropertyKind::ElectrostaticPotential`): the nuclear plus electronic
+  potential in hartree/e, from the FCHK nuclear charges (the `Nuclear
+  charges` record when present, so effective charges with ECPs) and the
+  total AO density matrix. Total density only; other components throw
+  `std::invalid_argument`.
+- The electronic term uses McMurchie-Davidson Hermite expansions and a new
+  Boys function (Taylor table below T = 40, closed form above; agrees with
+  quadrature to 2.3e-15). Shells up to l = 16 are supported.
+- At a grid point within 1e-8 bohr of a nucleus, that nucleus's own
+  singular term is left out, so the value is the potential at the nucleus.
+  Regular grids, including kumo's default grids, often contain nuclei.
+- `EvaluationOptions::potential_tolerance` (default 1e-8 hartree/e) bounds
+  the error at each point. The grid is processed in clusters of 8 x 8 x 8
+  points. Groups of primitive pairs far from a cluster enter through
+  multipole-to-local translations of order 10, other far pairs through
+  Taylor expansions of order 6 about the cluster centre, and the rest
+  exactly. The sum of rigorous error bounds stays within the tolerance; 0
+  evaluates every pair exactly. Values do not depend on the block size or
+  the number of threads.
+
+Command-line changes:
+
+- `--property esp` writes `PREFIX_density_esp.cube` (total density only).
+  The Cube comment states the error bound, or "exact Coulomb integrals".
+- `--esp-tolerance HARTREE` sets the bound (default 1e-8; 0 is exact). It
+  is accepted only with `--property esp`.
+
+Performance:
+
+- HBC def2-SVP (177,315 primitive pairs) on its default grid (1.5 million
+  points) takes 191 s on 8 cores with the default tolerance, or 108 s with
+  1e-6. Exactly it would take about 95 minutes on one core. Water
+  def2-TZVP takes about 2 s on one core.
+
+Validation:
+
+- New test `boys-function` against quadrature, closed forms and the
+  recurrence.
+- New test `electrostatic-potential`:
+  - s-function densities agree with the erf closed form to 2e-15;
+  - 1000 bohr away, V matches the multipole expansion from the analytic AO
+    moments within 1% of the quadrupole term;
+  - the Poisson equation holds within the 8e-8 truncation error of the
+    finite-difference stencil;
+  - far-field approximations stay within their tolerance, with observed
+    errors at most 4e-10 at 1e-8;
+  - HBC 6-31G(d,p) covers Cartesian d and SP shells (`slow` suite).
+- `multiwfn-reference` compares the ESP of water and O2 with Multiwfn
+  2026.9.1 (its original analytic code, `iESPcode=1`), within 2e-5 relative
+  plus 1e-7 hartree/e, the rounding of the reference Cube files.
+- 78/78 Meson tests passed on macOS ARM64 on 2026-11-12 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings. CI builds and tests on ubuntu-latest
+  and macos-latest, and runs the suite under AddressSanitizer and
+  UndefinedBehaviorSanitizer without the `slow` suite.
+
+---
+
 # chem-kumo 1.8.0 — release notes
 
 The Evaluator and the `kumo` CLI compute three derived density properties:
