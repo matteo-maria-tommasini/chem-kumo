@@ -32,6 +32,8 @@ kumo_lib = library(
         'src/basis.cpp',
         'src/basis_math.cpp',
         'src/basis_evaluator.cpp',
+        'src/boys_function.cpp',
+        'src/electrostatic_potential.cpp',
         'src/density.cpp',
         'src/cube.cpp',
         'src/orbitals.cpp',
@@ -576,6 +578,37 @@ test(
         include_directories: include_directories('src'),
         dependencies: kumo_dep,
     ),
+)
+
+# Boys function against quadrature and closed forms.
+test(
+    'boys-function',
+    executable(
+        'kumo-boys-function-test',
+        ['tests/boys_function_test.cpp'],
+        include_directories: include_directories('src'),
+        dependencies: kumo_dep,
+    ),
+)
+
+# Electrostatic potential against closed forms, the multipole expansion and
+# the Poisson equation.
+test(
+    'electrostatic-potential',
+    executable(
+        'kumo-electrostatic-potential-test',
+        ['tests/electrostatic_potential_test.cpp'],
+        include_directories: include_directories('src'),
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+        # Cartesian d shells and SP shells.
+        meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_631gdp.fchk.gz',
+    ],
+    timeout: 120,
 )
 
 # Internal dependency planning, without changing numerical kernels.

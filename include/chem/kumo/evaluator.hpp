@@ -21,6 +21,11 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///    capped at reduced_gradient_cap. Total only.
 ///  - SignLambda2Density: sign(lambda2) * rho of the total density, where
 ///    lambda2 is the middle eigenvalue of its Hessian. Total only.
+///  - ElectrostaticPotential: molecular electrostatic potential in hartree/e,
+///    nuclear plus electronic, from the nuclear charges and the total AO
+///    density matrix (exact integrals, no screening). At a grid point within
+///    1e-8 bohr of a nucleus, that nucleus's own singular term is left out
+///    (the potential at the nucleus). Total only.
 /// Requesting a derived kind for a component it is not defined for makes
 /// Evaluator::evaluate() throw std::invalid_argument.
 enum class PropertyKind {
@@ -32,7 +37,8 @@ enum class PropertyKind {
     Orbital,
     Elf,
     ReducedGradient,
-    SignLambda2Density
+    SignLambda2Density,
+    ElectrostaticPotential
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -87,6 +93,11 @@ struct DensityDescriptor {
     /// sign(lambda2) * rho (Total only).
     constexpr Property sign_lambda2_density() const {
         return {PropertyKind::SignLambda2Density, component};
+    }
+
+    /// Molecular electrostatic potential, nuclear plus electronic (Total only).
+    constexpr Property electrostatic_potential() const {
+        return {PropertyKind::ElectrostaticPotential, component};
     }
 };
 

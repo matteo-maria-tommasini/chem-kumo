@@ -23,6 +23,9 @@ struct ComponentPlan {
     bool elf_input = false;        ///< value, gradient and tau feed an ELF
     bool reduced_gradient = false; ///< Total only
     bool sign_lambda2 = false;     ///< Total only
+    /// Total only; computed from the density matrix by its own pass, so it
+    /// needs no AO values or derivatives.
+    bool electrostatic_potential = false;
 
     /// Whether this component's derivatives must be evaluated on points.
     /// A total ELF alone does not need them (it uses Alpha and Beta).
@@ -42,6 +45,10 @@ struct EvaluationPlan {
     std::array<ComponentPlan, 4> components{};
     bool orbitals = false;
     int maximum_ao_order = -1;
+
+    [[nodiscard]] bool needs_electrostatic_potential() const noexcept {
+        return components[index(DensityComponent::Total)].electrostatic_potential;
+    }
 
     [[nodiscard]] bool needs_derivative_points() const noexcept {
         return std::any_of(components.begin(), components.end(),
@@ -92,6 +99,12 @@ struct EvaluationPlan {
                     throw std::invalid_argument(
                         "sign(lambda2) rho is defined only for the total density");
                 c.sign_lambda2 = true;
+                break;
+            case PropertyKind::ElectrostaticPotential:
+                if (property.component != DensityComponent::Total)
+                    throw std::invalid_argument(
+                        "the electrostatic potential is defined only for the total density");
+                c.electrostatic_potential = true;
                 break;
             case PropertyKind::Orbital: break;
             default: throw std::invalid_argument("unknown property kind");

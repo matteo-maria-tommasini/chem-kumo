@@ -227,6 +227,54 @@ Multiwfn 2026.9.1 Cube files of water and O2 (open shell), point by point.
 They agree within 1.2e-5 relative, at the six significant digits of the
 reference files (see [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
 
+## Electrostatic potential
+
+`density::total.electrostatic_potential()`
+(`PropertyKind::ElectrostaticPotential`) is the molecular electrostatic
+potential, in hartree/e:
+
+    V(r) = sum_A Z_A / |r - R_A| - sum_(mu,nu) P_(mu nu) integral chi_mu(r') chi_nu(r') / |r - r'| dr'
+
+with the nuclear charges Z_A of the FCHK (the `Nuclear charges` record when
+present, so effective charges with ECPs) and the total AO density matrix P.
+It is defined only for the total density; other components throw
+`std::invalid_argument`. With the AO_MO backend the electronic term still
+uses P, which then reproduces the orbital density (checked at load time).
+
+At a grid point within 1e-8 bohr of a nucleus, that nucleus's own term,
+singular there, is left out: the value is the potential that the nucleus
+feels from the electrons and the other nuclei. Regular grids often contain
+nuclear positions exactly: kumo's default grid for O2 does, for example.
+
+The electronic term uses the McMurchie-Davidson scheme. The product of two
+Cartesian Gaussian primitives is expanded in Hermite Gaussians at the
+Gaussian product centre, and P is contracted with the expansion
+coefficients once per evaluation. Each grid point then needs, for every
+primitive pair, one Boys function F_m(T), the Hermite Coulomb integrals
+R_tuv and a dot product. Pure shells are handled by transforming P to
+Cartesian components. No screening is applied, so the cost is proportional
+to the number of grid points times the number of primitive pairs. Shells up
+to l = 16 are supported.
+
+The Boys function uses a seventh-order Taylor expansion about a table with
+spacing 0.05 for T < 40 and the closed form of F_0 with upward recursion
+above, with downward recursion to the lower orders. It agrees with
+quadrature of its definition to 2.3e-15 relative for m <= 32.
+
+Validation (test `electrostatic-potential`, on water def2-TZVP, O2,
+acrolein and HBC 6-31G(d,p), which has Cartesian d and SP shells):
+
+- s-function densities on one and two centres agree with the erf closed
+  form to 2e-15;
+- 1000 bohr from the molecule, V agrees with the multipole expansion built
+  from the charge, dipole and quadrupole of the analytic AO moments, with a
+  residual below 1% of the quadrupole term (the octupole and higher terms);
+- the Laplacian of the electronic term by fourth-order finite differences
+  equals 4 pi rho within 8e-8 relative, the truncation error of the stencil
+  (16 times smaller when the step is halved);
+- the Evaluator returns the same values as the pointwise engine, for any
+  block size, request and number of threads.
+
 ## Errors and limitations
 
 Malformed or unsupported FCHK records, invalid grids, and out-of-range MO

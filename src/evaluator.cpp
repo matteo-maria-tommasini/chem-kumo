@@ -1,6 +1,7 @@
 #include "chem/kumo/evaluator.hpp"
 #include "evaluation_plan.hpp"
 #include "automatic_backend.hpp"
+#include "electrostatic_potential.hpp"
 #include "ao_screening.hpp"
 #include "grid_geometry.hpp"
 #include "parallel_blocks.hpp"
@@ -10,7 +11,9 @@
 #include <initializer_list>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <stdexcept>
+#include <vector>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -184,14 +187,47 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
             const auto block = evaluate_block(points, needed);
 
             for (auto& [key, output] : fields) {
-                // Orbitals, and AO-P densities, come from the grid path instead.
+                // Orbitals and AO-P densities come from the grid path, and
+                // the electrostatic potential from its own pass.
                 if (key.kind == PropertyKind::Orbital ||
+                    key.kind == PropertyKind::ElectrostaticPotential ||
                     (key.kind == PropertyKind::Density && backend == Backend::AO_P))
                     continue;
                 store_block(output, key, block, count, start);
             }
             // Serialized and monotonic; a throwing callback is captured
             // like any other block error.
+            report.advance(count);
+        } catch (...) {
+            worker_errors.capture();
+        }
+    }
+    worker_errors.rethrow_if_any();
+}
+
+// Electrostatic potential pass, in blocks of grid points scheduled like the
+// point path; each point is computed independently with a fixed summation
+// order, so the values do not depend on the number of threads.
+void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, std::size_t block_size,
+                                      const detail::ElectrostaticPotential& potential,
+                                      std::vector<double>& output,
+                                      const ProgressCallback& progress) {
+    const std::size_t nblocks =
+        detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
+    detail::FirstException worker_errors;
+    detail::Progress report(progress, n);
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic) if (nblocks > 1)
+#endif
+    for (std::int64_t index = 0; index < static_cast<std::int64_t>(nblocks); ++index) {
+        try {
+            const std::size_t start = static_cast<std::size_t>(index) * block_size;
+            const std::size_t count = std::min(block_size, n - start);
+            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
+            for (std::size_t local = 0; local < count; ++local)
+                points.col(static_cast<Eigen::Index>(local)) =
+                    detail::grid_point(grid, start + local);
+            potential.evaluate(points, std::span<double>(output.data() + start, count));
             report.advance(count);
         } catch (...) {
             worker_errors.capture();
@@ -242,7 +278,8 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                (key.kind == PropertyKind::Density && backend != Backend::AO_MO);
     };
     const bool point_pass = uses_point_path(plan, backend);
-    std::size_t passes = point_pass ? 1 : 0;
+    const bool potential_pass = plan.needs_electrostatic_potential();
+    std::size_t passes = (point_pass ? 1 : 0) + (potential_pass ? 1 : 0);
     for (const auto& entry : result.fields_)
         passes += on_grid_path(entry.first) ? 1 : 0;
     std::size_t completed = 0; // points of the passes already finished
@@ -267,6 +304,19 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
         };
         evaluate_point_path(grid, n, options_.block_size, plan, backend, evaluate_block,
                             result.fields_, pass_progress);
+        completed += n;
+    }
+
+    if (potential_pass) {
+        // The density matrix is that of the FCHK with either backend; with
+        // AO-MO it reproduces the orbital density (checked at load time).
+        const detail::ElectrostaticPotential potential(molecule_->evaluator_.basis(),
+                                                       molecule_->density_matrix(Spin::Total),
+                                                       molecule_->atoms());
+        evaluate_electrostatic_potential(
+            grid, n, options_.block_size, potential,
+            result.fields_.at(density::total.electrostatic_potential()).components[0],
+            pass_progress);
         completed += n;
     }
 

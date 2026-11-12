@@ -67,6 +67,16 @@ values "${PREFIX}_density_rdg.cube" | awk '$1 < 0 || $1 > 100 {exit 1}' || {
     echo 'Reduced gradient outside [0, 100]' >&2; exit 1; }
 values "${PREFIX}_density_sign-lambda2-rho.cube" | awk '$1 < 0 {found = 1} END {exit !found}' || {
     echo 'sign(lambda2) rho has no negative values' >&2; exit 1; }
+# Electrostatic potential: this grid passes through both O2 nuclei, where the
+# value is the potential at the nucleus (finite). The Cube comment names the
+# method, whatever the density backend.
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --property esp > "$TMP/esp.log"
+grep -Fqx "${PREFIX}_density_esp.cube" "$TMP/esp.log" || {
+    echo "Not reported: ${PREFIX}_density_esp.cube" >&2; exit 1; }
+sed -n 2p "${PREFIX}_density_esp.cube" | grep -Fq 'exact integrals over the AO density matrix' || {
+    echo 'ESP Cube comment does not name the method' >&2; exit 1; }
+values "${PREFIX}_density_esp.cube" | awk '$1 + 0 != $1 || $1 > 1e3 {exit 1} $1 > 1 {found = 1} END {exit !found}' || {
+    echo 'ESP values not finite, or none above 1 hartree/e near the nuclei' >&2; exit 1; }
 # Density backends: the Cube comment names the contraction used, and the AO-MO
 # and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
 # selects AO-MO).
@@ -132,7 +142,7 @@ if "$KUMO" "$FCHK" --spacing 1 --spin difference --property elf --output "$TMP/b
     > "$TMP/error.log" 2>&1; then
     echo 'ELF of the spin difference unexpectedly accepted' >&2; exit 1
 fi
-for property in rdg sign-lambda2-rho; do
+for property in rdg sign-lambda2-rho esp; do
     if "$KUMO" "$FCHK" --spacing 1 --spin alpha --property "$property" --output "$TMP/bad" \
         > "$TMP/error.log" 2>&1; then
         echo "--property $property with --spin alpha unexpectedly accepted" >&2; exit 1
