@@ -548,6 +548,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
     const auto& cb = unrestricted_ ? beta_mos_ : alpha_mos_;
     const Eigen::MatrixXd ca_occ = alpha_mos_.leftCols(nalpha_);
     const Eigen::MatrixXd cb_occ = cb.leftCols(nbeta_);
+    // Closed shell: the beta occupied orbitals are the alpha ones, so the
+    // beta projection and contraction would repeat the alpha ones exactly.
+    const bool beta_is_alpha = need_a && need_b && !unrestricted_ && nalpha_ == nbeta_;
     detail::FirstException worker_errors;
 #ifdef _OPENMP
 #pragma omp parallel if (nblocks > 1)
@@ -594,12 +597,13 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
             try {
                 const std::size_t start = static_cast<std::size_t>(block) * block_size;
                 const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-                for (Eigen::Index j = 0; j < b; ++j) {
-                    const auto point = points.col(static_cast<Eigen::Index>(start) + j);
-                    if (ao_order == 0) {
-                        ao.col(j) = evaluator_.evaluate(point);
-                    } else {
-                        const auto v = evaluator_.evaluate_derivatives(point, ao_order);
+                const auto block_points = points.middleCols(static_cast<Eigen::Index>(start), b);
+                if (ao_order == 0) {
+                    evaluator_.evaluate_batch(block_points, ao.leftCols(b));
+                } else {
+                    for (Eigen::Index j = 0; j < b; ++j) {
+                        const auto v =
+                            evaluator_.evaluate_derivatives(block_points.col(j), ao_order);
                         ao.col(j) = v.values;
                         for (int a = 0; a < 3; ++a)
                             ao.col((a + 1) * b + j) = v.gradient.col(a);
@@ -610,10 +614,14 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                 }
                 std::array<Eigen::MatrixXd, 10> va, vb;
                 if (need_a) project(ca_occ, b, va);
-                if (need_b) project(cb_occ, b, vb);
+                if (need_b && !beta_is_alpha) project(cb_occ, b, vb);
                 for (Eigen::Index j = 0; j < b; ++j) {
                     const auto a = need_a ? contract(va, j) : DensityDerivatives{};
-                    const auto beta = need_b ? contract(vb, j) : DensityDerivatives{};
+                    DensityDerivatives beta;
+                    if (beta_is_alpha)
+                        beta = a;
+                    else if (need_b)
+                        beta = contract(vb, j);
                     const auto combine = [&](double sign) {
                         DensityDerivatives d;
                         d.value = a.value + sign * beta.value;
