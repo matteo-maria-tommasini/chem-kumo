@@ -35,9 +35,9 @@ using ProgressCallback = std::function<void(std::size_t done, std::size_t total)
 /// Atomic identity, explicit center charge (in units of e), and Cartesian position (bohr).
 /// The center charge is not an atomic partial charge and need not equal Z.
 struct Atom {
-    int atomic_number = 0;
-    double nuclear_charge = 0.0;
-    Eigen::Vector3d position = Eigen::Vector3d::Zero();
+    int atomic_number = 0;                              ///< element, 1 to 118
+    double nuclear_charge = 0.0;                        ///< e; effective charge with ECPs
+    Eigen::Vector3d position = Eigen::Vector3d::Zero(); ///< bohr
 };
 
 /// Regular 3D grid: r(i,j,k) = origin + steps * [i,j,k].
@@ -51,7 +51,11 @@ struct Atom {
 struct Grid {
     Eigen::Vector3d origin = Eigen::Vector3d::Zero();
     Eigen::Matrix3d steps = Eigen::Matrix3d::Identity(); ///< columns: axis vectors, bohr
-    Eigen::Vector3i counts = Eigen::Vector3i::Ones();
+    Eigen::Vector3i counts = Eigen::Vector3i::Ones();    ///< points along each axis
+    /// Axis-aligned grid with the given spacing over the bounding box of the
+    /// atoms enlarged by the margin on every side (at least 2 points per
+    /// axis). Throws std::invalid_argument for no atoms, a negative or
+    /// nonfinite margin, or a nonpositive spacing.
     static Grid around(const std::vector<Atom>& atoms, double margin_bohr, double spacing_bohr);
 };
 
@@ -59,10 +63,13 @@ struct Grid {
 /// Density fields have units e/bohr^3; MO amplitude fields bohr^(-3/2).
 class Field {
 public:
+    /// Throws std::invalid_argument if the grid is invalid or the number of
+    /// values differs from its number of points.
     Field(Grid grid, std::vector<Atom> atoms, std::vector<double> values);
     /// Read a sample at zero-based grid indices.
     double operator()(int i, int j, int k) const;
 
+    /// All samples in grid order (k fastest).
     std::span<const double> values() const noexcept { return values_; }
 
     /// Mutable samples without access to vector size or capacity.
@@ -73,6 +80,10 @@ public:
 
     [[nodiscard]] const std::vector<Atom>& atoms() const noexcept { return atoms_; }
 
+    /// Write a Gaussian Cube file in bohr, six significant digits per value,
+    /// with `comment` as the second header line. Throws std::runtime_error if
+    /// the file cannot be written and std::invalid_argument for a nonfinite
+    /// value.
     void write_cube(const std::filesystem::path& path,
                     const std::string& comment = "Electron density") const;
     /// Write signed MO amplitudes with Gaussian-style orbital index metadata.
@@ -118,13 +129,17 @@ enum class OrbitalRepresentationStatus { Valid, Inconsistent, Unavailable };
 /// Immutable diagnostic calculated once while loading the FCHK.
 struct ElectronicStructureInfo {
     OrbitalRepresentationStatus orbital_status = OrbitalRepresentationStatus::Unavailable;
+    /// Largest absolute and relative differences between the FCHK total and
+    /// spin density matrices and their reconstruction from the occupied MOs.
     double total_absolute_error = 0.0;
     double total_relative_error = 0.0;
     double spin_absolute_error = 0.0;
     double spin_relative_error = 0.0;
-    std::size_t occupied_alpha = 0;
-    std::size_t occupied_beta = 0;
+    std::size_t occupied_alpha = 0; ///< occupied alpha orbitals
+    std::size_t occupied_beta = 0;  ///< occupied beta orbitals
 
+    /// Whether the occupied MOs reproduce the FCHK density matrices, so that
+    /// the AO_MO backend may be used.
     [[nodiscard]] bool ao_mo_eligible() const noexcept {
         return orbital_status == OrbitalRepresentationStatus::Valid;
     }
@@ -134,10 +149,16 @@ struct ElectronicStructureInfo {
 /// Public calculations use the same stored AO basis and Gaussian ordering.
 class Molecule {
 public:
+    /// Load geometry, basis, SCF density matrices and MOs from a plain or
+    /// gzip-compressed FCHK, and check whether the occupied MOs reproduce the
+    /// density matrices (see ElectronicStructureInfo). Throws on missing,
+    /// malformed or inconsistent records.
     static Molecule from_fchk(const std::filesystem::path& path);
 
+    /// Atoms in FCHK order, positions in bohr.
     const std::vector<Atom>& atoms() const noexcept { return atoms_; }
 
+    /// Result of the AO-MO check done when the FCHK was loaded.
     [[nodiscard]] const ElectronicStructureInfo& electronic_structure_info() const noexcept {
         return electronic_info_;
     }
@@ -175,6 +196,7 @@ public:
                       double screening_threshold = default_screening_threshold,
                       const ProgressCallback& progress = {}) const;
 
+    /// Number of AO basis functions.
     std::size_t basis_size() const noexcept { return evaluator_.basis_size(); }
 
     /// AO coefficient matrix of the FCHK one-particle density operator.
@@ -183,6 +205,7 @@ public:
     /// In a nonorthogonal AO basis, electron count is Tr(P*S).
     [[nodiscard]] Eigen::MatrixXd density_matrix(Spin component = Spin::Total) const;
 
+    /// Whether the FCHK has separate beta MOs (unrestricted SCF).
     [[nodiscard]] bool unrestricted() const noexcept { return unrestricted_; }
 
     /// Number of available MOs in the selected alpha/beta channel.

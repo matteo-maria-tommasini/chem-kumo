@@ -6,7 +6,7 @@
 \hypersetup{hidelinks}
 \title{chem-kumo: Mathematical Foundations and Numerical Algorithms}
 \author{Matteo Tommasini}
-\date{Version 1.2.0}
+\date{Version 1.9.0}
 \begin{document}
 \maketitle
 \tableofcontents
@@ -152,7 +152,8 @@ per block; AO derivative evaluation and reductions scale approximately
 linearly with $N_{\mathrm{AO}}$ for fixed basis structure. The fused product
 reduces separate Eigen calls and may improve reuse of $P^s$ in cache,
 but it does not change the asymptotic complexity or reduce the number of
-mathematical density-matrix applications. No sparse screening is applied.
+mathematical density-matrix applications. Section~\ref{sec:screening}
+describes how negligible AOs are left out of each block.
 
 For a full block, ten AO panels (one value, three gradients, six Hessians)
 and four product panels together require approximately
@@ -162,6 +163,173 @@ temporary storage. At $N_{\mathrm{AO}}=1410$, $B=128$, this is approximately
 so its total output memory grows with the number of points even though AO
 scratch data are block-local.
 
+\section{AO screening and the shell cutoff}\label{sec:screening}
+Gaussian AOs decay quickly, so in a block of nearby grid points most of them
+are negligible at every point. For a block, an AO is \emph{screened} when
+its value, and for derivative requests all its first and second derivatives,
+are at most a threshold $\varepsilon_s$ (default $10^{-12}$) in absolute
+value at every point of the block. Screened AOs are removed from the panels
+and from the rows and columns of $P^s$ (or from the rows of the occupied MO
+coefficients in the AO--MO contraction), which replaces the
+$N_{\mathrm{AO}}\times N_{\mathrm{AO}}$ product by a much smaller one. The
+change in the density is at rounding level in the tested systems; a
+threshold of zero gives the exact contraction.
+
+Independently, each shell has a radius $r_c$ beyond which a rigorous bound
+on every AO of the shell and on its first and second derivatives is at most
+$10^{-14}$. For a primitive of exponent $a$ and Cartesian degree $\ell$,
+every factor of the value and derivative kernels is bounded for $r\ge1$ by
+a multiple of $r^{\ell+2}e^{-ar^2}$, so
+\begin{equation}
+ |\chi|,\ |\partial\chi|,\ |\partial^2\chi|\le
+ T\sum_p W_p C_p\, r^{\ell+2}e^{-a_pr^2},\qquad
+ C_p=1+\ell+\ell^2+2a_p(2\ell+2)+4a_p^2,
+\end{equation}
+with $W_p$ the largest contraction weight of primitive $p$ and $T$ the
+largest absolute row sum of the pure transform (1 for Cartesian shells).
+Each term decreases beyond $\sqrt{(\ell+2)/(2a_p)}$, and $r_c$ is found by
+bisection. At points farther than $r_c$ the shell's AOs are returned as
+exact zeros.
+
+\section{Derived density descriptors}
+With $\tau_\sigma$ as above, the Pauli kinetic-energy density of a spin
+channel and its uniform-gas reference are
+\begin{equation}
+ D_\sigma=\tau_\sigma-\frac{|\nabla\rho_\sigma|^2}{8\rho_\sigma},\qquad
+ D^0_\sigma=\frac{3}{10}(6\pi^2)^{2/3}\rho_\sigma^{5/3},
+\end{equation}
+and the electron localization function (Becke and Edgecombe) is
+\begin{equation}
+ \mathrm{ELF}=\frac{1}{1+(D/D^0)^2}.
+\end{equation}
+For a spin channel $D$ and $D^0$ are those of the channel; for the total ELF
+they are summed over $\alpha$ and $\beta$ (spin-polarized form), which for a
+closed shell reduces to $D=\tau-|\nabla\rho|^2/(8\rho)$ and
+$D^0=\frac{3}{10}(3\pi^2)^{2/3}\rho^{5/3}$. Channels without density are
+skipped, and $\mathrm{ELF}=0$ where there is no density. The Pauli term
+equals the cancellation-free orbital (Lagrange) form
+\begin{equation}
+ D_\sigma=\frac{1}{2\rho_\sigma}\sum_{i<j}
+ n_in_j\,|\psi_i\nabla\psi_j-\psi_j\nabla\psi_i|^2,
+\end{equation}
+which the tests use as an independent check.
+
+The reduced density gradient of the total density is
+\begin{equation}
+ s=\frac{|\nabla\rho|}{2(3\pi^2)^{1/3}\rho^{4/3}},
+\end{equation}
+reported as at most 100 (also where $\rho\le0$, where it is undefined), so
+that Cube files stay finite. For the non-covalent interaction analysis,
+$\operatorname{sign}(\lambda_2)\rho$ uses the middle eigenvalue
+$\lambda_1\le\lambda_2\le\lambda_3$ of the density Hessian, with
+$\lambda_2=0$ counted as positive.
+
+\section{Molecular electrostatic potential}
+The electrostatic potential, in hartree per elementary charge, is
+\begin{equation}
+ V(\mathbf C)=\sum_A\frac{Z_A}{|\mathbf C-\mathbf R_A|}
+ -\sum_{\mu\nu}P_{\mu\nu}\int\frac{\chi_\mu(\mathbf r)\chi_\nu(\mathbf r)}
+ {|\mathbf r-\mathbf C|}\,d\mathbf r,
+\end{equation}
+with the nuclear charges $Z_A$ of the FCHK (effective charges with ECPs)
+and the total density matrix $P$. At a point within $10^{-8}$ bohr of a
+nucleus that nucleus's singular term is omitted, which gives the potential
+at the nucleus due to the electrons and the other nuclei.
+
+\subsection{Hermite expansion}
+Pure shells are handled by transforming $P$ to Cartesian components. The
+product of Cartesian primitives with exponents $\alpha,\beta$ at
+$\mathbf A,\mathbf B$ is a Gaussian at
+$\mathbf P=(\alpha\mathbf A+\beta\mathbf B)/p$, $p=\alpha+\beta$, times
+$K=\exp(-\alpha\beta|\mathbf A-\mathbf B|^2/p)$, expanded in Hermite
+Gaussians $\Lambda_{tuv}=\partial^t_{P_x}\partial^u_{P_y}\partial^v_{P_z}
+e^{-p|\mathbf r-\mathbf P|^2}$ with the McMurchie--Davidson coefficients
+\begin{equation}
+ E^{i+1,j}_t=\frac{1}{2p}E^{ij}_{t-1}+X_{PA}E^{ij}_t+(t+1)E^{ij}_{t+1},
+ \qquad E^{00}_0=1,
+\end{equation}
+and likewise for $j$ with $X_{PB}$. Contracting $P$ with these coefficients
+once per evaluation gives, for every primitive pair, coefficients $c_{tuv}$
+such that its contribution to the electronic potential is
+$-\sum_{tuv}c_{tuv}R_{tuv}(p,\mathbf P-\mathbf C)$, with
+\begin{align}
+ R^n_{000}&=(-2p)^nF_n(p|\mathbf P-\mathbf C|^2),\\
+ R^n_{t+1,u,v}&=t\,R^{n+1}_{t-1,u,v}+X_{PC}R^{n+1}_{tuv}
+\end{align}
+(and likewise for $u$, $v$), $R_{tuv}=R^0_{tuv}$; the factor $2\pi/p$ of
+$\int\Lambda_{tuv}/|\mathbf r-\mathbf C|=\frac{2\pi}{p}R_{tuv}$ is included
+in $c_{tuv}$.
+
+\subsection{Boys function}
+$F_m(T)=\int_0^1t^{2m}e^{-Tt^2}dt$ for $m\le32$. For $T<40$ the highest
+order needed comes from a seventh-order Taylor expansion about the nearest
+point of a table with spacing 0.05, using $dF_m/dT=-F_{m+1}$; the table is
+built from the positive series
+$F_M(T)=e^{-T}\sum_k(2T)^k/[(2M+1)(2M+3)\cdots(2M+2k+1)]$. Lower orders
+follow from the stable downward recursion
+$F_{m-1}=(2TF_m+e^{-T})/(2m-1)$. For $T\ge40$,
+$F_0=\frac12\sqrt{\pi/T}$ (the error function differs from 1 by less than
+$10^{-18}$) and the upward recursion
+$F_{m+1}=[(2m+1)F_m-e^{-T}]/(2T)$ is stable. The result agrees with
+quadrature of the definition to $2.3\times10^{-15}$ relative.
+
+\subsection{Far field}
+The Evaluator processes the grid in clusters of $8\times8\times8$ points,
+with centre $\mathbf b$ and radius $\rho$. The potential of one pair splits
+into a point-multipole part and an erfc part:
+\begin{equation}
+ \sum_kc_kR_{\alpha_k}(p,\mathbf P-\mathbf C)
+ =\sum_ke_k\,\partial^{\alpha_k}\frac1R
+ -\sum_ke_k\,\partial^{\alpha_k}\frac{\operatorname{erfc}(\sqrt pR)}{R},
+ \qquad e_k=\frac{c_k}{2}\sqrt{\frac\pi p},
+\end{equation}
+with $R=|\mathbf P-\mathbf C|$. Two bounds are used. Every derivative of
+order $m$ of $1/|\mathbf x|$, as a symmetric multilinear form, has norm at
+most $m!/|\mathbf x|^{m+1}$ (Legendre polynomials are bounded by 1, and by
+Banach's theorem the norm of a symmetric form on a Hilbert space equals that
+of its diagonal). Every derivative of order $m$ of
+$\operatorname{erfc}(\sqrt pR)/R=\frac{2}{\sqrt\pi}\int_{\sqrt p}^\infty
+e^{-s^2R^2}ds$ at $R\ge r$ is bounded, through Cram\'er's inequality
+$|H_n(x)|e^{-x^2/2}\le k\sqrt{2^nn!}$ ($k<1.0865$) for each Cartesian
+factor, by
+\begin{equation}
+ G_m(r)=\frac{2}{\sqrt\pi}k^3\sqrt{2^mm!}
+ \int_{\sqrt p}^\infty s^me^{-s^2r^2/2}ds,
+\end{equation}
+evaluated with upper incomplete gamma functions.
+
+\emph{Pair expansions.} A pair at distance $d=|\mathbf P-\mathbf b|>\rho$
+can be represented on the cluster by the Taylor polynomial of order $K=6$
+of its exact potential about $\mathbf b$, whose coefficients are
+$(-1)^{|\beta|}R_{\alpha+\beta}(p,\mathbf P-\mathbf b)/\beta!$. With $W_L$
+the sum of $|e_k|$ over the terms of order $L$, the error on the cluster is
+at most
+\begin{equation}
+ \sum_LW_L\Big[\sum_{n>K}\frac{(n+L)!}{n!}\frac{\rho^n}{d^{n+L+1}}
+ +G_L(d-\rho)+\sum_{n\le K}\frac{(\sqrt3\rho)^n}{n!}G_{L+n}(d)\Big].
+\end{equation}
+
+\emph{Source clusters.} Pairs are grouped by the 2-bohr cell of their
+centre and by exponent. For a group with centre $\mathbf c$ and radius $a$,
+write $\mathbf P-\mathbf C=\mathbf X_0+\mathbf z$ with
+$\mathbf X_0=\mathbf c-\mathbf b$ and
+$\mathbf z=(\mathbf P-\mathbf c)-(\mathbf C-\mathbf b)$, $|\mathbf z|\le
+a+\rho$. Expanding the point-multipole terms in $\mathbf z$ about
+$\mathbf X_0$ to total order $N=10$ and splitting $\mathbf z^\gamma$
+binomially gives a multipole-to-local translation of moments computed once
+per group; its error is bounded by the same Taylor remainder with radius
+$a+\rho$ and distance $|\mathbf X_0|$. The erfc terms are omitted and
+bounded by $G_L$ for the smallest exponent of the group at distance
+$|\mathbf X_0|-a-\rho$.
+
+\emph{Error budget.} Half of the tolerance $\varepsilon$ is shared equally
+by the groups (a quarter for truncation, a quarter for erfc terms); the
+other half by the individually expanded pairs. Their bounds are tabulated
+at levels $10^{-j/2}\varepsilon/2$, and in each cluster the pairs with the
+smallest bounds are expanded while the sum fits in the budget; the others
+are evaluated exactly. The error at every point is therefore at most
+$\varepsilon$ (default $10^{-8}$ hartree/e; $\varepsilon=0$ is exact).
+
 \section{Validation and benchmark methodology}
 AO, MO, and density spatial derivatives are checked against centered finite
 differences of independent value/gradient evaluations. Finite differences
@@ -169,7 +337,13 @@ are used only for testing, never to compute production derivatives.
 Density-matrix results are also checked against independent occupied-MO
 sums for density, gradient, Hessian, and $\tau$, and blocked results are
 compared with the pointwise reference. The regression suite includes Gaussian
-09 reference Cube comparisons for density and signed orbital amplitudes.
+09 reference Cube comparisons for density and signed orbital amplitudes, and
+Multiwfn reference Cube files for ELF, the reduced gradient,
+$\operatorname{sign}(\lambda_2)\rho$ and the electrostatic potential. The
+electrostatic potential is also checked against the erf closed form for
+s-function densities, against the multipole expansion of the analytic AO
+moments far from the molecule, and against the Poisson equation
+$\nabla^2V_{\mathrm{el}}=4\pi\rho$ by finite differences.
 These tests establish agreement on the tested FCHK cases, not universal
 support for every Gaussian basis or method.
 
@@ -184,9 +358,9 @@ measurements, never pass/fail correctness thresholds.
 \section{Limits and intended use}
 KUMO evaluates the real electronic fields defined by the supplied FCHK.
 It does not perform SCF, orbital optimization, response theory, or nuclear
-coordinate differentiation. The present blocked derivative evaluator uses
-dense matrices and fixed-size blocks, without AO screening or streaming
-output of derivative fields. Its mathematical derivatives are analytic
+coordinate differentiation. The blocked derivative evaluator uses dense
+matrices on the AOs that survive screening in fixed-size blocks, without
+streaming output of derivative fields. Its mathematical derivatives are analytic
 with respect to the supplied finite Gaussian representation; grid sampling
 and floating-point arithmetic introduce their usual numerical limitations.
 \end{document}

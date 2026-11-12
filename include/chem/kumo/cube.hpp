@@ -9,8 +9,10 @@ namespace chem::kumo {
 
 /// Format-specific information, separate from the numerical field.
 struct CubeMetadata {
-    std::string first_comment;
-    std::string second_comment;
+    std::string first_comment;  ///< first header line
+    std::string second_comment; ///< second header line
+    /// True when the header used angstrom (negative grid counts); the Field
+    /// is in bohr either way.
     bool coordinates_in_angstrom = false;
 };
 

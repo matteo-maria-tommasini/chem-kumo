@@ -42,7 +42,10 @@ public:
         matrix_.noalias() += scaled * ao.transpose();
     }
 
+    /// Accumulated nAO x nAO matrix.
     [[nodiscard]] const Eigen::MatrixXd& matrix() const noexcept { return matrix_; }
+
+    /// Clear the accumulated matrix.
 
     void reset() noexcept { matrix_.setZero(); }
 
