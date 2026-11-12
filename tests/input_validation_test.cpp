@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "test_support.hpp"
 #include <Eigen/Core>
 #include <cmath>
 #include <iostream>
@@ -18,7 +19,7 @@ template <class F> void expect_invalid(F&& f, const char* name) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 2) return 2;
+    if (!kumo_test::require_args(argc, argv, 1, 1, "FILE.fchk")) return 2;
     try {
         auto mol = Molecule::from_fchk(argv[1]);
         auto g = Grid::around(mol.atoms(), 2.0, 0.5);

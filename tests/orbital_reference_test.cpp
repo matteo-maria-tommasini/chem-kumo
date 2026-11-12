@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "test_support.hpp"
 #include <Eigen/LU>
 #include <algorithm>
 #include <cmath>
@@ -11,10 +12,7 @@
 using namespace chem::kumo;
 
 int main(int argc, char** argv) {
-    if (argc != 5) {
-        std::cerr << "usage: orbital-reference fchk cube alpha|beta index\n";
-        return 2;
-    }
+    if (!kumo_test::require_args(argc, argv, 4, 4, "fchk cube alpha|beta index")) return 2;
     try {
         const std::size_t index = std::stoul(argv[4]);
         const Spin channel = std::string(argv[3]) == "alpha" ? Spin::Alpha
@@ -83,11 +81,19 @@ int main(int argc, char** argv) {
                   << " max_abs_phase_aligned=" << max_abs << " rmse=" << rmse
                   << " relative_L1=" << relative_l1 << " norm_kumo=" << sum_calc2 * volume
                   << " norm_gaussian=" << sum_ref2 * volume << '\n';
-        if (max_abs > 2e-4 || relative_l1 > 2e-5) {
-            std::cerr << "FAIL: orbital reference tolerance exceeded\n";
-            return 1;
-        }
-        return 0;
+        // Tolerances: the Gaussian reference Cube files (tests/data/
+        // mo_reference_cubes; see also tests/REFERENCE_CUBES.md) carry six
+        // significant digits, a relative rounding of up to 5e-6. MO
+        // amplitudes are largest near the nuclei, hence an absolute
+        // max_abs <= 2e-4; the phase-aligned relative L1 error is bounded by
+        // the same rounding, hence 2e-5.
+        kumo_test::check(!(max_abs > 2e-4),
+                         "phase-aligned max_abs <= 2e-4 against the Gaussian reference (got " +
+                             kumo_test::num(max_abs) + ")");
+        kumo_test::check(!(relative_l1 > 2e-5),
+                         "phase-aligned relative_L1 <= 2e-5 against the Gaussian reference (got " +
+                             kumo_test::num(relative_l1) + ")");
+        return kumo_test::exit_code();
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << '\n';
         return 1;

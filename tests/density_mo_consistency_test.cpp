@@ -1,26 +1,35 @@
 #include "chem/kumo.hpp"
+#include "test_support.hpp"
 #include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace {
-void check_close(double a, double b, const char* label) {
-    if (!std::isfinite(a) || !std::isfinite(b) ||
-        std::abs(a - b) > 2.e-5 + 2.e-5 * std::max(std::abs(a), std::abs(b)))
-        throw std::runtime_error(label);
+// The SCF density matrix and the MO coefficients are read from the FCHK
+// file, which prints reals with 9 significant digits (E16.8), so densities
+// built from the MOs and from the stored density matrix agree only to about
+// that precision: 2e-5 absolute plus 2e-5 relative leaves a wide margin.
+// (Not kumo_test::check_close: the tolerance is a sum, not a maximum.)
+void check_close(double a, double b, const std::string& label) {
+    const double tolerance = 2.e-5 + 2.e-5 * std::max(std::abs(a), std::abs(b));
+    kumo_test::check(std::isfinite(a) && std::isfinite(b) && !(std::abs(a - b) > tolerance),
+                     label + " (got " + kumo_test::num(a, 17) + " and " + kumo_test::num(b, 17) +
+                         ", tolerance " + kumo_test::num(tolerance) + ")");
 }
 
-void compare(const chem::kumo::DensityDerivatives& a, const chem::kumo::DensityDerivatives& b) {
-    check_close(a.value, b.value, "MO/DM density mismatch");
-    check_close(a.tau, b.tau, "MO/DM tau mismatch");
-    check_close(a.laplacian, b.laplacian, "MO/DM Laplacian mismatch");
+void compare(const chem::kumo::DensityDerivatives& a, const chem::kumo::DensityDerivatives& b,
+             const std::string& where) {
+    check_close(a.value, b.value, where + ": MO/DM densities agree");
+    check_close(a.tau, b.tau, where + ": MO/DM tau agree");
+    check_close(a.laplacian, b.laplacian, where + ": MO/DM Laplacians agree");
     for (int i = 0; i < 3; ++i) {
-        check_close(a.gradient[i], b.gradient[i], "MO/DM gradient mismatch");
+        check_close(a.gradient[i], b.gradient[i], where + ": MO/DM gradients agree");
         for (int j = 0; j < 3; ++j)
-            check_close(a.hessian(i, j), b.hessian(i, j), "MO/DM Hessian mismatch");
+            check_close(a.hessian(i, j), b.hessian(i, j), where + ": MO/DM Hessians agree");
     }
 }
 
@@ -41,38 +50,45 @@ chem::kumo::DensityDerivatives from_mos(const chem::kumo::Molecule& mol,
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 3) return 2;
-    for (int f = 1; f < argc; ++f) {
-        const auto mol = chem::kumo::Molecule::from_fchk(argv[f]);
-        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, 13);
-        for (int j = 0; j < points.cols(); ++j)
-            points.col(j) = Eigen::Vector3d(0.31 + 0.21 * j, -0.47 + 0.17 * j, 0.39 - 0.11 * j);
-        for (auto spin : {chem::kumo::Spin::Alpha, chem::kumo::Spin::Beta}) {
-            const auto block = mol.density_derivatives_blocked(points, spin, 5);
-            const auto block1 = mol.density_derivatives_blocked(points, spin, 1);
-            if (block.size() != static_cast<std::size_t>(points.cols()))
-                throw std::runtime_error("wrong block output size");
-            for (int j = 0; j < points.cols(); ++j) {
-                const auto r = points.col(j).eval();
-                const auto reference = mol.density_derivatives(r, spin);
-                compare(block[static_cast<std::size_t>(j)], reference);
-                compare(block1[static_cast<std::size_t>(j)], reference);
-                compare(from_mos(mol, r, spin), reference);
-            }
-        }
-        for (auto spin : {chem::kumo::Spin::Total, chem::kumo::Spin::Difference}) {
-            const auto block = mol.density_derivatives_blocked(points, spin, 7);
+    if (!kumo_test::require_args(argc, argv, 2, 2, "FILE1.fchk FILE2.fchk")) return 2;
+    return kumo_test::run([&] {
+        for (int f = 1; f < argc; ++f) {
+            const int failures_before = kumo_test::failures;
+            const std::string name = argv[f];
+            const auto mol = chem::kumo::Molecule::from_fchk(argv[f]);
+            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, 13);
             for (int j = 0; j < points.cols(); ++j)
-                compare(block[static_cast<std::size_t>(j)],
-                        mol.density_derivatives(points.col(j), spin));
+                points.col(j) = Eigen::Vector3d(0.31 + 0.21 * j, -0.47 + 0.17 * j, 0.39 - 0.11 * j);
+            for (auto spin : {chem::kumo::Spin::Alpha, chem::kumo::Spin::Beta}) {
+                const auto block = mol.density_derivatives_blocked(points, spin, 5);
+                const auto block1 = mol.density_derivatives_blocked(points, spin, 1);
+                const std::string label = name + " spin " + std::to_string(static_cast<int>(spin));
+                if (!kumo_test::check(block.size() == static_cast<std::size_t>(points.cols()),
+                                      label + ": blocked output has one entry per point (got " +
+                                          std::to_string(block.size()) + ")"))
+                    continue;
+                for (int j = 0; j < points.cols(); ++j) {
+                    const auto r = points.col(j).eval();
+                    const auto reference = mol.density_derivatives(r, spin);
+                    const std::string where = label + " point " + std::to_string(j);
+                    compare(block[static_cast<std::size_t>(j)], reference, where + " block 5");
+                    compare(block1[static_cast<std::size_t>(j)], reference, where + " block 1");
+                    compare(from_mos(mol, r, spin), reference, where + " from MOs");
+                }
+            }
+            for (auto spin : {chem::kumo::Spin::Total, chem::kumo::Spin::Difference}) {
+                const auto block = mol.density_derivatives_blocked(points, spin, 7);
+                for (int j = 0; j < points.cols(); ++j)
+                    compare(block[static_cast<std::size_t>(j)],
+                            mol.density_derivatives(points.col(j), spin),
+                            name + " spin " + std::to_string(static_cast<int>(spin)) + " point " +
+                                std::to_string(j) + " block 7");
+            }
+            kumo_test::check_throws<std::invalid_argument>(
+                [&] { (void)mol.density_derivatives_blocked(points, chem::kumo::Spin::Total, 0); },
+                name + ": density_derivatives_blocked rejects block size 0");
+            if (kumo_test::failures == failures_before)
+                std::cout << argv[f] << " MO/DM and blocked derivatives OK\n";
         }
-        bool rejected = false;
-        try {
-            (void)mol.density_derivatives_blocked(points, chem::kumo::Spin::Total, 0);
-        } catch (const std::invalid_argument&) {
-            rejected = true;
-        }
-        if (!rejected) throw std::runtime_error("zero block size accepted");
-        std::cout << argv[f] << " MO/DM and blocked derivatives OK\n";
-    }
+    });
 }

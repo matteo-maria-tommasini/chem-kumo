@@ -1,4 +1,5 @@
 #include "chem/kumo/basis_evaluator.hpp"
+#include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
@@ -8,7 +9,7 @@
 #include <stdexcept>
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
     try {
         for (int a = 1; a < argc; ++a) {
             chem::kumo::FormattedCheckpoint fchk(argv[a]);

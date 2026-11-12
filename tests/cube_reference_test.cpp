@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "test_support.hpp"
 #include <Eigen/LU>
 #include <array>
 #include <limits>
@@ -28,11 +29,9 @@ void recover_gaussian_standard_step(Grid& g) {
 }
 
 int main(int argc, char** argv) {
-    if (argc != 3 && argc != 4) {
-        std::cerr
-            << "usage: kumo-cube-reference-test molecule.fchk reference.cube [total|alpha|beta|spin]\n";
+    if (!kumo_test::require_args(argc, argv, 2, 3,
+                                 "molecule.fchk reference.cube [total|alpha|beta|spin]"))
         return 2;
-    }
     try {
         std::ifstream in(argv[2]);
         if (!in) throw std::runtime_error("cannot open reference cube");
@@ -134,16 +133,23 @@ int main(int argc, char** argv) {
         // A gross electron-count mismatch almost always indicates a valence-only
         // Gaussian cube instead of FDensity=SCF.
         if (mol.atoms().empty()) throw std::runtime_error("empty molecule");
-        if (std::abs(sum_reference * volume - sum_val * volume) > 0.5) {
-            std::cerr
-                << "FAIL: reference electron count differs substantially from KUMO; check reference Cube component and full-density options\n";
-            return 1;
-        }
-        if (max_abs > 2e-3 || rel > 1e-5) {
-            std::cerr << "FAIL: reference tolerance exceeded\n";
-            return 1;
-        }
-        return 0;
+        const double count_difference = std::abs(sum_reference * volume - sum_val * volume);
+        kumo_test::check(!(count_difference > 0.5),
+                         "integrated electron counts of the reference and KUMO agree within 0.5 "
+                         "(difference " +
+                             kumo_test::num(count_difference) +
+                             "); check the reference Cube component and full-density options");
+        // Tolerances (see tests/REFERENCE_CUBES.md for the reference files):
+        // Gaussian Cube values carry six significant digits, a relative
+        // rounding of up to 5e-6. The density reaches a few hundred e/bohr^3
+        // near the oxygen nuclei, where rounding alone is about 1e-3, hence
+        // max_abs <= 2e-3; the relative L1 error is bounded by the same
+        // rounding, hence 1e-5.
+        kumo_test::check(!(max_abs > 2e-3), "max_abs <= 2e-3 against the Gaussian reference (got " +
+                                                kumo_test::num(max_abs) + ")");
+        kumo_test::check(!(rel > 1e-5), "relative_L1 <= 1e-5 against the Gaussian reference (got " +
+                                            kumo_test::num(rel) + ")");
+        return kumo_test::exit_code();
     } catch (const std::exception& e) {
         std::cerr << "ERROR: " << e.what() << '\n';
         return 1;

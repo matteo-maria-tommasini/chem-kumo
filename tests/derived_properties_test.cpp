@@ -323,12 +323,11 @@ void check_water_bond(const std::string& name) {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 3) {
-        std::cerr << "usage: " << argv[0] << " WATER.fchk FILE.fchk...\n";
+    if (!kumo_test::require_args(argc, argv, 2, kumo_test::unlimited, "WATER.fchk FILE.fchk..."))
         return 2;
-    }
-    check_water_bond(argv[1]);
-    for (int i = 1; i < argc; ++i)
-        check_molecule(argv[i]);
-    return kumo_test::exit_code();
+    return kumo_test::run([&] {
+        check_water_bond(argv[1]);
+        for (int i = 1; i < argc; ++i)
+            check_molecule(argv[i]);
+    });
 }

@@ -348,6 +348,7 @@ test(
         meson.current_source_dir() / 'tests/data/o2.fchk.gz',
         meson.current_source_dir() / 'tests/data/multiwfn',
     ],
+    timeout: 120,
 )
 
 # The AO shell cutoff zeroes only AOs and derivatives below ao_cutoff.
@@ -707,7 +708,7 @@ test(
 
 # Manual three-way AO-MO numerical diagnostic.
 if benchmarks_enabled
-    executable('kumo-ao-mo-diagnostic', 'tests/ao_mo_diagnostic.cpp', dependencies: kumo_dep)
+    executable('kumo-ao-mo-diagnostic', 'benchmarks/ao_mo_diagnostic.cpp', dependencies: kumo_dep)
 endif
 
 # Explicit AO_P / AO_MO Evaluator backend selection.

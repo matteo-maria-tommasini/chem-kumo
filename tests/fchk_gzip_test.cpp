@@ -1,5 +1,6 @@
 #include <chem/kumo.hpp>
 #include <chem/kumo/fchk.hpp>
+#include "test_support.hpp"
 
 #include <zlib.h>
 
@@ -117,7 +118,9 @@ void verify_large_reference(const std::filesystem::path& zipped) {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 6) return 2;
+    if (!kumo_test::require_args(
+            argc, argv, 5, 5, "O2.fchk.gz ACROLEIN.fchk.gz HBC1.fchk.gz HBC2.fchk.gz HBC3.fchk.gz"))
+        return 2;
     const auto directory =
         std::filesystem::temp_directory_path() /
         ("kumo-gzip-test-" +

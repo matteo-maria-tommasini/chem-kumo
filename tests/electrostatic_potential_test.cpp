@@ -362,30 +362,28 @@ void clusters(const std::string& label, const BasisSet& basis, const Molecule& m
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "usage: " << argv[0] << " FILE.fchk...\n";
-        return 2;
-    }
-    for (int k = 1; k < argc; ++k) {
-        const std::string label = std::filesystem::path(argv[k]).filename().string();
-        const FormattedCheckpoint fchk(argv[k]);
-        const BasisSet basis(fchk);
-        const auto molecule = Molecule::from_fchk(argv[k]);
-        closed_forms(label, basis);
-        far_field(label, basis, molecule);
-        poisson(label, basis, molecule);
-        nuclear_term(label, basis, molecule);
-        evaluator(label, basis, molecule);
-        clusters(label, basis, molecule);
-        const auto n = static_cast<Eigen::Index>(basis.function_count());
-        kumo_test::check_throws<std::invalid_argument>(
-            [&] { ElectrostaticPotential(basis, Eigen::MatrixXd::Zero(n + 1, n + 1), {}); },
-            label + ": a density matrix of the wrong size is rejected");
-        Eigen::MatrixXd bad = Eigen::MatrixXd::Zero(n, n);
-        bad(0, 0) = std::nan("");
-        kumo_test::check_throws<std::invalid_argument>(
-            [&] { ElectrostaticPotential(basis, bad, {}); },
-            label + ": a nonfinite density matrix is rejected");
-    }
-    return kumo_test::exit_code();
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
+    return kumo_test::run([&] {
+        for (int k = 1; k < argc; ++k) {
+            const std::string label = std::filesystem::path(argv[k]).filename().string();
+            const FormattedCheckpoint fchk(argv[k]);
+            const BasisSet basis(fchk);
+            const auto molecule = Molecule::from_fchk(argv[k]);
+            closed_forms(label, basis);
+            far_field(label, basis, molecule);
+            poisson(label, basis, molecule);
+            nuclear_term(label, basis, molecule);
+            evaluator(label, basis, molecule);
+            clusters(label, basis, molecule);
+            const auto n = static_cast<Eigen::Index>(basis.function_count());
+            kumo_test::check_throws<std::invalid_argument>(
+                [&] { ElectrostaticPotential(basis, Eigen::MatrixXd::Zero(n + 1, n + 1), {}); },
+                label + ": a density matrix of the wrong size is rejected");
+            Eigen::MatrixXd bad = Eigen::MatrixXd::Zero(n, n);
+            bad(0, 0) = std::nan("");
+            kumo_test::check_throws<std::invalid_argument>(
+                [&] { ElectrostaticPotential(basis, bad, {}); },
+                label + ": a nonfinite density matrix is rejected");
+        }
+    });
 }

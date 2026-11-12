@@ -2,6 +2,7 @@
 // Test-only quadrature. No production grid policy or density backend changes.
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
+#include "test_support.hpp"
 #include "lebedev_reference_grid.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
@@ -138,7 +139,7 @@ void validate_angular_rules() {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
     try {
         validate_angular_rules();
         for (int arg = 1; arg < argc; ++arg) {

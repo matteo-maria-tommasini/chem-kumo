@@ -1,12 +1,11 @@
 #include "chem/kumo/density.hpp"
+#include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <iomanip>
 #include <iostream>
 #include <map>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -58,19 +57,22 @@ using namespace chem::kumo;
 namespace {
 constexpr double algorithm_tol = 2e-10;
 
+std::string where(const char* file, Spin spin, std::size_t block, std::size_t point) {
+    return std::string(" file=") + file + " spin=" + std::to_string(static_cast<int>(spin)) +
+           " block=" + std::to_string(block) + " point=" + std::to_string(point);
+}
+
+// AO-MO result vs the AO-P contraction of the reconstructed MO density
+// matrix: both finite and within algorithm_tol * max(1, |actual|, |reference|).
 void check(double actual, double reference, const std::string& label, const char* file, Spin spin,
            std::size_t block, std::size_t point) {
     const double scale = std::max({1.0, std::abs(actual), std::abs(reference)});
     const double error = std::abs(actual - reference);
-    if (!std::isfinite(actual) || !std::isfinite(reference) || error > algorithm_tol * scale) {
-        std::ostringstream msg;
-        msg << std::scientific << std::setprecision(16) << "AO-MO algorithm mismatch: " << label
-            << " file=" << file << " spin=" << static_cast<int>(spin) << " block=" << block
-            << " point=" << point << "\n  AO-MO=" << actual << "\n  AO-P(P_MO)=" << reference
-            << "\n  abs_error=" << error << "\n  scaled_error=" << error / scale
-            << "\n  tolerance=" << algorithm_tol * scale;
-        throw std::runtime_error(msg.str());
-    }
+    if (std::isfinite(actual) && std::isfinite(reference) && !(error > algorithm_tol * scale))
+        return;
+    kumo_test::check_close(actual, reference, algorithm_tol, algorithm_tol,
+                           "AO-MO matches AO-P(P_MO) for " + label +
+                               where(file, spin, block, point));
 }
 
 void compare(const DensityDerivatives& x, const DensityDerivatives& y, const char* file, Spin spin,
@@ -96,38 +98,46 @@ void compare(const DensityDerivatives& x, const DensityDerivatives& y, const cha
     test(y.hessian.trace(), y.laplacian, "AO-P Hessian trace");
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig_mo(x.hessian);
     Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eig_ao(y.hessian);
-    if (eig_mo.info() != Eigen::Success || eig_ao.info() != Eigen::Success)
-        throw std::runtime_error("Hessian eigensolver failed");
+    if (!kumo_test::check(eig_mo.info() == Eigen::Success && eig_ao.info() == Eigen::Success,
+                          "Hessian eigensolver succeeds" + where(file, spin, block, point)))
+        return;
     const double bound =
         (x.hessian - y.hessian).norm(); // Weyl: |delta lambda_i| <= ||delta H||_2 <= ||delta H||_F
     for (int k = 0; k < 3; ++k) {
         const double diff = std::abs(eig_mo.eigenvalues()[k] - eig_ao.eigenvalues()[k]);
         test(eig_mo.eigenvalues()[k], eig_ao.eigenvalues()[k],
              "hessian_eigenvalue_" + std::to_string(k));
-        if (diff > bound + 1e-10 * std::max({1.0, eig_mo.eigenvalues().cwiseAbs().maxCoeff(),
-                                             eig_ao.eigenvalues().cwiseAbs().maxCoeff()}))
-            throw std::runtime_error("Weyl bound violated");
+        const double weyl =
+            bound + 1e-10 * std::max({1.0, eig_mo.eigenvalues().cwiseAbs().maxCoeff(),
+                                      eig_ao.eigenvalues().cwiseAbs().maxCoeff()});
+        kumo_test::check(!(diff > weyl), "Hessian eigenvalue " + std::to_string(k) +
+                                             " difference " + kumo_test::num(diff) +
+                                             " within the Weyl bound " + kumo_test::num(weyl) +
+                                             where(file, spin, block, point));
     }
     const double lambda2_mo = eig_mo.eigenvalues()[1];
     const double lambda2_ao = eig_ao.eigenvalues()[1];
     // Only compare signs when both are well separated from the error bound.
-    if (std::min(std::abs(lambda2_mo), std::abs(lambda2_ao)) > bound + 1e-10 &&
-        std::signbit(lambda2_mo) != std::signbit(lambda2_ao))
-        throw std::runtime_error("Stable lambda2 sign mismatch");
+    kumo_test::check(!(std::min(std::abs(lambda2_mo), std::abs(lambda2_ao)) > bound + 1e-10 &&
+                       std::signbit(lambda2_mo) != std::signbit(lambda2_ao)),
+                     "stable lambda2 has the same sign in AO-MO (" + kumo_test::num(lambda2_mo) +
+                         ") and AO-P (" + kumo_test::num(lambda2_ao) + ")" +
+                         where(file, spin, block, point));
 }
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
-    try {
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
+    return kumo_test::run([&] {
         const std::vector<Spin> spins{Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
         Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, 19);
         for (int j = 0; j < 19; ++j)
             points.col(j) = Eigen::Vector3d(0.17 * j - 1.2, 0.09 * j - 0.8, 0.13 * j + 0.2);
         for (int arg = 1; arg < argc; ++arg) {
             const auto m = Molecule::from_fchk(argv[arg]);
-            if (!m.electronic_structure_info().ao_mo_eligible())
-                throw std::runtime_error("test molecule not AO-MO eligible");
+            if (!kumo_test::check(m.electronic_structure_info().ao_mo_eligible(),
+                                  std::string(argv[arg]) + ": the test molecule is AO-MO eligible"))
+                continue;
             const auto matrices = detail::AoMoTestAccess::reconstructed_matrices(m);
             for (int order : {1, 2})
                 for (std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}}) {
@@ -140,8 +150,5 @@ int main(int argc, char** argv) {
                         }
                 }
         }
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
-        return 1;
-    }
+    });
 }

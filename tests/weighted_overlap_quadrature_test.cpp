@@ -1,5 +1,6 @@
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
+#include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
@@ -54,7 +55,7 @@ double integrate_ao_pair(const BasisEvaluator& ao, Eigen::Index mu, Eigen::Index
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
     try {
         for (int a = 1; a < argc; ++a) {
             FormattedCheckpoint fchk(argv[a]);

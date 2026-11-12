@@ -105,22 +105,21 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 4) {
-        std::cerr << "usage: " << argv[0] << " WATER.fchk O2.fchk MULTIWFN_DIRECTORY\n";
+    if (!kumo_test::require_args(argc, argv, 3, 3, "WATER.fchk O2.fchk MULTIWFN_DIRECTORY"))
         return 2;
-    }
-    const std::filesystem::path water = argv[1], o2 = argv[2], directory = argv[3];
-    compare(water, directory / "h2o_elf.cube.gz", density::total.elf(), "water ELF");
-    compare(water, directory / "h2o_rdg.cube.gz", density::total.reduced_gradient(),
-            "water reduced gradient");
-    compare(water, directory / "h2o_sign_lambda2_rho.cube.gz",
-            density::total.sign_lambda2_density(), "water sign(lambda2) rho");
-    // Open shell: the total ELF uses the spin-polarized form.
-    compare(o2, directory / "o2_elf.cube.gz", density::total.elf(), "O2 ELF");
-    const Tolerance potential{relative_tolerance, 1e-7, 1e-3};
-    compare(water, directory / "h2o_esp.cube.gz", density::total.electrostatic_potential(),
-            "water electrostatic potential", potential);
-    compare(o2, directory / "o2_esp.cube.gz", density::total.electrostatic_potential(),
-            "O2 electrostatic potential", potential);
-    return kumo_test::exit_code();
+    return kumo_test::run([&] {
+        const std::filesystem::path water = argv[1], o2 = argv[2], directory = argv[3];
+        compare(water, directory / "h2o_elf.cube.gz", density::total.elf(), "water ELF");
+        compare(water, directory / "h2o_rdg.cube.gz", density::total.reduced_gradient(),
+                "water reduced gradient");
+        compare(water, directory / "h2o_sign_lambda2_rho.cube.gz",
+                density::total.sign_lambda2_density(), "water sign(lambda2) rho");
+        // Open shell: the total ELF uses the spin-polarized form.
+        compare(o2, directory / "o2_elf.cube.gz", density::total.elf(), "O2 ELF");
+        const Tolerance potential{relative_tolerance, 1e-7, 1e-3};
+        compare(water, directory / "h2o_esp.cube.gz", density::total.electrostatic_potential(),
+                "water electrostatic potential", potential);
+        compare(o2, directory / "o2_esp.cube.gz", density::total.electrostatic_potential(),
+                "O2 electrostatic potential", potential);
+    });
 }
