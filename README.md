@@ -67,6 +67,8 @@ kumo molecule.fchk --backend ao-p                # force the density-matrix cont
 kumo molecule.fchk --property laplacian -v       # report progress on standard error
 kumo molecule.fchk --property density,gradient,laplacian,tau
 kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
+kumo molecule.fchk --property elf                # electron localization function
+kumo molecule.fchk --property rdg,sign-lambda2-rho  # NCI analysis
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -94,6 +96,18 @@ kinetic energy density, hartree/bohr^3). Density files keep their names
 `PREFIX_<component>_<property>.cube`, for example
 `PREFIX_density_laplacian.cube` (total density) or `PREFIX_spin_tau.cube`
 (alpha minus beta).
+
+Three derived properties are available too:
+- `elf` is the electron localization function, in [0, 1], for `--spin total`,
+  `alpha` or `beta`. The total ELF uses the spin-polarized formula.
+- `rdg` is the reduced density gradient s, for the total density only.
+  Values are capped at 100.
+- `sign-lambda2-rho` is the total density times the sign of the middle
+  eigenvalue of its Hessian, in e/bohr^3, for the total density only.
+
+The `rdg` and `sign-lambda2-rho` files are the inputs of an NCI analysis:
+an isosurface of s (for example 0.5), colored by sign(lambda2) rho. The
+definitions are in [docs/API.md](docs/API.md).
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce
@@ -200,7 +214,8 @@ For a method-by-method guide and contracts, see [docs/API.md](docs/API.md).
 
 The C++ `chem::kumo::Evaluator` provides typed requests for total, alpha, beta,
 and spin-difference electron density, gradients, Hessians, Laplacians and
-positive kinetic-energy density (`tau`), as well as orbital amplitudes. It
+positive kinetic-energy density (`tau`), the derived ELF, reduced density
+gradient and sign(lambda2) rho (1.8.0), as well as orbital amplitudes. It
 returns component arrays on the requested grid. This API is separate from the
 existing `Molecule` convenience methods; the CLI uses it for all density
 output.

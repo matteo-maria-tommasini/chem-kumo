@@ -4,7 +4,10 @@
 #include "ao_screening.hpp"
 #include "grid_geometry.hpp"
 #include "parallel_blocks.hpp"
+#include <Eigen/Eigenvalues>
 #include <algorithm>
+#include <cmath>
+#include <initializer_list>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -52,14 +55,71 @@ const detail::ComponentPlan& plan_for(const detail::EvaluationPlan& plan, Densit
     return plan.components[detail::EvaluationPlan::index(c)];
 }
 
-// Copy one property of block results, starting at grid point `start`.
-// Evaluator Hessians use row-major upper-triangle order: xx, xy, xz, yy, yz, zz.
-void store_block(PropertyField& output, PropertyKind kind,
-                 const std::vector<DensityDerivatives>& block, std::size_t start) {
-    for (std::size_t local = 0; local < block.size(); ++local) {
-        const auto& d = block[local];
+// Electron localization function (Becke and Edgecombe 1990) with
+// tau = (1/2) sum_i |grad psi_i|^2. Each spin channel s with rho_s > 0
+// contributes the Pauli kinetic energy density
+//   D_s = tau_s - |grad rho_s|^2 / (8 rho_s)
+// and the Thomas-Fermi reference D0_s = (3/10) (6 pi^2)^(2/3) rho_s^(5/3);
+// ELF = 1 / (1 + (D / D0)^2) with D and D0 summed over the channels given.
+// For a closed shell this is the familiar spin-unpolarized form
+// D = tau - |grad rho|^2 / (8 rho), D0 = (3/10) (3 pi^2)^(2/3) rho^(5/3).
+// Channels without density contribute nothing; with no density at all the
+// ELF is 0. The result is finite and in [0, 1] for any finite input.
+double elf(std::initializer_list<const DensityDerivatives*> channels) {
+    constexpr double pi = 3.141592653589793238462643383279502884;
+    static const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
+    double pauli = 0.0;
+    double uniform = 0.0;
+    for (const DensityDerivatives* d : channels) {
+        if (!(d->value > 0.0)) continue;
+        pauli += d->tau - d->gradient.squaredNorm() / (8.0 * d->value);
+        uniform += fermi * std::pow(d->value, 5.0 / 3.0);
+    }
+    if (!(uniform > 0.0)) return 0.0;
+    const double chi = pauli / uniform;
+    return 1.0 / (1.0 + chi * chi);
+}
+
+// Reduced density gradient s = |grad rho| / (2 (3 pi^2)^(1/3) rho^(4/3)),
+// capped at reduced_gradient_cap (also where rho <= 0 or rho^(4/3)
+// underflows, where s is undefined or infinite).
+double reduced_gradient(const DensityDerivatives& d) {
+    constexpr double pi = 3.141592653589793238462643383279502884;
+    static const double scale = 2.0 * std::cbrt(3.0 * pi * pi);
+    if (!(d.value > 0.0)) return reduced_gradient_cap;
+    const double denominator = scale * std::pow(d.value, 4.0 / 3.0);
+    const double norm = d.gradient.norm();
+    if (!(denominator > 0.0) || !(norm < reduced_gradient_cap * denominator))
+        return reduced_gradient_cap;
+    return norm / denominator;
+}
+
+// sign(lambda2) * rho, with lambda1 <= lambda2 <= lambda3 the eigenvalues of
+// the density Hessian; lambda2 == 0 counts as positive.
+double sign_lambda2_density(const DensityDerivatives& d) {
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(d.hessian, Eigen::EigenvaluesOnly);
+    return solver.eigenvalues()[1] < 0.0 ? -d.value : d.value;
+}
+
+using BlockDerivatives = std::map<Spin, std::vector<DensityDerivatives>>;
+
+// Copy (or derive) one property of block results, starting at grid point
+// `start`. Evaluator Hessians use row-major upper-triangle order: xx, xy, xz,
+// yy, yz, zz.
+void store_block(PropertyField& output, const Property& key, const BlockDerivatives& block,
+                 std::size_t count, std::size_t start) {
+    if (key.kind == PropertyKind::Elf && key.component == DensityComponent::Total) {
+        const auto& alpha = block.at(Spin::Alpha);
+        const auto& beta = block.at(Spin::Beta);
+        for (std::size_t local = 0; local < count; ++local)
+            output.components[0][start + local] = elf({&alpha[local], &beta[local]});
+        return;
+    }
+    const auto& derivatives = block.at(spin_of(key.component));
+    for (std::size_t local = 0; local < count; ++local) {
+        const auto& d = derivatives[local];
         const std::size_t p = start + local;
-        switch (kind) {
+        switch (key.kind) {
         case PropertyKind::Density: output.components[0][p] = d.value; break;
         case PropertyKind::Gradient:
             for (int a = 0; a < 3; ++a)
@@ -75,6 +135,11 @@ void store_block(PropertyField& output, PropertyKind kind,
             break;
         case PropertyKind::Laplacian: output.components[0][p] = d.laplacian; break;
         case PropertyKind::Tau: output.components[0][p] = d.tau; break;
+        case PropertyKind::Elf: output.components[0][p] = elf({&d}); break;
+        case PropertyKind::ReducedGradient: output.components[0][p] = reduced_gradient(d); break;
+        case PropertyKind::SignLambda2Density:
+            output.components[0][p] = sign_lambda2_density(d);
+            break;
         default: throw std::logic_error("invalid derivative property");
         }
     }
@@ -118,16 +183,12 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
                     detail::grid_point(grid, start + local);
             const auto block = evaluate_block(points, needed);
 
-            for (auto component : all_components) {
-                if (!uses_point_path(plan_for(plan, component), backend)) continue;
-                const auto& derivatives = block.at(spin_of(component));
-                for (auto& [key, output] : fields) {
-                    // AO-P densities come from the grid path instead.
-                    if (key.component != component || key.kind == PropertyKind::Orbital ||
-                        (key.kind == PropertyKind::Density && backend == Backend::AO_P))
-                        continue;
-                    store_block(output, key.kind, derivatives, start);
-                }
+            for (auto& [key, output] : fields) {
+                // Orbitals, and AO-P densities, come from the grid path instead.
+                if (key.kind == PropertyKind::Orbital ||
+                    (key.kind == PropertyKind::Density && backend == Backend::AO_P))
+                    continue;
+                store_block(output, key, block, count, start);
             }
             // Serialized and monotonic; a throwing callback is captured
             // like any other block error.

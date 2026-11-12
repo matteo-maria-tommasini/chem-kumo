@@ -170,6 +170,58 @@ The mathematical derivation is in
 Performance methodology and HBC measurements are in
 [SPATIAL_DERIVATIVES.md](../benchmarks/SPATIAL_DERIVATIVES.md).
 
+## Derived properties: ELF, reduced gradient, sign(lambda2) rho (1.8.0)
+
+The Evaluator computes three derived quantities pointwise from the density
+derivatives it already evaluates, with the same backends, screening and
+OpenMP scheduling (results do not depend on the number of threads). With
+`tau = (1/2) sum_i |grad psi_i|^2` as above:
+
+- `density::total.elf()`, `density::alpha.elf()`, `density::beta.elf()`
+  (`PropertyKind::Elf`): the electron localization function of Becke and
+  Edgecombe (J. Chem. Phys. 92, 5397 (1990)), dimensionless, in [0, 1].
+  Each spin channel s with `rho_s > 0` contributes the Pauli kinetic energy
+  density `D_s = tau_s - |grad rho_s|^2 / (8 rho_s)` and the uniform-gas
+  value `D0_s = (3/10) (6 pi^2)^(2/3) rho_s^(5/3)`, and
+  `ELF = 1 / (1 + (D / D0)^2)`. For alpha or beta, D and D0 are those of the
+  channel. For the total ELF they are summed over both channels
+  (spin-polarized form). For a closed shell it
+  reduces to `D = tau - |grad rho|^2 / (8 rho)`,
+  `D0 = (3/10) (3 pi^2)^(2/3) rho^(5/3)`. Channels without density
+  contribute nothing; where there is no density at all, ELF is 0. ELF is not
+  defined for the spin difference.
+- `density::total.reduced_gradient()` (`PropertyKind::ReducedGradient`): the
+  reduced density gradient `s = |grad rho| / (2 (3 pi^2)^(1/3) rho^(4/3))`
+  of the total density, dimensionless (Johnson et al., J. Am. Chem. Soc. 132,
+  6498 (2010)). Values above `reduced_gradient_cap` (100), and points where
+  `rho <= 0`, where s is undefined, are reported as 100. NCI isovalues are
+  about 0.3 to 0.6, so the cap does not affect NCI isosurfaces, and Cube
+  files stay finite.
+- `density::total.sign_lambda2_density()`
+  (`PropertyKind::SignLambda2Density`): `sign(lambda2) * rho` of the total
+  density, in e/bohr^3, where `lambda1 <= lambda2 <= lambda3` are the
+  eigenvalues of the density Hessian. `lambda2 == 0` counts as positive.
+  Negative values mark bonding (attractive) interactions in NCI analysis.
+
+The reduced gradient and `sign(lambda2) rho` are defined only for the total
+density. `Evaluator::evaluate` throws `std::invalid_argument` if a derived
+property is requested for a component it is not defined for.
+
+Accuracy. On the grids of the tests, the derived values equal their formulas
+applied to the Evaluator's own value, gradient, Hessian and tau to about
+1e-12. The Pauli term agrees, at points with `rho_s >= 1e-3`, with the
+cancellation-free orbital form
+`(1 / (2 rho_s)) sum_{i<j} |psi_i grad psi_j - psi_j grad psi_i|^2` to
+better than 1e-9 relative to tau. With the default AO screening, ELF differs
+from the unscreened value by at most 2e-8, and s by at most 5e-10 relative,
+on the default `kumo` grids of O2 and acrolein. These grids include points
+with densities down to 1e-18. With AO_P, densities requested alongside come
+from a separate grid kernel and agree with the values used internally for
+the derived properties only to rounding.
+
+On water (B3LYP/def2-TZVP), the O-H bond critical point is found where s
+nearly vanishes, with `sign(lambda2) rho` = -0.361 e/bohr^3 and ELF 0.98.
+
 ## Errors and limitations
 
 Malformed or unsupported FCHK records, invalid grids, and out-of-range MO
