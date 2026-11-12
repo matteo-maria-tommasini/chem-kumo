@@ -10,9 +10,6 @@
 #include <array>
 #include <cstdint>
 #include <exception>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 #include <Eigen/LU>
 #include <cmath>
 #include <fstream>
@@ -253,7 +250,7 @@ double Field::operator()(int i, int j, int k) const {
     if (i < 0 || j < 0 || k < 0 || i >= grid_.counts[0] || j >= grid_.counts[1] ||
         k >= grid_.counts[2])
         throw std::out_of_range("field index");
-    return values_.at((static_cast<std::size_t>(i) * grid_.counts[1] + j) * grid_.counts[2] + k);
+    return values_.at(detail::grid_index(grid_, i, j, k));
 }
 
 void Field::write_cube(const std::filesystem::path& path, const std::string& comment) const {
@@ -710,9 +707,7 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
         try {
             const std::size_t start = static_cast<std::size_t>(block) * block_size;
             const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, b);
-            for (Eigen::Index t = 0; t < b; ++t)
-                points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
+            const auto points = detail::grid_points(grid, start, static_cast<std::size_t>(b));
             Eigen::MatrixXd phi(m, b);
             evaluator_.evaluate_batch(points, phi);
             // Contract only the AOs that are significant somewhere in the

@@ -148,9 +148,7 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
             const std::size_t start = static_cast<std::size_t>(block) * block_size;
             const auto size = std::min(block_size, count - start);
             const auto b = static_cast<Eigen::Index>(size);
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, b);
-            for (Eigen::Index t = 0; t < b; ++t)
-                points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
+            const auto points = detail::grid_points(grid, start, size);
             Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
             evaluator_.evaluate_batch(points, phi);
             const Eigen::MatrixXd psi = selected.transpose() * phi;
