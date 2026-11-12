@@ -140,8 +140,9 @@ are screened out of the contraction as described above. There is no sparse
 matrix contraction or new numerical dependency.
 
 These are **spatial derivatives at fixed geometry and fixed wavefunction**,
-not derivatives with respect to nuclear positions. The CLI has not been
-extended to write derivative Cube files in this development branch.
+not derivatives with respect to nuclear positions. The `kumo` CLI writes
+the gradient norm, Laplacian and `tau` of any density component as Cube
+files with `--property` (see the README).
 The mathematical derivation is in
 [chem-kumo-mathematics.tex](mathematics/chem-kumo-mathematics.tex).
 Performance methodology and HBC measurements are in
