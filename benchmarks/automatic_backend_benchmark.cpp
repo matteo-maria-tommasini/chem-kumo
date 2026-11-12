@@ -135,8 +135,7 @@ int main(int argc, char** argv) {
             const auto req = request_for(workload);
             const auto plan = detail::EvaluationPlan::from(req);
             const Backend selected =
-                detail::choose_backend(Backend::AUTO, info.ao_mo_eligible(), molecule.basis_size(),
-                                       info.occupied_alpha, info.occupied_beta, plan);
+                detail::choose_backend(Backend::AUTO, info.ao_mo_eligible(), plan);
             const auto result_ao = ao.evaluate(grid, req);
             const auto result_mo = mo.evaluate(grid, req);
             const auto result_auto = automatic.evaluate(grid, req);
