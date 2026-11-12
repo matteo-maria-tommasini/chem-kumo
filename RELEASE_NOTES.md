@@ -1,3 +1,57 @@
+# chem-kumo 1.6.0 — release notes
+
+Density derivatives from the command line, and faster AO evaluation through
+a rigorous per-shell cutoff. The public API is extended in a
+source-compatible way; rebuild code that links against libkumo (the layout
+of `BasisEvaluator` changed again).
+
+New in the CLI:
+
+- `kumo --property density,gradient,laplacian,tau` writes, for every density
+  component chosen with `--spin`, the density (default), the gradient norm
+  |grad rho| (e/bohr^4), the Laplacian (e/bohr^5) and the positive kinetic
+  energy density tau (hartree/bohr^3) as Cube files. Density files keep
+  their names; derivative files are `PREFIX_<component>_<property>.cube`
+  (for example `PREFIX_density_laplacian.cube`, `PREFIX_spin_tau.cube`).
+  The derivatives use the AO density matrix contraction (AO_P), like the
+  density files. `--property` is rejected with `--mo` and `--list-mo`.
+  On O2, the integral of the tau Cube matches the kinetic energy derived
+  from the FCHK total energy and virial ratio within 0.13% (uniform grid).
+
+Performance:
+
+- Shell cutoff: for each shell, the AO evaluator precomputes a radius
+  beyond which a rigorous bound on every AO of the shell and on its first
+  and second derivatives is at most `BasisEvaluator::ao_cutoff` = 1e-14; at
+  farther points the shell is not computed and gives exact zeros.
+  `evaluate_into_reference()` keeps the uncut evaluation. Results change by
+  at most about 6e-14 (about 1e-18 relative to the largest value) on O2,
+  acrolein and HBC.
+
+| HBC def2-TZVP (1410 AOs), 50752 points, one thread | 1.5.0 | 1.6.0 | Speed-up |
+|---|---:|---:|---:|
+| `Molecule::density` | 1.05 s | 0.81 s | ×1.3 |
+| Evaluator AO_MO density | 0.67 s | 0.43 s | ×1.56 |
+| Evaluator AO_P gradient | 3.38 s | 2.98 s | ×1.13 |
+| Evaluator AO_P Hessian + Laplacian + tau | 4.50 s | 4.05 s | ×1.11 |
+| Evaluator AO_MO gradient | 1.70 s | 1.30 s | ×1.3 |
+| Evaluator AO_MO Hessian + Laplacian + tau | 3.60 s | 3.12 s | ×1.15 |
+
+API additions:
+
+- `BasisEvaluator::ao_cutoff` (1e-14), the bound used by the shell cutoff.
+
+Validation:
+
+- 69/69 Meson tests passed on macOS ARM64 on 2026-11-12 (serial and
+  MacPorts Clang 22 OpenMP builds); CI builds and tests on ubuntu-latest
+  and macos-latest. New test: `ao-shell-cutoff` (every AO, gradient and
+  second derivative zeroed by the cutoff is at most `ao_cutoff`, checked
+  against the reference evaluator and finite differences). The CLI
+  end-to-end test covers `--property`. No reference tolerance was changed.
+
+---
+
 # chem-kumo 1.5.0 — release notes
 
 A performance release: grid densities and density derivatives are several

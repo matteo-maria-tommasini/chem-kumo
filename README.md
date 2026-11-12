@@ -1,4 +1,4 @@
-# chem-kumo 1.5.0
+# chem-kumo 1.6.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -195,7 +195,7 @@ The Evaluator's `threads` option currently accepts `0` (runtime default) and
 the runtime environment such as `OMP_NUM_THREADS` to control parallelism.
 The grid evaluation uses bounded coordinate blocks controlled by `block_size`.
 
-### AO screening and performance (1.5.0)
+### AO screening, shell cutoff and performance (1.5.0, 1.6.0)
 
 Grid densities and density derivatives skip, in each block of grid points,
 the AOs that are negligible at every point of the block (value and
@@ -206,7 +206,12 @@ sets the threshold, and 0 gives the exact contraction. Together with batched
 AO derivative evaluation, this makes 1.5.0 several times faster than 1.4.1
 for large basis sets: on HBC def2-TZVP (1410 AOs), the total density is
 about 10 times faster and density gradients and Hessians 4 to 6 times
-faster. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the measurements.
+faster. Since 1.6.0, each shell is also skipped at points beyond a
+precomputed radius where a rigorous bound on its AOs and their first and
+second derivatives is at most `BasisEvaluator::ao_cutoff` = 1e-14, which
+makes densities a further 1.3 to 1.5 times and derivatives 1.1 to 1.3 times
+faster on the same system. See [RELEASE_NOTES.md](RELEASE_NOTES.md) for the
+measurements.
 
 ### Additional numerical APIs (1.4.0)
 
@@ -235,12 +240,13 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.5.0 release registers **68 Meson tests**, all passing in the
+The 1.6.0 release registers **69 Meson tests**, all passing in the
 serial and OpenMP builds reported on macOS ARM64 on 2026-11-12. Coverage
 includes AO, MO and density spatial derivatives against finite differences;
 independent MO versus AO-density-matrix reconstruction; backend selection;
 grid validation at every evaluation entry point; AO screening against the
-exact contraction; batched versus single-point AO derivatives; blocked and pointwise
+exact contraction; the AO shell cutoff bound; batched versus single-point AO
+derivatives; command-line density and derivative Cube output; blocked and pointwise
 evaluation, including error propagation from OpenMP workers; analytic
 overlaps and moments; scalar-field operations; and Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
@@ -317,6 +323,10 @@ screening, batched AO derivatives and AO-MO improvements. Matteo Tommasini
 reviewed and approved every change; each optimization was checked against
 the exact results (bit-identical, or rounding-level differences for AO
 screening) and measured on the HBC reference systems.
+
+Version 1.6.0, which adds density-derivative Cube output to the CLI and the
+AO shell cutoff, was developed in the same way with Claude and reviewed and
+approved by Matteo Tommasini.
 
 ## License
 
