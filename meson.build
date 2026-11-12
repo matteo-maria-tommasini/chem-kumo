@@ -309,6 +309,22 @@ test(
     ],
 )
 
+# Derived density properties: ELF, reduced gradient, sign(lambda2) rho.
+test(
+    'derived-properties',
+    executable(
+        'kumo-derived-properties-test',
+        'tests/derived_properties_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+    ],
+    timeout: 300,
+)
+
 # The AO shell cutoff zeroes only AOs and derivatives below ao_cutoff.
 test(
     'ao-shell-cutoff',

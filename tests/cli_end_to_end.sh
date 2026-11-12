@@ -47,6 +47,26 @@ values "${PREFIX}_density_tau.cube" | awk '$1 < 0 {exit 1}' || {
     echo 'Negative total tau' >&2; exit 1; }
 values "${PREFIX}_density_laplacian.cube" | awk '$1 < 0 {found = 1} END {exit !found}' || {
     echo 'Total-density Laplacian has no negative values' >&2; exit 1; }
+# Derived properties: ELF of the total, alpha and beta densities in [0, 1];
+# the reduced gradient in [0, 100]; sign(lambda2) rho with negative values.
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --spin total \
+    --property elf,rdg,sign-lambda2-rho > "$TMP/derived.log"
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --spin alpha \
+    --property elf >> "$TMP/derived.log"
+"$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --spin beta \
+    --property elf >> "$TMP/derived.log"
+for file in density_elf density_rdg density_sign-lambda2-rho alpha_elf beta_elf; do
+    grep -Fqx "${PREFIX}_${file}.cube" "$TMP/derived.log" || {
+        echo "Not reported: ${PREFIX}_${file}.cube" >&2; exit 1; }
+done
+for file in density_elf alpha_elf beta_elf; do
+    values "${PREFIX}_${file}.cube" | awk '$1 < 0 || $1 > 1 {exit 1}' || {
+        echo "$file outside [0, 1]" >&2; exit 1; }
+done
+values "${PREFIX}_density_rdg.cube" | awk '$1 < 0 || $1 > 100 {exit 1}' || {
+    echo 'Reduced gradient outside [0, 100]' >&2; exit 1; }
+values "${PREFIX}_density_sign-lambda2-rho.cube" | awk '$1 < 0 {found = 1} END {exit !found}' || {
+    echo 'sign(lambda2) rho has no negative values' >&2; exit 1; }
 # Density backends: the Cube comment names the contraction used, and the AO-MO
 # and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
 # selects AO-MO).
@@ -108,6 +128,16 @@ fi
 if "$KUMO" "$FCHK" --mo homo --property tau --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo '--property with --mo unexpectedly accepted' >&2; exit 1
 fi
+if "$KUMO" "$FCHK" --spacing 1 --spin difference --property elf --output "$TMP/bad" \
+    > "$TMP/error.log" 2>&1; then
+    echo 'ELF of the spin difference unexpectedly accepted' >&2; exit 1
+fi
+for property in rdg sign-lambda2-rho; do
+    if "$KUMO" "$FCHK" --spacing 1 --spin alpha --property "$property" --output "$TMP/bad" \
+        > "$TMP/error.log" 2>&1; then
+        echo "--property $property with --spin alpha unexpectedly accepted" >&2; exit 1
+    fi
+done
 if "$KUMO" "$FCHK" --spacing 1 --property tau, --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo 'Trailing comma in --property unexpectedly accepted' >&2; exit 1
 fi

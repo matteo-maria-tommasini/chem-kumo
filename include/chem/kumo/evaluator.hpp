@@ -13,7 +13,33 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 /// Kind of property. Number of components in the result: Gradient 3 (x, y,
 /// z), Hessian 6 (xx, xy, xz, yy, yz, zz), all others 1. Orbital is a signed
 /// MO amplitude; the other kinds apply to a DensityComponent.
-enum class PropertyKind { Density, Gradient, Hessian, Laplacian, Tau, Orbital };
+///
+/// Derived kinds (see docs/API.md for the formulas and conventions):
+///  - Elf: electron localization function, in [0, 1]. Total (spin-resolved
+///    form, from the alpha and beta densities), Alpha or Beta; not Spin.
+///  - ReducedGradient: reduced density gradient s of the total density,
+///    capped at reduced_gradient_cap. Total only.
+///  - SignLambda2Density: sign(lambda2) * rho of the total density, where
+///    lambda2 is the middle eigenvalue of its Hessian. Total only.
+/// Requesting a derived kind for a component it is not defined for makes
+/// Evaluator::evaluate() throw std::invalid_argument.
+enum class PropertyKind {
+    Density,
+    Gradient,
+    Hessian,
+    Laplacian,
+    Tau,
+    Orbital,
+    Elf,
+    ReducedGradient,
+    SignLambda2Density
+};
+
+/// Upper bound of the reduced density gradient returned by the Evaluator.
+/// Larger values, and points where the density is not positive (where s is
+/// undefined), are reported as this value; it is far above the isovalues
+/// used in NCI analysis (about 0.3 to 0.6).
+inline constexpr double reduced_gradient_cap = 100.0;
 
 /// MO spin channel.
 enum class SpinChannel { Alpha, Beta };
@@ -49,6 +75,19 @@ struct DensityDescriptor {
 
     /// Positive kinetic-energy density.
     constexpr Property tau() const { return {PropertyKind::Tau, component}; }
+
+    /// Electron localization function (Total, Alpha or Beta).
+    constexpr Property elf() const { return {PropertyKind::Elf, component}; }
+
+    /// Reduced density gradient (Total only).
+    constexpr Property reduced_gradient() const {
+        return {PropertyKind::ReducedGradient, component};
+    }
+
+    /// sign(lambda2) * rho (Total only).
+    constexpr Property sign_lambda2_density() const {
+        return {PropertyKind::SignLambda2Density, component};
+    }
 };
 
 /// The four density components: density::total, alpha, beta, spin.
@@ -170,7 +209,8 @@ public:
 
     /// Evaluate every property in `request` at all grid points, in Field
     /// order (third axis fastest). Throws std::invalid_argument for an invalid
-    /// grid (see Grid) or an orbital index of 0 (indices are one-based).
+    /// grid (see Grid), an orbital index of 0 (indices are one-based), or a
+    /// derived property requested for a component it is not defined for.
     [[nodiscard]] Results evaluate(const Grid& grid, const Request& request) const;
 
 private:

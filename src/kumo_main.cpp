@@ -49,9 +49,11 @@ void usage() {
               << "Usage: kumo FILE.fchk[.gz] [options]\n\n"
               << "  (default)                  Write total electron density\n"
               << "  --spin total|alpha|beta|difference|all   Density component(s)\n"
-              << "  --property density,gradient,laplacian,tau\n"
+              << "  --property density,gradient,laplacian,tau,elf,rdg,sign-lambda2-rho\n"
               << "                             Density properties to write (default density;\n"
-              << "                             gradient is the norm |grad rho|)\n"
+              << "                             gradient is the norm |grad rho|; elf for total,\n"
+              << "                             alpha or beta; rdg and sign-lambda2-rho for the\n"
+              << "                             total density only)\n"
               << "  --backend auto|ao-p|ao-mo  Density contraction (default auto: occupied MOs\n"
               << "                             when they reproduce the FCHK density matrices)\n"
               << "  --mo N[,M:K,...]           Write 1-based molecular orbitals\n"
@@ -368,7 +370,12 @@ std::vector<DensityProperty> select_properties(const std::string& list) {
         {PropertyKind::Gradient, "gradient",
          "Electron density gradient norm |grad rho| (e/bohr^4)"},
         {PropertyKind::Laplacian, "laplacian", "Electron density Laplacian (e/bohr^5)"},
-        {PropertyKind::Tau, "tau", "Positive kinetic energy density tau (hartree/bohr^3)"}};
+        {PropertyKind::Tau, "tau", "Positive kinetic energy density tau (hartree/bohr^3)"},
+        {PropertyKind::Elf, "elf", "Electron localization function ELF (dimensionless)"},
+        {PropertyKind::ReducedGradient, "rdg",
+         "Reduced density gradient s (dimensionless, capped at 100)"},
+        {PropertyKind::SignLambda2Density, "sign-lambda2-rho",
+         "sign(lambda2) * electron density (e/bohr^3)"}};
     std::vector<DensityProperty> result;
     std::size_t start = 0;
     while (true) {
@@ -378,8 +385,9 @@ std::vector<DensityProperty> select_properties(const std::string& list) {
         const auto* match = std::find_if(std::begin(known), std::end(known),
                                          [&](const DensityProperty& p) { return p.name == token; });
         if (match == std::end(known))
-            throw std::invalid_argument("unknown --property '" + token +
-                                        "' (use density, gradient, laplacian or tau)");
+            throw std::invalid_argument(
+                "unknown --property '" + token +
+                "' (use density, gradient, laplacian, tau, elf, rdg or sign-lambda2-rho)");
         if (std::none_of(result.begin(), result.end(),
                          [&](const DensityProperty& p) { return p.kind == match->kind; }))
             result.push_back(*match);
@@ -413,8 +421,30 @@ chem::kumo::Property density_property(Spin component, PropertyKind kind) {
     case PropertyKind::Gradient: return d.gradient();
     case PropertyKind::Laplacian: return d.laplacian();
     case PropertyKind::Tau: return d.tau();
+    case PropertyKind::Elf: return d.elf();
+    case PropertyKind::ReducedGradient: return d.reduced_gradient();
+    case PropertyKind::SignLambda2Density: return d.sign_lambda2_density();
     default: return d.value();
     }
+}
+
+// ELF is not defined for the spin difference, and the reduced gradient and
+// sign(lambda2) rho only for the total density.
+void check_components(const std::vector<std::pair<Spin, std::string>>& components,
+                      const std::vector<DensityProperty>& properties) {
+    for (const auto& property : properties)
+        for (const auto& component : components) {
+            const Spin spin = component.first;
+            if (property.kind == PropertyKind::Elf && spin == Spin::Difference)
+                throw std::invalid_argument(
+                    "--property elf is not defined for --spin difference (or all); "
+                    "use total, alpha or beta");
+            if ((property.kind == PropertyKind::ReducedGradient ||
+                 property.kind == PropertyKind::SignLambda2Density) &&
+                spin != Spin::Total)
+                throw std::invalid_argument("--property " + property.name +
+                                            " is defined only for --spin total");
+        }
 }
 
 // Density contraction selected with --backend. AUTO uses the occupied MOs
@@ -444,7 +474,10 @@ std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& 
         what.push_back(property.kind == PropertyKind::Density     ? "value"
                        : property.kind == PropertyKind::Gradient  ? "gradient norm"
                        : property.kind == PropertyKind::Laplacian ? "Laplacian"
-                                                                  : "kinetic energy density tau");
+                       : property.kind == PropertyKind::Tau       ? "kinetic energy density tau"
+                       : property.kind == PropertyKind::Elf       ? "ELF"
+                       : property.kind == PropertyKind::ReducedGradient ? "reduced density gradient"
+                                                                        : "sign(lambda2) rho");
     for (const auto& component : components)
         which.push_back(component_label(component.first));
     const auto densities = join(which) + " electron densit" + (which.size() > 1 ? "ies" : "y");
@@ -600,6 +633,7 @@ int main(int argc, char** argv) {
                     "density --spin must be total, alpha, beta, difference, or all");
             const auto properties =
                 select_properties(o.properties.empty() ? "density" : o.properties);
+            check_components(components, properties);
             const auto backend = select_backend(o.backend, mol);
             console.say(backend_summary(backend, mol));
             write_density_properties(mol, grid, components, properties, backend, o.prefix, console);
