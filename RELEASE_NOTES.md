@@ -1,3 +1,68 @@
+# chem-kumo 1.8.0 — release notes
+
+The Evaluator and the `kumo` CLI compute three derived density properties:
+the electron localization function (ELF), the reduced density gradient (s)
+and sign(lambda2) rho, the inputs of an NCI analysis. The public API is
+extended in a source-compatible way; rebuild code that links against
+libkumo (`PropertyKind` has new values). Existing outputs are unchanged.
+
+Library changes:
+
+- `density::total.elf()`, `density::alpha.elf()`, `density::beta.elf()`
+  (`PropertyKind::Elf`): the Becke–Edgecombe ELF, in [0, 1]. The total ELF
+  uses the spin-polarized form, summing the Pauli kinetic energy density
+  and its uniform-gas value over the alpha and beta channels; for a closed
+  shell this equals the classic formula. ELF is 0 where there is no
+  density, and is not defined for the spin difference.
+- `density::total.reduced_gradient()` (`PropertyKind::ReducedGradient`):
+  `s = |grad rho| / (2 (3 pi^2)^(1/3) rho^(4/3))`, capped at the new
+  constant `reduced_gradient_cap` (100), also where rho <= 0, so Cube files
+  stay finite.
+- `density::total.sign_lambda2_density()`
+  (`PropertyKind::SignLambda2Density`): rho times the sign of the middle
+  eigenvalue of the density Hessian.
+- The reduced gradient and sign(lambda2) rho are defined only for the total
+  density; `Evaluator::evaluate` throws `std::invalid_argument` for an
+  undefined component.
+- The properties use the existing backends, AO screening and OpenMP
+  scheduling; results do not depend on the number of threads. ELF and s
+  cost about as much as tau, and sign(lambda2) rho about as much as the
+  Laplacian.
+
+Command-line changes:
+
+- `--property elf` (with `--spin total`, `alpha` or `beta`), `--property rdg`
+  and `--property sign-lambda2-rho` (total density only) write
+  `PREFIX_density_elf.cube`, `PREFIX_density_rdg.cube`,
+  `PREFIX_density_sign-lambda2-rho.cube` and, for spin channels,
+  `PREFIX_alpha_elf.cube` and so on. Unsupported spin choices fail with a
+  clear message.
+
+Validation:
+
+- The derived values equal their formulas applied to the Evaluator's
+  density derivatives to about 1e-12; the Pauli term agrees with the
+  cancellation-free orbital (Lagrange) form to better than 1e-9 relative;
+  default AO screening changes ELF by at most 2e-8 and s by at most 5e-10
+  relative on the O2 and acrolein grids.
+- New test `multiwfn-reference`: ELF, s and sign(lambda2) rho of water and
+  the ELF of O2 (open shell) agree with Multiwfn 2026.9.1 Cube files within
+  1.2e-5 relative, at the six significant digits of the references
+  (`tests/data/multiwfn/`, provenance in `tests/REFERENCE_CUBES.md`).
+- On water, the O-H bond critical point has s near 0, sign(lambda2) rho =
+  -0.361 e/bohr^3 and ELF 0.98.
+- CI now also runs the test suite with AddressSanitizer and
+  UndefinedBehaviorSanitizer on ubuntu-latest, and fails on compiler
+  warnings (`-Dwerror=true`). The HBC cases of `density-screening` and
+  `ao-shell-cutoff` are separate tests in a `slow` suite, which the
+  sanitizer job skips.
+- 75/75 Meson tests passed on macOS ARM64 on 2026-11-12 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings; CI builds and tests on ubuntu-latest
+  and macos-latest.
+
+---
+
 # chem-kumo 1.7.1 — release notes
 
 A maintenance release: release builds with GCC 14 and 15 are now
