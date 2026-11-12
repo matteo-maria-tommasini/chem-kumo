@@ -222,6 +222,11 @@ the derived properties only to rounding.
 On water (B3LYP/def2-TZVP), the O-H bond critical point is found where s
 nearly vanishes, with `sign(lambda2) rho` = -0.361 e/bohr^3 and ELF 0.98.
 
+The test `multiwfn-reference` compares ELF, s and `sign(lambda2) rho` with
+Multiwfn 2026.9.1 Cube files of water and O2 (open shell), point by point.
+They agree within 1.2e-5 relative, at the six significant digits of the
+reference files (see [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
+
 ## Errors and limitations
 
 Malformed or unsupported FCHK records, invalid grids, and out-of-range MO

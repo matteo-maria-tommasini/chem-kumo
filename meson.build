@@ -325,6 +325,21 @@ test(
     timeout: 300,
 )
 
+# Derived density properties against Multiwfn reference Cube files.
+test(
+    'multiwfn-reference',
+    executable(
+        'kumo-multiwfn-reference-test',
+        'tests/multiwfn_reference_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn',
+    ],
+)
+
 # The AO shell cutoff zeroes only AOs and derivatives below ao_cutoff.
 test(
     'ao-shell-cutoff',
