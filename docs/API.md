@@ -45,8 +45,12 @@ Cube with an MO index record. `Field` stores values, atoms, and grid geometry.
   faster; the change in the density is at rounding level (at most about
   1e-13 e/bohr^3 in the tested systems). A threshold of 0 gives the exact
   contraction. `EvaluationOptions::screening_threshold` sets the same
-  threshold for `Evaluator` AO_P densities; derivatives and AO_MO densities
-  are not screened yet.
+  threshold for `Evaluator` AO_P densities and density derivatives, and
+  `density_derivatives_blocked()` takes it as a parameter. For derivatives
+  an AO is left out only if its value and all its derivatives are at most
+  the threshold in the block; on HBC def2-TZVP this makes AO_P gradients and
+  Hessians about five times faster, with relative changes of about 1e-15.
+  AO_MO is not screened yet.
 - `density_pointwise(grid, spin)` retains the original pointwise algorithm
   for regression comparisons.
 
@@ -104,16 +108,18 @@ channel; for `Spin::Difference`, the returned tau is the **signed**
 difference `tau_alpha - tau_beta`. Units are density bohr^-3, gradient
 bohr^-4, Hessian/Laplacian bohr^-5 and tau hartree/bohr^3 in atomic units.
 
-`Molecule::density_derivatives_blocked(points, component, block_size=128)`
+`Molecule::density_derivatives_blocked(points, component, block_size=128,
+screening_threshold=default_screening_threshold)`
 accepts a **3 x N** Eigen matrix with one Cartesian point per column,
 and returns `std::vector<DensityDerivatives>` in the same order. A zero
-block size and non-finite points are rejected. The method currently
+block size, non-finite points and a negative or nonfinite screening
+threshold are rejected. The method currently
 materializes the result vector; it is not a streaming grid writer.
 
 `Molecule::orbital_derivatives_blocked(points, index_one_based, channel,
 block_size=128)` accepts the same 3 x N point layout and returns ordered
-`OrbitalDerivatives` for one alpha/beta MO. It currently reuses the analytic
-pointwise evaluator inside independently scheduled blocks.
+`OrbitalDerivatives` for one alpha/beta MO, evaluating the AO derivatives of
+each block with `evaluate_derivatives_batch()`.
 
 When built with `-Dopenmp=true`, `densities_blocked()`,
 `density_derivatives_blocked()`, `orbitals()` (and `orbital()` through it), and
@@ -125,9 +131,10 @@ See [docs/OPENMP.md](OPENMP.md) for execution and deployment notes.
 The blocked derivative path uses Eigen to apply the density matrix once
 to a packed panel containing AO values and their three first derivatives.
 Six AO second-derivative panels are used in linear reductions; no density
-matrix product is needed for those panels. AO derivative evaluations
-remain pointwise inside each block. There is no AO screening, sparse
-matrix contraction, or new numerical dependency.
+matrix product is needed for those panels. AO derivatives of a block are
+evaluated together with `evaluate_derivatives_batch()`, and negligible AOs
+are screened out of the contraction as described above. There is no sparse
+matrix contraction or new numerical dependency.
 
 These are **spatial derivatives at fixed geometry and fixed wavefunction**,
 not derivatives with respect to nuclear positions. The CLI has not been

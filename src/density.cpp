@@ -309,9 +309,10 @@ DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
 
 std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, Spin component,
-    std::size_t block_size) const {
+    std::size_t block_size, double screening_threshold) const {
     if (block_size == 0) throw std::invalid_argument("block size must be positive");
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
+    detail::validate_screening_threshold(screening_threshold);
     Eigen::MatrixXd storage;
     const Eigen::MatrixXd& p = select_density_matrix(total_, spin_, component, storage);
     const auto n = static_cast<Eigen::Index>(basis_size());
@@ -331,7 +332,8 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
         const Eigen::Index capacity = static_cast<Eigen::Index>(std::min(block_size, count));
         // AO panels: value, x, y, z, then the AO Hessian (xx, yy, zz, xy, xz, yz).
         Eigen::MatrixXd input(n, 10 * capacity);
-        Eigen::MatrixXd product(n, 4 * capacity);
+        Eigen::MatrixXd product_storage(n, 4 * capacity);
+        Eigen::MatrixXd ao_kept, p_kept;
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
@@ -340,24 +342,30 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                 const std::size_t start = static_cast<std::size_t>(block) * block_size;
                 const std::size_t size = std::min(block_size, count - start);
                 const auto b = static_cast<Eigen::Index>(size);
-                // The value and gradient panels are contiguous, so a single GEMM
-                // applies P to all four, improving reuse of the (potentially large) P.
                 evaluator_.evaluate_derivatives_batch(
                     points.middleCols(static_cast<Eigen::Index>(start), b), 2,
                     input.leftCols(10 * b));
-                const auto phi = input.middleCols(0, b);
-                product.leftCols(4 * b).noalias() = p * input.leftCols(4 * b);
+                // Contract only the AOs that are significant somewhere in the block.
+                const auto kept =
+                    detail::significant_aos(input.leftCols(10 * b), screening_threshold);
+                const auto ao = detail::kept_rows(input.leftCols(10 * b), kept, ao_kept);
+                const Eigen::MatrixXd& pk = detail::kept_submatrix(p, kept, p_kept);
+                const auto m = static_cast<Eigen::Index>(kept.size());
+                // The value and gradient panels are contiguous, so a single GEMM
+                // applies P to all four, improving reuse of the (potentially large) P.
+                auto product = product_storage.topLeftCorner(m, 4 * b);
+                product.noalias() = pk * ao.leftCols(4 * b);
+                const auto phi = ao.middleCols(0, b);
                 const auto y = product.middleCols(0, b);
                 for (Eigen::Index j = 0; j < b; ++j) {
                     auto& out = result[start + static_cast<std::size_t>(j)];
                     out.value = phi.col(j).dot(y.col(j));
                     for (int a = 0; a < 3; ++a) {
-                        const auto ga = input.col((a + 1) * b + j);
+                        const auto ga = ao.col((a + 1) * b + j);
                         out.gradient[a] = 2.0 * ga.dot(y.col(j));
                         out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
                         for (int c = a; c < 3; ++c) {
-                            const auto hac =
-                                input.col((4 + detail::ao_hessian_column[a][c]) * b + j);
+                            const auto hac = ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
                             const double v =
                                 2.0 * (hac.dot(y.col(j)) + ga.dot(product.col((c + 1) * b + j)));
                             out.hessian(a, c) = out.hessian(c, a) = v;
@@ -379,11 +387,13 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
 // combinations of their contractions, never reconstructed from MO occupations.
 std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-    const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
+    const std::vector<Spin>& components, std::size_t block_size, int ao_order,
+    double screening_threshold) const {
     if (ao_order != 1 && ao_order != 2)
         throw std::invalid_argument("shared AO derivative order must be 1 or 2");
     if (block_size == 0) throw std::invalid_argument("block size must be positive");
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
+    detail::validate_screening_threshold(screening_threshold);
     const std::size_t count = static_cast<std::size_t>(points.cols());
     std::map<Spin, std::vector<DensityDerivatives>> result;
     bool total_needed = false, spin_needed = false;
@@ -410,9 +420,10 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
         // AO panels: value, x, y, z and, for order 2, the AO Hessian.
         const int panels = BasisEvaluator::derivative_panel_count(ao_order);
         Eigen::MatrixXd input(n, panels * capacity);
-        Eigen::MatrixXd product_total, product_spin;
-        if (total_needed) product_total.resize(n, 4 * capacity);
-        if (spin_needed) product_spin.resize(n, 4 * capacity);
+        Eigen::MatrixXd total_storage, spin_storage;
+        if (total_needed) total_storage.resize(n, 4 * capacity);
+        if (spin_needed) spin_storage.resize(n, 4 * capacity);
+        Eigen::MatrixXd ao_kept, total_kept, spin_kept;
 #ifdef _OPENMP
 #pragma omp for schedule(static)
 #endif
@@ -424,27 +435,40 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                 evaluator_.evaluate_derivatives_batch(
                     points.middleCols(static_cast<Eigen::Index>(start), b), ao_order,
                     input.leftCols(panels * b));
-                const auto phi = input.middleCols(0, b);
+                // Contract only the AOs that are significant somewhere in the block.
+                const auto kept =
+                    detail::significant_aos(input.leftCols(panels * b), screening_threshold);
+                const auto ao = detail::kept_rows(input.leftCols(panels * b), kept, ao_kept);
+                const auto m = static_cast<Eigen::Index>(kept.size());
+                const auto phi = ao.middleCols(0, b);
+                // P times the value and gradient panels (empty if not needed).
+                const auto product_panel = [&](Eigen::MatrixXd& storage, bool needed) {
+                    return storage.topLeftCorner(needed ? m : 0, needed ? 4 * b : 0);
+                };
+                auto product_total = product_panel(total_storage, total_needed);
+                auto product_spin = product_panel(spin_storage, spin_needed);
                 if (total_needed)
-                    product_total.leftCols(4 * b).noalias() = total_ * input.leftCols(4 * b);
+                    product_total.noalias() =
+                        detail::kept_submatrix(total_, kept, total_kept) * ao.leftCols(4 * b);
                 if (spin_needed)
-                    product_spin.leftCols(4 * b).noalias() = spin_ * input.leftCols(4 * b);
+                    product_spin.noalias() =
+                        detail::kept_submatrix(spin_, kept, spin_kept) * ao.leftCols(4 * b);
                 // Construct the canonical contractions once, then combine their
                 // linear primitive properties for alpha/beta as needed.
                 for (Eigen::Index j = 0; j < b; ++j) {
                     DensityDerivatives t, s;
-                    const auto contract = [&](const Eigen::MatrixXd& product,
+                    const auto contract = [&](const Eigen::Ref<const Eigen::MatrixXd>& product,
                                               DensityDerivatives& out) {
                         const auto y = product.col(j);
                         out.value = phi.col(j).dot(y);
                         for (int a = 0; a < 3; ++a) {
-                            const auto ga = input.col((a + 1) * b + j);
+                            const auto ga = ao.col((a + 1) * b + j);
                             out.gradient[a] = 2.0 * ga.dot(y);
                             out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
                             if (ao_order == 2)
                                 for (int c = a; c < 3; ++c) {
                                     const auto hac =
-                                        input.col((4 + detail::ao_hessian_column[a][c]) * b + j);
+                                        ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
                                     const double v =
                                         2.0 * (hac.dot(y) + ga.dot(product.col((c + 1) * b + j)));
                                     out.hessian(a, c) = out.hessian(c, a) = v;

@@ -18,7 +18,11 @@ inline void validate_screening_threshold(double threshold) {
 ///
 /// Returns the rows of `ao` (one AO per row, one point per column) whose
 /// absolute value exceeds `threshold` at least at one point of the block.
-/// With threshold 0 every row is kept, so the contraction is exact.
+/// With threshold 0 every row is kept, so the contraction is exact. For
+/// density derivatives, `ao` holds the value and derivative panels side by
+/// side, so an AO is dropped only if its value and all its derivatives are
+/// negligible; every dropped term of the derivative contractions then still
+/// contains a factor of magnitude <= threshold.
 ///
 /// Every dropped term of phi^T P phi contains a dropped AO factor of
 /// magnitude <= threshold. With the default 1e-12 the observed change in the
@@ -54,5 +58,25 @@ inline Eigen::MatrixXd select_submatrix(const Eigen::MatrixXd& matrix,
             result(row, column) = matrix(indices[static_cast<std::size_t>(row)],
                                          indices[static_cast<std::size_t>(column)]);
     return result;
+}
+
+/// The rows `kept` of `matrix`: a view of `matrix` itself when every row is
+/// kept, otherwise a copy placed in `storage`.
+inline Eigen::Ref<const Eigen::MatrixXd> kept_rows(const Eigen::Ref<const Eigen::MatrixXd>& matrix,
+                                                   const std::vector<Eigen::Index>& kept,
+                                                   Eigen::MatrixXd& storage) {
+    if (static_cast<Eigen::Index>(kept.size()) == matrix.rows()) return matrix;
+    storage = select_rows(matrix, kept);
+    return storage;
+}
+
+/// matrix(kept, kept): `matrix` itself when every AO is kept, otherwise a
+/// copy placed in `storage`.
+inline const Eigen::MatrixXd& kept_submatrix(const Eigen::MatrixXd& matrix,
+                                             const std::vector<Eigen::Index>& kept,
+                                             Eigen::MatrixXd& storage) {
+    if (static_cast<Eigen::Index>(kept.size()) == matrix.rows()) return matrix;
+    storage = select_submatrix(matrix, kept);
+    return storage;
 }
 } // namespace chem::kumo::detail
