@@ -275,6 +275,12 @@ acrolein and HBC 6-31G(d,p), which has Cartesian d and SP shells):
 - the Evaluator returns the same values as the pointwise engine, for any
   block size, request and number of threads.
 
+The test `multiwfn-reference` also compares the ESP of water and O2 with
+Multiwfn 2026.9.1 Cube files (its original analytic ESP code), point by
+point: they agree within 2e-5 relative plus 1e-7 hartree/e, the rounding of
+the reference files and of their grid coordinates (see
+[tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
+
 ## Errors and limitations
 
 Malformed or unsupported FCHK records, invalid grids, and out-of-range MO
