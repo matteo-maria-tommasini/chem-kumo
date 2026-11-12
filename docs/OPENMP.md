@@ -13,7 +13,9 @@ The `Evaluator` point path (all density derivatives, and AO_MO densities)
 runs its blocks of `block_size` grid points on worker threads with
 `schedule(dynamic)`; each block is passed to the serial block kernel on its
 own, so block boundaries and results do not depend on the thread count.
-The pointwise derivative APIs remain serial. No AO screening is introduced.
+The pointwise derivative APIs remain serial. AO screening (1.5.0) is
+decided per block of grid points and the AO shell cutoff (1.6.0) per point,
+so neither depends on the thread count; see [API.md](API.md).
 
 ## Building and testing
 
