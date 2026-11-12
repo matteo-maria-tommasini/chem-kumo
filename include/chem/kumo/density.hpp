@@ -15,9 +15,10 @@ struct AoMoTestAccess;
 /// For MO evaluation only Alpha and Beta are meaningful channels.
 enum class Spin { Total, Alpha, Beta, Difference };
 
-/// Default AO screening threshold for grid densities. In each block of grid
-/// points, AOs whose absolute value is at most this at every point are left
-/// out of the density-matrix contraction. The resulting change in the density
+/// Default AO screening threshold for grid densities and, with AO_P, their
+/// derivatives. In each block of grid points, AOs whose absolute value (and,
+/// for derivatives, that of their derivatives) is at most this at every
+/// point are left out of the density-matrix contraction. The resulting change in the density
 /// is at rounding level (about 1e-13 e/bohr^3 in the tested systems).
 /// A threshold of 0 disables screening and gives the exact contraction.
 inline constexpr double default_screening_threshold = 1e-12;
@@ -141,9 +142,13 @@ public:
     /// Evaluate spatial density derivatives at arbitrary Cartesian points.
     /// Each input column is a point in bohr; output order matches the columns.
     /// AO derivatives are shared within each block, with Eigen matrix contractions.
+    /// AOs whose value and derivatives are all at most screening_threshold
+    /// in a block are left out (see default_screening_threshold); it must be
+    /// finite and >= 0, and 0 gives the exact contraction.
     [[nodiscard]] std::vector<DensityDerivatives> density_derivatives_blocked(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-        Spin spin = Spin::Total, std::size_t block_size = 128) const;
+        Spin spin = Spin::Total, std::size_t block_size = 128,
+        double screening_threshold = default_screening_threshold) const;
     /// Point-by-point reference implementation, kept for numerical regression tests.
     [[nodiscard]] Field density_pointwise(const Grid& grid, Spin spin = Spin::Total) const;
     /// Evaluate total, alpha, beta and alpha-minus-beta together.
@@ -201,7 +206,8 @@ private:
     /// Internal multi-component AO-P contraction; one AO derivative evaluation per point.
     [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-        const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2) const;
+        const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2,
+        double screening_threshold = default_screening_threshold) const;
     [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>>
     density_derivatives_mo(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                            const std::vector<Spin>& components, std::size_t block_size,

@@ -158,7 +158,8 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                        ? molecule_->density_derivatives_mo(points, needed, options_.block_size,
                                                            std::max(0, plan.maximum_ao_order))
                        : molecule_->density_derivatives_shared(points, needed, options_.block_size,
-                                                               plan.maximum_ao_order);
+                                                               plan.maximum_ao_order,
+                                                               options_.screening_threshold);
         };
         evaluate_point_path(grid, n, options_.block_size, plan, backend, evaluate_block,
                             result.fields_);
