@@ -23,6 +23,7 @@ struct Options {
     std::string selector;
     std::string spin;
     std::string properties;
+    std::string backend;
     std::string prefix;
     double spacing = 0.20;
     double margin = 5.0;
@@ -40,6 +41,8 @@ void usage() {
               << "  --property density,gradient,laplacian,tau\n"
               << "                             Density properties to write (default density;\n"
               << "                             gradient is the norm |grad rho|)\n"
+              << "  --backend auto|ao-p|ao-mo  Density contraction (default auto: occupied MOs\n"
+              << "                             when they reproduce the FCHK density matrices)\n"
               << "  --mo N[,M:K,...]           Write 1-based molecular orbitals\n"
               << "  --mo homo|lumo|frontier    Frontier orbital selection\n"
               << "  --mo homo-2:lumo+2         Frontier-relative range\n"
@@ -85,6 +88,11 @@ Options parse(int argc, char** argv) {
             if (!o.properties.empty()) throw std::invalid_argument("--property specified twice");
             o.properties = lower(value());
             if (o.properties.empty()) throw std::invalid_argument("empty --property list");
+        } else if (a == "--backend") {
+            if (!o.backend.empty()) throw std::invalid_argument("--backend specified twice");
+            o.backend = lower(value());
+            if (o.backend != "auto" && o.backend != "ao-p" && o.backend != "ao-mo")
+                throw std::invalid_argument("--backend must be auto, ao-p or ao-mo");
         } else if (a == "--spacing")
             o.spacing = real(value());
         else if (a == "--margin")
@@ -106,6 +114,9 @@ Options parse(int argc, char** argv) {
     if (!o.properties.empty() && (o.mo_mode || o.list))
         throw std::invalid_argument(
             "--property applies only to densities, not to --mo or --list-mo");
+    if (!o.backend.empty() && (o.mo_mode || o.list))
+        throw std::invalid_argument(
+            "--backend applies only to densities, not to --mo or --list-mo");
     if (!(o.spacing > 0) || o.margin < 0)
         throw std::invalid_argument("invalid grid spacing or margin");
     if (!o.output_set) o.prefix = o.input.stem().string();
@@ -283,42 +294,70 @@ chem::kumo::Property density_property(Spin component, PropertyKind kind) {
     }
 }
 
-// Write gradient norms, Laplacians and tau for every requested density
-// component, evaluated together in one Evaluator request. The AO_P backend
-// is used, the same density-matrix contraction as the density Cube files.
-void write_density_derivatives(const Molecule& mol, const chem::kumo::Grid& grid,
-                               const std::vector<std::pair<Spin, std::string>>& components,
-                               const std::vector<DensityProperty>& properties,
-                               const std::string& prefix) {
+// Density contraction selected with --backend. AUTO uses the occupied MOs
+// (AO_MO) when they reproduce the FCHK density matrices, checked when the
+// FCHK is loaded, and the density matrices (AO_P) otherwise; AO_MO must not
+// be forced on an FCHK that fails that check.
+chem::kumo::Backend select_backend(const std::string& name, const Molecule& mol) {
+    if (name.empty() || name == "auto") return chem::kumo::Backend::AUTO;
+    if (name == "ao-p") return chem::kumo::Backend::AO_P;
+    if (!mol.electronic_structure_info().ao_mo_eligible())
+        throw std::invalid_argument("--backend ao-mo: the occupied orbitals in this FCHK do not "
+                                    "reproduce its density matrices; use auto or ao-p");
+    return chem::kumo::Backend::AO_MO;
+}
+
+std::string backend_label(chem::kumo::Backend backend) {
+    return backend == chem::kumo::Backend::AO_MO ? "AO-MO contraction"
+                                                 : "AO density-matrix contraction";
+}
+
+// Evaluate every requested property of every density component in one
+// Evaluator request and write one Cube file each: first the densities
+// (PREFIX_<component>.cube), then the derivatives
+// (PREFIX_<component>_<property>.cube). The gradient is written as its norm.
+// Each Cube comment names the quantity, its units, the component and the
+// contraction actually used.
+void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
+                              const std::vector<std::pair<Spin, std::string>>& components,
+                              const std::vector<DensityProperty>& properties,
+                              chem::kumo::Backend backend, const std::string& prefix) {
     chem::kumo::Request request;
     for (const auto& [component, suffix] : components)
         for (const auto& property : properties)
-            if (property.kind != PropertyKind::Density)
-                request.add(density_property(component, property.kind));
-    if (request.properties().empty()) return;
+            request.add(density_property(component, property.kind));
     chem::kumo::EvaluationOptions options;
-    options.backend = chem::kumo::Backend::AO_P;
+    options.backend = backend;
     const auto results = chem::kumo::Evaluator(mol, options).evaluate(grid, request);
-    for (const auto& [component, suffix] : components) {
-        for (const auto& property : properties) {
-            if (property.kind == PropertyKind::Density) continue;
-            const auto& field = results.get(density_property(component, property.kind));
-            std::vector<double> values(field.points);
-            if (property.kind == PropertyKind::Gradient) {
-                for (std::size_t q = 0; q < field.points; ++q)
-                    values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
-                                          field.component(1)[q] * field.component(1)[q] +
-                                          field.component(2)[q] * field.component(2)[q]);
-            } else {
-                const auto source = field.component();
-                std::copy(source.begin(), source.end(), values.begin());
-            }
-            const auto filename = prefix + "_" + suffix + "_" + property.name + ".cube";
-            chem::kumo::Field(grid, mol.atoms(), std::move(values))
-                .write_cube(filename, property.description + ", " + component_label(component));
-            std::cout << filename << "\n";
+    const auto used = backend_label(results.backend_used());
+    const auto write = [&](Spin component, const std::string& suffix,
+                           const DensityProperty& property) {
+        const auto& field = results.get(density_property(component, property.kind));
+        std::vector<double> values(field.points);
+        if (property.kind == PropertyKind::Gradient) {
+            for (std::size_t q = 0; q < field.points; ++q)
+                values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
+                                      field.component(1)[q] * field.component(1)[q] +
+                                      field.component(2)[q] * field.component(2)[q]);
+        } else {
+            const auto source = field.component();
+            std::copy(source.begin(), source.end(), values.begin());
         }
-    }
+        const auto filename = prefix + "_" + suffix +
+                              (property.kind == PropertyKind::Density ? "" : "_" + property.name) +
+                              ".cube";
+        chem::kumo::Field(grid, mol.atoms(), std::move(values))
+            .write_cube(filename,
+                        property.description + ", " + component_label(component) + ", " + used);
+        std::cout << filename << "\n";
+    };
+    for (const auto& property : properties)
+        if (property.kind == PropertyKind::Density)
+            for (const auto& [component, suffix] : components)
+                write(component, suffix, property);
+    for (const auto& [component, suffix] : components)
+        for (const auto& property : properties)
+            if (property.kind != PropertyKind::Density) write(component, suffix, property);
 }
 } // namespace
 
@@ -361,28 +400,8 @@ int main(int argc, char** argv) {
                     "density --spin must be total, alpha, beta, difference, or all");
             const auto properties =
                 select_properties(o.properties.empty() ? "density" : o.properties);
-            const bool write_density =
-                std::any_of(properties.begin(), properties.end(), [](const DensityProperty& p) {
-                    return p.kind == PropertyKind::Density;
-                });
-            if (!write_density) {
-                // Derivative properties only.
-            } else if (spin == "all") {
-                auto fields = mol.spin_densities(grid);
-                fields.total.write_cube(o.prefix + "_density.cube");
-                fields.alpha.write_cube(o.prefix + "_alpha.cube");
-                fields.beta.write_cube(o.prefix + "_beta.cube");
-                fields.spin.write_cube(o.prefix + "_spin.cube");
-            } else {
-                mol.density(grid, components.front().first)
-                    .write_cube(o.prefix + "_" + components.front().second + ".cube");
-            }
-            if (write_density)
-                for (const auto& [component, suffix] : components) {
-                    (void)component;
-                    std::cout << o.prefix << "_" << suffix << ".cube\n";
-                }
-            write_density_derivatives(mol, grid, components, properties, o.prefix);
+            write_density_properties(mol, grid, components, properties,
+                                     select_backend(o.backend, mol), o.prefix);
         }
         return 0;
     } catch (const std::exception& e) {

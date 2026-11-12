@@ -47,6 +47,33 @@ values "${PREFIX}_density_tau.cube" | awk '$1 < 0 {exit 1}' || {
     echo 'Negative total tau' >&2; exit 1; }
 values "${PREFIX}_density_laplacian.cube" | awk '$1 < 0 {found = 1} END {exit !found}' || {
     echo 'Total-density Laplacian has no negative values' >&2; exit 1; }
+# Density backends: the Cube comment names the contraction used, and the AO-MO
+# and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
+# selects AO-MO).
+for backend in auto ao-p ao-mo; do
+    "$KUMO" "$FCHK" --spacing 0.5 --margin 1.0 --output "$TMP/$backend" --backend "$backend" \
+        --property density,laplacian > "$TMP/$backend.log"
+done
+for backend in auto ao-mo; do
+    sed -n 2p "$TMP/${backend}_density.cube" | grep -Fq 'AO-MO contraction' || {
+        echo "--backend $backend: Cube comment does not name the AO-MO contraction" >&2; exit 1; }
+done
+sed -n 2p "$TMP/ao-p_density_laplacian.cube" | grep -Fq 'AO density-matrix contraction' || {
+    echo '--backend ao-p: Cube comment does not name the density-matrix contraction' >&2; exit 1; }
+for name in density density_laplacian; do
+    values "$TMP/ao-p_${name}.cube" > "$TMP/ao-p.values"
+    values "$TMP/ao-mo_${name}.cube" > "$TMP/ao-mo.values"
+    paste "$TMP/ao-p.values" "$TMP/ao-mo.values" | awk '
+        { d = $1 - $2; if (d < 0) d = -d; s = ($1 < 0 ? -$1 : $1); if (s < 1) s = 1
+          if (d > 1e-6 * s) bad = 1 }
+        END { exit bad }' || { echo "AO-P and AO-MO $name Cube files disagree" >&2; exit 1; }
+done
+if "$KUMO" "$FCHK" --spacing 1 --backend mo --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo 'Unknown --backend unexpectedly accepted' >&2; exit 1
+fi
+if "$KUMO" "$FCHK" --mo homo --backend ao-p --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    echo '--backend with --mo unexpectedly accepted' >&2; exit 1
+fi
 if "$KUMO" "$FCHK" --spacing 1 --property hessian --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     echo 'Unknown --property unexpectedly accepted' >&2; exit 1
 fi
