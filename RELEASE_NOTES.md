@@ -1,3 +1,33 @@
+# chem-kumo 1.7.1 — release notes
+
+A maintenance release: release builds with GCC 14 and 15 are now
+warning-free. There are no API, CLI or numerical changes; results are
+identical to 1.7.0.
+
+- Eigen is now a system dependency (`include_type: 'system'`, i.e.
+  `-isystem`). GCC 14 (Debian) and GCC 15 reported many
+  `-Wmaybe-uninitialized` and `-Wclass-memaccess` warnings inside Eigen 3.4
+  headers, known false positives of the optimizer; warnings raised inside
+  Eigen's headers are no longer reported, while warnings in this project's
+  code still are. The generated pkg-config file is unchanged.
+- `tests/cube_io_test.cpp` kept a lazy Eigen expression (`const auto`) that
+  referenced a temporary `Eigen::Vector3d` after the statement; the point
+  is now stored as a concrete `Eigen::Vector3d`. This affected only the
+  test.
+- The loop counter in the internal `factorial()` of the basis evaluator is
+  now `long long`, so it cannot overflow (GCC 15
+  `-Waggressive-loop-optimizations`); the multiplication order and the
+  results are unchanged.
+
+Validation:
+
+- 71/71 Meson tests passed on macOS ARM64 on 2026-11-12 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings; CI builds and tests on ubuntu-latest
+  and macos-latest.
+
+---
+
 # chem-kumo 1.7.0 — release notes
 
 The command-line tool chooses the faster density contraction by default and
