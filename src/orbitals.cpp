@@ -121,7 +121,7 @@ Field Molecule::orbital(const Grid& grid, std::size_t index, Spin channel) const
 }
 
 std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::size_t>& indices,
-                                      Spin channel) const {
+                                      Spin channel, const ProgressCallback& progress) const {
     check_channel(channel);
     const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
     if (coeff.cols() == 0) throw std::runtime_error("FCHK has no MO coefficients");
@@ -139,6 +139,7 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many orbital blocks for parallel evaluation");
     detail::FirstException worker_errors;
+    detail::Progress report(progress, count);
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if (nblocks > 1)
 #endif
@@ -157,6 +158,7 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
                 for (Eigen::Index t = 0; t < b; ++t)
                     buffers[mo][start + static_cast<std::size_t>(t)] =
                         psi(static_cast<Eigen::Index>(mo), t);
+            report.advance(size);
         } catch (...) {
             worker_errors.capture();
         }

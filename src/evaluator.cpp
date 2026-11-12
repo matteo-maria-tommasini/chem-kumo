@@ -85,7 +85,8 @@ template <typename BlockEvaluator>
 void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size,
                          const detail::EvaluationPlan& plan, Backend backend,
                          const BlockEvaluator& evaluate_block,
-                         std::map<Property, PropertyField>& fields) {
+                         std::map<Property, PropertyField>& fields,
+                         const ProgressCallback& progress) {
     std::vector<Spin> needed;
     for (auto component : all_components)
         if (uses_point_path(plan_for(plan, component), backend))
@@ -111,6 +112,7 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
                 store_block(output, key.kind, derivatives, start);
             }
         }
+        if (progress) progress(start + count, n);
     }
 }
 } // namespace
@@ -149,7 +151,24 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                                                                    std::vector<double>(n))});
     }
 
-    if (uses_point_path(plan, backend)) {
+    // Progress is reported over all passes on the grid: the point path (if
+    // any), then one pass per field evaluated on the grid path below.
+    const auto on_grid_path = [&](const Property& key) {
+        return key.kind == PropertyKind::Orbital ||
+               (key.kind == PropertyKind::Density && backend != Backend::AO_MO);
+    };
+    const bool point_pass = uses_point_path(plan, backend);
+    std::size_t passes = point_pass ? 1 : 0;
+    for (const auto& entry : result.fields_)
+        passes += on_grid_path(entry.first) ? 1 : 0;
+    std::size_t completed = 0; // points of the passes already finished
+    ProgressCallback pass_progress;
+    if (options_.progress)
+        pass_progress = [&](std::size_t done, std::size_t) {
+            options_.progress(completed + done, passes * n);
+        };
+
+    if (point_pass) {
         // The AO-MO and AO-P block kernels are private to Molecule; Evaluator
         // is a friend, so the call is wrapped here and passed to the helper.
         const auto evaluate_block = [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& points,
@@ -163,21 +182,24 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                                                                options_.screening_threshold);
         };
         evaluate_point_path(grid, n, options_.block_size, plan, backend, evaluate_block,
-                            result.fields_);
+                            result.fields_, pass_progress);
+        completed += n;
     }
 
     // Grid path: orbitals always, densities only with AO-P.
     for (auto& [key, output] : result.fields_) {
-        if (key.kind != PropertyKind::Density && key.kind != PropertyKind::Orbital) continue;
-        if (key.kind == PropertyKind::Density && backend == Backend::AO_MO) continue;
+        if (!on_grid_path(key)) continue;
         const Field field =
             key.kind == PropertyKind::Density
                 ? molecule_
                       ->densities_blocked(grid, {spin_of(key.component)}, options_.block_size,
-                                          options_.screening_threshold)
+                                          options_.screening_threshold, pass_progress)
                       .at(spin_of(key.component))
-                : molecule_->orbital(grid, key.orbital_index, spin_of(key.channel));
+                : molecule_
+                      ->orbitals(grid, {key.orbital_index}, spin_of(key.channel), pass_progress)
+                      .front();
         std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
+        completed += n;
     }
     return result;
 }

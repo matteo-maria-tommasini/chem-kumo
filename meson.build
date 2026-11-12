@@ -295,6 +295,16 @@ test(
     timeout: 300,
 )
 
+# Progress callbacks: monotonic, documented totals, identical results.
+test(
+    'progress',
+    executable('kumo-progress-test', 'tests/progress_test.cpp', dependencies: kumo_dep),
+    args: [
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+    ],
+)
+
 # The AO shell cutoff zeroes only AOs and derivatives below ao_cutoff.
 test(
     'ao-shell-cutoff',

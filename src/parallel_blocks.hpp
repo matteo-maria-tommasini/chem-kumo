@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
@@ -55,6 +56,43 @@ public:
 
 private:
     std::exception_ptr error_;
+};
+
+/// Reports progress of a block loop to an optional user callback
+/// (ProgressCallback in <chem/kumo/density.hpp>).
+///
+/// advance() may be called from any OpenMP worker; the callback calls are
+/// serialized, so it is never run concurrently and `done` increases
+/// monotonically. An exception thrown by the callback is rethrown by
+/// advance() outside the critical section, so that the block loop can
+/// capture it like any other error (see FirstException).
+class Progress {
+public:
+    Progress(const std::function<void(std::size_t, std::size_t)>& callback, std::size_t total)
+        : callback_(callback), total_(total) {}
+
+    /// Record that `points` more grid points are done.
+    void advance(std::size_t points) {
+        if (!callback_) return;
+        std::exception_ptr error;
+#ifdef _OPENMP
+#pragma omp critical(kumo_progress)
+#endif
+        {
+            try {
+                done_ += points;
+                callback_(done_, total_);
+            } catch (...) {
+                error = std::current_exception();
+            }
+        }
+        if (error) std::rethrow_exception(error);
+    }
+
+private:
+    const std::function<void(std::size_t, std::size_t)>& callback_;
+    std::size_t total_;
+    std::size_t done_ = 0;
 };
 
 } // namespace chem::kumo::detail
