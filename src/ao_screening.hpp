@@ -32,8 +32,16 @@ inline std::vector<Eigen::Index> significant_aos(const Eigen::Ref<const Eigen::M
                                                  double threshold) {
     std::vector<Eigen::Index> rows;
     rows.reserve(static_cast<std::size_t>(ao.rows()));
+    if (threshold == 0.0 || ao.cols() == 0) {
+        for (Eigen::Index row = 0; row < ao.rows(); ++row)
+            rows.push_back(row);
+        return rows;
+    }
+    // Reduce column by column: `ao` is column-major, so this reads it in
+    // memory order instead of striding along each row.
+    const Eigen::VectorXd largest = ao.cwiseAbs().rowwise().maxCoeff();
     for (Eigen::Index row = 0; row < ao.rows(); ++row)
-        if (threshold == 0.0 || ao.row(row).cwiseAbs().maxCoeff() > threshold) rows.push_back(row);
+        if (largest[row] > threshold) rows.push_back(row);
     return rows;
 }
 
@@ -42,9 +50,12 @@ inline std::vector<Eigen::Index> significant_aos(const Eigen::Ref<const Eigen::M
 /// between Eigen 3.4 and Eigen 5 (for example `Eigen::all`).
 inline Eigen::MatrixXd select_rows(const Eigen::Ref<const Eigen::MatrixXd>& matrix,
                                    const std::vector<Eigen::Index>& rows) {
-    Eigen::MatrixXd result(static_cast<Eigen::Index>(rows.size()), matrix.cols());
-    for (std::size_t i = 0; i < rows.size(); ++i)
-        result.row(static_cast<Eigen::Index>(i)) = matrix.row(rows[i]);
+    const auto n = static_cast<Eigen::Index>(rows.size());
+    Eigen::MatrixXd result(n, matrix.cols());
+    // Column by column, in the memory order of both column-major matrices.
+    for (Eigen::Index column = 0; column < matrix.cols(); ++column)
+        for (Eigen::Index i = 0; i < n; ++i)
+            result(i, column) = matrix(rows[static_cast<std::size_t>(i)], column);
     return result;
 }
 

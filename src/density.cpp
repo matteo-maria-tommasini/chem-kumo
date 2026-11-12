@@ -511,7 +511,8 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
 // AO-P remains available as the general density-matrix reference.
 std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-    const std::vector<Spin>& components, std::size_t block_size, int ao_order) const {
+    const std::vector<Spin>& components, std::size_t block_size, int ao_order,
+    double screening_threshold) const {
     if (!electronic_info_.ao_mo_eligible())
         throw std::invalid_argument("AO-MO backend is not eligible for this molecule");
     if (ao_order < 0 || ao_order > 2)
@@ -519,6 +520,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
     if (block_size == 0 || block_size > 65536)
         throw std::invalid_argument("invalid AO-MO block size");
     if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
+    detail::validate_screening_threshold(screening_threshold);
     const std::size_t count = static_cast<std::size_t>(points.cols());
     std::map<Spin, std::vector<DensityDerivatives>> result;
     for (Spin c : components) {
@@ -555,12 +557,15 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
         // xz, yz) as far as ao_order requires.
         const int panels = ao_order == 0 ? 1 : BasisEvaluator::derivative_panel_count(ao_order);
         Eigen::MatrixXd ao(n, panels * cap);
-        // Each spin channel is projected once per block, using all occupied MOs.
-        const auto project = [&](const Eigen::MatrixXd& c, Eigen::Index b,
-                                 std::array<Eigen::MatrixXd, 10>& projected) {
+        Eigen::MatrixXd ao_kept, ca_kept, cb_kept;
+        // Each spin channel is projected once per block, using all occupied
+        // MOs: projected[a] = c^T * (AO panel a), restricted to the kept AOs.
+        const auto project = [&](const Eigen::Ref<const Eigen::MatrixXd>& c,
+                                 const Eigen::Ref<const Eigen::MatrixXd>& panels_kept,
+                                 Eigen::Index b, std::array<Eigen::MatrixXd, 10>& projected) {
             if (c.cols() == 0) return;
             for (int a = 0; a < panels; ++a)
-                projected[a].noalias() = c.transpose() * ao.middleCols(a * b, b);
+                projected[a].noalias() = c.transpose() * panels_kept.middleCols(a * b, b);
         };
         const auto contract = [&](const std::array<Eigen::MatrixXd, 10>& v, Eigen::Index j) {
             DensityDerivatives d;
@@ -594,9 +599,15 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                 else
                     evaluator_.evaluate_derivatives_batch(block_points, ao_order,
                                                           ao.leftCols(panels * b));
+                // Screening: AOs negligible (value and derivatives) everywhere in
+                // the block are dropped from the AO panels and the MO coefficients.
+                const auto all = ao.leftCols(panels * b);
+                const auto kept = detail::significant_aos(all, screening_threshold);
+                const auto panels_kept = detail::kept_rows(all, kept, ao_kept);
                 std::array<Eigen::MatrixXd, 10> va, vb;
-                if (need_a) project(ca_occ, b, va);
-                if (need_b && !beta_is_alpha) project(cb_occ, b, vb);
+                if (need_a) project(detail::kept_rows(ca_occ, kept, ca_kept), panels_kept, b, va);
+                if (need_b && !beta_is_alpha)
+                    project(detail::kept_rows(cb_occ, kept, cb_kept), panels_kept, b, vb);
                 for (Eigen::Index j = 0; j < b; ++j) {
                     const auto a = need_a ? contract(va, j) : DensityDerivatives{};
                     DensityDerivatives beta;
