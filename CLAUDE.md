@@ -61,8 +61,9 @@ make a test pass without explicit approval.
   local check; `tests/grid_validation_test.cpp` covers every entry point.
 - Compiler warnings are enabled (`warning_level=2`); keep the build warning-free.
   CI configures with `-Dwerror=true`, so any warning fails the build.
-- CI also runs the whole test suite with AddressSanitizer and
-  UndefinedBehaviorSanitizer (job `sanitizers (ubuntu-latest)`). To run it
+- CI also runs the test suite with AddressSanitizer and
+  UndefinedBehaviorSanitizer (job `sanitizers (ubuntu-latest)`), skipping
+  the `slow` suite (HBC screening cases, too slow under GCC sanitizers). To run it
   locally: `meson setup build-asan --buildtype=debugoptimized
   -Db_sanitize=address,undefined -Db_lundef=false` (about 1 minute on
   Apple M). `PropertyField::component()` and similar accessors return views
