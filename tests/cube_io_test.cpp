@@ -114,7 +114,9 @@ int main() {
         require(loaded.field.values().size() == samples.size());
         for (std::size_t i = 0; i < samples.size(); ++i)
             require(std::abs(loaded.field.values()[i] - samples[i]) < 1e-11);
-        const auto point = grid.origin + grid.steps * Eigen::Vector3d(0.4, 1.2, 2.3);
+        // A concrete Vector3d, not auto: an auto Eigen expression would keep a
+        // reference to the temporary Vector3d after this statement.
+        const Eigen::Vector3d point = grid.origin + grid.steps * Eigen::Vector3d(0.4, 1.2, 2.3);
         chem::kumo::FieldSampler sampler(loaded.field);
         require(sampler.sample(point).inside);
 

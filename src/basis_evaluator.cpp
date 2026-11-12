@@ -15,7 +15,8 @@ namespace {
 double factorial(int n) {
     if (n < 0) throw std::runtime_error("negative factorial argument");
     double value = 1.0;
-    for (int i = 2; i <= n; ++i)
+    // A wider counter cannot overflow at i == n, even for n == INT_MAX.
+    for (long long i = 2; i <= n; ++i)
         value *= static_cast<double>(i);
     return value;
 }
