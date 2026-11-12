@@ -208,26 +208,74 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
 // Electrostatic potential pass, in blocks of grid points scheduled like the
 // point path; each point is computed independently with a fixed summation
 // order, so the values do not depend on the number of threads.
-void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, std::size_t block_size,
+// Electrostatic potential pass. The grid is split into clusters of up to
+// cluster_side^3 points (index boxes), each evaluated around its own centre
+// with one far-field plan whose radius covers the largest cluster. Cluster
+// boundaries depend only on the grid, and each value only on its point, its
+// cluster and the plan, so the result does not depend on the number of
+// threads or on the block size.
+constexpr int cluster_side = 8;
+
+void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double tolerance,
                                       const detail::ElectrostaticPotential& potential,
                                       std::vector<double>& output,
                                       const ProgressCallback& progress) {
-    const std::size_t nblocks =
-        detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
+    Eigen::Vector3i tiles, extent;
+    for (int a = 0; a < 3; ++a) {
+        extent[a] = std::min(cluster_side, grid.counts[a]);
+        tiles[a] = (grid.counts[a] + cluster_side - 1) / cluster_side;
+    }
+    // Largest distance from a cluster centre to its points: a corner of the
+    // largest index box.
+    double radius = 0.0;
+    for (int corner = 0; corner < 8; ++corner) {
+        Eigen::Vector3d offset;
+        for (int a = 0; a < 3; ++a)
+            offset[a] = ((corner >> a) & 1 ? 0.5 : -0.5) * (extent[a] - 1);
+        radius = std::max(radius, (grid.steps * offset).norm());
+    }
+    // Slightly enlarged to cover rounding in the point coordinates.
+    const auto plan = potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);
+
+    const auto ntiles = static_cast<std::int64_t>(tiles[0]) * tiles[1] * tiles[2];
     detail::FirstException worker_errors;
     detail::Progress report(progress, n);
 #ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if (nblocks > 1)
+#pragma omp parallel for schedule(dynamic) if (ntiles > 1)
 #endif
-    for (std::int64_t index = 0; index < static_cast<std::int64_t>(nblocks); ++index) {
+    for (std::int64_t index = 0; index < ntiles; ++index) {
         try {
-            const std::size_t start = static_cast<std::size_t>(index) * block_size;
-            const std::size_t count = std::min(block_size, n - start);
+            const Eigen::Vector3i tile(static_cast<int>(index / (tiles[1] * tiles[2])),
+                                       static_cast<int>((index / tiles[2]) % tiles[1]),
+                                       static_cast<int>(index % tiles[2]));
+            Eigen::Vector3i begin, end;
+            for (int a = 0; a < 3; ++a) {
+                begin[a] = tile[a] * cluster_side;
+                end[a] = std::min(begin[a] + cluster_side, grid.counts[a]);
+            }
+            const Eigen::Vector3i size = end - begin;
+            const auto count = static_cast<std::size_t>(size.prod());
             Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
-            for (std::size_t local = 0; local < count; ++local)
-                points.col(static_cast<Eigen::Index>(local)) =
-                    detail::grid_point(grid, start + local);
-            potential.evaluate(points, std::span<double>(output.data() + start, count));
+            std::vector<std::size_t> targets(count);
+            std::size_t local = 0;
+            for (int i = begin[0]; i < end[0]; ++i)
+                for (int j = begin[1]; j < end[1]; ++j)
+                    for (int k = begin[2]; k < end[2]; ++k, ++local) {
+                        points.col(static_cast<Eigen::Index>(local)) =
+                            grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
+                        targets[local] = (static_cast<std::size_t>(i) *
+                                              static_cast<std::size_t>(grid.counts[1]) +
+                                          static_cast<std::size_t>(j)) *
+                                             static_cast<std::size_t>(grid.counts[2]) +
+                                         static_cast<std::size_t>(k);
+                    }
+            const Eigen::Vector3d center =
+                grid.origin +
+                grid.steps * (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>());
+            std::vector<double> values(count);
+            potential.evaluate_cluster(points, center, plan, values);
+            for (std::size_t p = 0; p < count; ++p)
+                output[targets[p]] = values[p];
             report.advance(count);
         } catch (...) {
             worker_errors.capture();
@@ -242,6 +290,8 @@ Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
     if (!options.block_size || options.threads < 0)
         throw std::invalid_argument("invalid evaluation options");
     detail::validate_screening_threshold(options.screening_threshold);
+    if (!std::isfinite(options.potential_tolerance) || options.potential_tolerance < 0.0)
+        throw std::invalid_argument("potential tolerance must be finite and nonnegative");
     if (options.backend != Backend::AUTO && options.backend != Backend::AO_P &&
         options.backend != Backend::AO_MO)
         throw std::invalid_argument("unknown evaluation backend");
@@ -314,7 +364,7 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
                                                        molecule_->density_matrix(Spin::Total),
                                                        molecule_->atoms());
         evaluate_electrostatic_potential(
-            grid, n, options_.block_size, potential,
+            grid, n, options_.potential_tolerance, potential,
             result.fields_.at(density::total.electrostatic_potential()).components[0],
             pass_progress);
         completed += n;
