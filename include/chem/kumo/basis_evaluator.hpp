@@ -42,6 +42,13 @@ struct CartesianAOMoments {
 /// Batch output stores one AO vector per column.
 class BasisEvaluator {
 public:
+    /// Shell cutoff: at a point farther from a shell's center than its cutoff
+    /// radius, a rigorous bound on the magnitude of each of the shell's AOs
+    /// and of their first and second derivatives is at most this value, and
+    /// they are returned as exact zeros instead of being computed.
+    /// evaluate_into_reference() does not apply the cutoff.
+    static constexpr double ao_cutoff = 1e-14;
+
     explicit BasisEvaluator(BasisSet basis);
 
     [[nodiscard]] const BasisSet& basis() const noexcept { return basis_; }
@@ -86,6 +93,10 @@ private:
         Eigen::MatrixXd pure_transform;
         std::size_t output_offset = 0;
         std::size_t output_count = 0;
+        /// Squared distance from origin beyond which every function of the
+        /// shell, and its first and second derivatives, is at most
+        /// ao_cutoff in magnitude; such points get exact zeros.
+        double cutoff_radius2 = 0.0;
     };
 
     void evaluate_into_impl_reference(const Eigen::Vector3d& point,
