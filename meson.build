@@ -7,7 +7,11 @@ project(
 )
 # Single source of truth for version strings in the CLI and Cube headers.
 add_project_arguments('-DCHEM_KUMO_VERSION="' + meson.project_version() + '"', language: 'cpp')
-eigen_dep = dependency('eigen3', required: true)
+# Eigen is included as a system dependency (-isystem), so that compiler
+# warnings raised inside Eigen's own headers, such as GCC's known
+# -Wmaybe-uninitialized false positives in Eigen 3.4, are not reported.
+# Warnings in this project's code are unaffected.
+eigen_dep = dependency('eigen3', required: true, include_type: 'system')
 zlib_dep = dependency('zlib', required: true)
 # Optional OpenMP for independent grid blocks in density, derivative and MO evaluations.
 # Fail explicitly if the user requests OpenMP but the toolchain lacks it.
