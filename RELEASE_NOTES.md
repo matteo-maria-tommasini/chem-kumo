@@ -1,3 +1,73 @@
+# chem-kumo 1.10.0 — release notes
+
+The library and the `kumo` CLI analyse the electrostatic potential (ESP) on
+a molecular surface, an isosurface of the total electron density, with the
+statistics of Politzer and Murray. The public API gains a header and is
+otherwise source-compatible; `Molecule` has a new friend declaration, so
+rebuild code that links against libkumo. Existing outputs are unchanged.
+
+Library changes:
+
+- New header `<chem/kumo/surface.hpp>` (included by `<chem/kumo.hpp>`):
+  `electrostatic_potential_surface(molecule, SurfaceOptions)` returns a
+  `PotentialSurface` with the mesh, the potential at its vertices
+  (hartree/e) and its `SurfaceStatistics`. `SurfaceOptions` sets the
+  density isovalue (default 0.001 e/bohr^3), the grid spacing (default
+  0.25 bohr) and the potential tolerance (default 1e-8 hartree/e).
+- `density_isosurface(molecule, isovalue, spacing)` returns the isosurface
+  alone as a `TriangleMesh` (vertices in bohr, outward-oriented triangles,
+  `area()` and `volume()`). It uses marching tetrahedra (six per grid cell)
+  and moves every vertex onto the analytic isosurface by safeguarded Newton
+  steps, to 1e-10 bohr. The mesh is closed and consistently oriented.
+  Isovalues below 1e-8 e/bohr^3 (`minimum_density_isovalue`) are rejected,
+  as is a surface extending more than 16 bohr beyond the atoms.
+- `surface_statistics(mesh, values, polar_threshold)` works for any
+  function given at the vertices and integrates its piecewise-linear
+  interpolation exactly, cutting triangles along V = 0 and |V| =
+  threshold: global and local extrema (Multiwfn's criterion), averages over
+  the surface and its positive and negative parts, the variances
+  sigma^2_+, sigma^2_- and sigma^2_tot, the balance of charges nu, the
+  internal charge separation Pi, the molecular polarity index MPI, and the
+  total, positive, negative and nonpolar areas.
+- The potential at the vertices uses the far-field approximations of the
+  Evaluator, within the tolerance at every vertex; results do not depend
+  on the number of OpenMP threads.
+
+CLI changes:
+
+- `kumo FILE --esp-surface` prints the analysis in hartree/e and kcal/mol,
+  with areas in bohr^2 and Angstrom^2, the enclosed volume and the local
+  extrema with their positions in Angstrom. It writes no Cube file.
+  `--isovalue` sets the density isovalue, and `--spacing` (default 0.25
+  bohr with `--esp-surface`) and `--esp-tolerance` apply as well.
+  Options that only concern Cube output are rejected with `--esp-surface`.
+
+Validation:
+
+- New test `molecular-surface`: on a sphere the mesh is closed with Euler
+  characteristic 2, its vertices lie on the sphere within 1e-9 bohr, area
+  and volume converge at second order and the statistics of a linear
+  function agree with their closed forms; on an octahedron the statistics
+  agree with hand-computed integrals to 1e-14; on water and O2 the
+  vertices lie on rho = 0.001 within 1e-9 bohr, the potential agrees with
+  the exact one and 2 and 4 threads give identical results.
+- New test `multiwfn-surface-reference`: water, O2 and acrolein against
+  Multiwfn 2026.9.1 at 0.05 bohr (kumo at its default 0.25 bohr). The
+  tolerances are about three times the observed discretization
+  differences, documented in `tests/REFERENCE_CUBES.md`; the largest
+  difference is 35% of its tolerance.
+- 80/80 Meson tests passed on macOS ARM64 on 2026-11-13 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings. CI builds and tests on ubuntu-latest
+  and macos-latest, and runs the suite under AddressSanitizer and
+  UndefinedBehaviorSanitizer without the `slow` suite.
+
+Documentation: `docs/API.md`, `docs/OPENMP.md`, the README and the
+mathematics document describe the surface construction, the statistics
+and their accuracy.
+
+---
+
 # chem-kumo 1.9.1 — release notes
 
 A maintenance release after a code and documentation audit. There are no
