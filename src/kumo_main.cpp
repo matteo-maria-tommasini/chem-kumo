@@ -46,6 +46,8 @@ struct Options {
     bool margin_set = false;
     bool esp_surface = false;
     bool alie_surface = false;
+    bool surface_map = false; // --surface-map
+    bool ply = false;         // --ply
     bool mo_mode = false;
     bool list = false;
     bool verbose = false;
@@ -81,8 +83,13 @@ void usage() {
               << "  --alie-surface             Print the average local ionization energy\n"
               << "                             statistics on a density isosurface (as\n"
               << "                             --esp-surface)\n"
-              << "  --isovalue RHO             Isosurface of --esp-surface or --alie-surface\n"
-              << "                             (default 0.001)\n"
+              << "  --surface-map              Print the statistics of each --property (with\n"
+              << "                             --spin) on a density isosurface (as\n"
+              << "                             --esp-surface)\n"
+              << "  --isovalue RHO             Isosurface of --esp-surface, --alie-surface or\n"
+              << "                             --surface-map (default 0.001)\n"
+              << "  --ply                      With a surface option, also write the surface\n"
+              << "                             and its values to PREFIX_surface.ply (bohr)\n"
               << "  --point X,Y,Z|@N           Print the density properties at a point, in bohr\n"
               << "                             or at atom N (1-based); repeatable\n"
               << "  --line A:B                 Write the properties along the line through A\n"
@@ -251,6 +258,10 @@ Options parse(int argc, char** argv) {
             o.esp_tolerance_set = true;
         } else if (a == "--esp-surface")
             o.esp_surface = true;
+        else if (a == "--surface-map")
+            o.surface_map = true;
+        else if (a == "--ply")
+            o.ply = true;
         else if (a == "--alie-surface")
             o.alie_surface = true;
         else if (a == "--isovalue") {
@@ -313,20 +324,33 @@ Options parse(int argc, char** argv) {
         }
         if (!o.plane.empty() && !o.spacing_set) o.spacing = 0.10;
     }
-    if (o.esp_surface && o.alie_surface)
-        throw std::invalid_argument("choose --esp-surface or --alie-surface");
-    if (o.esp_surface || o.alie_surface) {
+    if ((o.esp_surface ? 1 : 0) + (o.alie_surface ? 1 : 0) + (o.surface_map ? 1 : 0) > 1)
+        throw std::invalid_argument("choose one of --esp-surface, --alie-surface or --surface-map");
+    if (o.surface_map) {
+        if (samplings > 0 || o.mo_mode || o.list || o.margin_set)
+            throw std::invalid_argument("--surface-map does not combine with --point, --line, "
+                                        "--plane, --mo, --list-mo or --margin");
+        if (o.properties.empty())
+            throw std::invalid_argument("--surface-map needs --property LIST");
+        if (o.output_set && !o.ply)
+            throw std::invalid_argument("--output applies to --surface-map only with --ply");
+        if (!o.spacing_set) o.spacing = 0.25;
+    } else if (o.esp_surface || o.alie_surface) {
         const std::string option = o.esp_surface ? "--esp-surface" : "--alie-surface";
         if (o.mo_mode || o.list || !o.properties.empty() || !o.spin.empty() || !o.backend.empty() ||
-            o.margin_set || o.output_set)
+            o.margin_set || (o.output_set && !o.ply))
             throw std::invalid_argument(option + " does not combine with --mo, --list-mo, "
-                                                 "--property, --spin, --backend, --margin or "
-                                                 "--output");
+                                                 "--property, --spin, --backend, --margin, or "
+                                                 "--output without --ply");
         if (o.alie_surface && o.esp_tolerance_set)
             throw std::invalid_argument("--esp-tolerance does not apply to --alie-surface");
         if (!o.spacing_set) o.spacing = 0.25;
     } else if (o.isovalue_set)
-        throw std::invalid_argument("--isovalue applies only to --esp-surface or --alie-surface");
+        throw std::invalid_argument(
+            "--isovalue applies only to --esp-surface, --alie-surface or --surface-map");
+    else if (o.ply)
+        throw std::invalid_argument(
+            "--ply applies only to --esp-surface, --alie-surface or --surface-map");
     if (!(o.spacing > 0) || o.margin < 0)
         throw std::invalid_argument("invalid grid spacing or margin");
     if (!std::isfinite(o.esp_tolerance) || o.esp_tolerance < 0)
@@ -796,6 +820,23 @@ void report_extrema(const std::string& name, const std::vector<std::size_t>& ver
     }
 }
 
+// --ply: PREFIX_surface.ply with the surface and one vertex property per
+// field (name, description, values); the file name follows the report.
+void write_surface_ply(const Options& o, const chem::kumo::TriangleMesh& mesh,
+                       const std::vector<std::pair<std::string, std::string>>& descriptions,
+                       std::vector<std::pair<std::string, std::vector<double>>> fields) {
+    std::ostringstream surface;
+    surface << "isosurface rho = " << o.isovalue << " e/bohr^3 of the total density, grid spacing "
+            << o.spacing << " bohr; x y z in bohr";
+    std::vector<std::string> comments{"kumo " CHEM_KUMO_VERSION ", " + o.input.filename().string(),
+                                      surface.str()};
+    for (const auto& [name, description] : descriptions)
+        comments.push_back(name + ": " + description);
+    const auto filename = o.prefix + "_surface.ply";
+    chem::kumo::write_ply(filename, mesh, fields, comments);
+    std::cout << '\n' << filename << '\n';
+}
+
 // --esp-surface: statistics of the electrostatic potential on the density
 // isosurface, as a report on standard output.
 void report_esp_surface(const Molecule& mol, const Options& o, Console& console) {
@@ -849,6 +890,10 @@ void report_esp_surface(const Molecule& mol, const Options& o, Console& console)
                    "kcal/mol", kcal);
     report_extrema("Surface maxima", s.local_maxima, surface.mesh, surface.potential, "hartree/e",
                    "kcal/mol", kcal);
+    if (o.ply)
+        write_surface_ply(o, surface.mesh,
+                          {{"esp", "Molecular electrostatic potential (hartree/e)"}},
+                          {{"esp", surface.potential}});
 }
 
 // --alie-surface: statistics of the average local ionization energy on the
@@ -882,6 +927,9 @@ void report_alie_surface(const Molecule& mol, const Options& o, Console& console
                    "hartree", "eV", ev);
     report_extrema("Surface maxima", s.local_maxima, surface.mesh, surface.ionization_energy,
                    "hartree", "eV", ev);
+    if (o.ply)
+        write_surface_ply(o, surface.mesh, {{"alie", "Average local ionization energy (hartree)"}},
+                          {{"alie", surface.ionization_energy}});
 }
 
 // "Grid: 170 x 178 x 51 = 1,543,260 points, spacing 0.200 bohr, margin 5.000 bohr".
@@ -1209,6 +1257,101 @@ void write_profile(const Molecule& mol, const Options& o, const DensitySelection
     if (!out) throw std::runtime_error("write failed: " + filename);
     std::cout << filename << "\n";
 }
+
+// Value in a surface report, in scientific notation.
+std::string scientific(double value, int width = 17) {
+    std::ostringstream out;
+    if (std::isnan(value))
+        out << std::setw(width) << "n/a";
+    else
+        out << std::scientific << std::setprecision(8) << std::setw(width) << value;
+    return out.str();
+}
+
+// --surface-map: statistics of each selected property on the density
+// isosurface, then (with --ply) the surface file. At most `listed` local
+// extrema of each kind are printed.
+void report_surface_map(const Molecule& mol, const Options& o, const DensitySelection& selection,
+                        Console& console) {
+    constexpr std::size_t listed = 20;
+    std::vector<chem::kumo::Property> properties;
+    std::vector<std::pair<std::string, std::string>> labels; // column name, description
+    for (const auto& [component, suffix] : selection.components)
+        for (const auto& property : selection.properties) {
+            if (property.kind == PropertyKind::Gradient)
+                throw std::invalid_argument(
+                    "--surface-map cannot map the gradient (a vector); choose another property");
+            properties.push_back(density_property(component, property.kind));
+            const char* names[] = {"total", "alpha", "beta", "spin"};
+            const auto index = component == Spin::Total   ? 0
+                               : component == Spin::Alpha ? 1
+                               : component == Spin::Beta  ? 2
+                                                          : 3;
+            auto name = property.name + "_" + names[index];
+            std::replace(name.begin(), name.end(), '-', '_');
+            labels.emplace_back(name, property.description + ", " + component_label(component));
+        }
+    chem::kumo::EvaluationOptions options;
+    options.backend = selection.backend;
+    options.potential_tolerance = o.esp_tolerance;
+    console.begin(evaluation_summary(selection.components, selection.properties) +
+                  " on the density isosurface");
+    const auto surface =
+        chem::kumo::map_on_density_isosurface(mol, properties, o.isovalue, o.spacing, options);
+    console.end("Computed in");
+
+    auto& out = std::cout;
+    out << "Density properties on the total-density isosurface rho = " << o.isovalue
+        << " e/bohr^3\n"
+        << "Surface: " << surface.mesh.vertices.size() << " vertices, "
+        << surface.mesh.triangles.size() << " triangles, grid spacing " << o.spacing << " bohr\n";
+    report_areas(surface.mesh, surface.statistics.front().area,
+                 {{"Area", surface.statistics.front().area}});
+    for (std::size_t f = 0; f < properties.size(); ++f) {
+        const auto& s = surface.statistics[f];
+        const auto& values = surface.values[f];
+        out << "\n"
+            << labels[f].first << ": " << labels[f].second << ", "
+            << method_label(properties[f].kind, surface.backend_used, o.esp_tolerance) << "\n\n";
+        const auto line = [&](const std::string& name, double value) {
+            out << row(name) << scientific(value) << '\n';
+        };
+        line("Minimum", s.minimum);
+        line("Maximum", s.maximum);
+        line("Average", s.average);
+        line("Positive average", s.positive_average);
+        line("Negative average", s.negative_average);
+        line("Average deviation Pi", s.charge_separation);
+        line("Variance sigma^2_tot", s.total_variance);
+        line("Positive variance sigma^2_+", s.positive_variance);
+        line("Negative variance sigma^2_-", s.negative_variance);
+        out << '\n';
+        report_areas(surface.mesh, s.area,
+                     {{"Positive area", s.positive_area}, {"Negative area", s.negative_area}});
+        const auto extrema = [&](const std::string& name, const std::vector<std::size_t>& found) {
+            out << '\n'
+                << name << ": " << found.size() << "\n"
+                << "     #" << std::setw(17) << "value" << std::setw(33) << "x, y, z (Angstrom)\n";
+            for (std::size_t i = 0; i < std::min(found.size(), listed); ++i) {
+                const auto& x = surface.mesh.vertices[found[i]];
+                out << std::setw(6) << i + 1 << scientific(values[found[i]])
+                    << cell(x.x() * bohr_in_angstrom, 5, 11)
+                    << cell(x.y() * bohr_in_angstrom, 5, 11)
+                    << cell(x.z() * bohr_in_angstrom, 5, 11) << '\n';
+            }
+            if (found.size() > listed)
+                out << "   (" << found.size() - listed << " more not listed)\n";
+        };
+        extrema("Surface minima", s.local_minima);
+        extrema("Surface maxima", s.local_maxima);
+    }
+    if (o.ply) {
+        std::vector<std::pair<std::string, std::vector<double>>> fields;
+        for (std::size_t f = 0; f < properties.size(); ++f)
+            fields.emplace_back(labels[f].first, surface.values[f]);
+        write_surface_ply(o, surface.mesh, labels, std::move(fields));
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1234,6 +1377,12 @@ int main(int argc, char** argv) {
             if (o.spin == "beta" || o.spin == "both") list_mos(mol, Spin::Beta);
             if (!(o.spin.empty() || o.spin == "alpha" || o.spin == "beta" || o.spin == "both"))
                 throw std::invalid_argument("--list-mo accepts alpha, beta, or both");
+            return 0;
+        }
+        if (o.surface_map) {
+            const auto selection = select_density(o, mol, console);
+            report_surface_map(mol, o, selection, console);
+            console.finish();
             return 0;
         }
         if (o.esp_surface || o.alie_surface) {

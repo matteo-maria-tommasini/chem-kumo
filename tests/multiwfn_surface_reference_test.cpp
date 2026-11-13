@@ -1,5 +1,6 @@
-// Surface analyses against Multiwfn: the electrostatic potential (ESP) and
-// the average local ionization energy (ALIE).
+// Surface analyses against Multiwfn: the electrostatic potential (ESP), the
+// average local ionization energy (ALIE), and the local electron attachment
+// energy (LEAE) and local electron affinity (LEA) mapped on the surface.
 //
 // The references (tests/data/multiwfn/*_esp_surface.txt and
 // *_alie_surface.txt, provenance in tests/REFERENCE_CUBES.md) are Multiwfn's
@@ -21,6 +22,18 @@
 //   value within 1e-6 at 0.05 bohr) and 0.14 bohr for their positions. Local ALIE
 //   maxima lie on sharp ridges at the hydrogen tips, where their number and
 //   values depend on the mesh, so they are not compared.
+// - LEAE, from map_on_density_isosurface() on rho = 0.004 (Multiwfn moves to
+//   this isosurface for LEAE, as in the original work): 3.0e-4 relative for
+//   the average, 7.6e-3 for the variance (O2; 1e-3 with kumo at 0.05 bohr),
+//   4.6e-7 hartree for the global minimum, 1.8e-5 hartree and 0.07 bohr for
+//   the six local minima of acrolein (the pi* lobes; the global ones on the
+//   beta carbon). Local maxima are not compared: they are the zeros on the
+//   nodal plane. The local extrema of O2 lie on rings.
+// - LEA of acrolein on rho = 0.001: 5.1e-5 relative for the average, 1.7e-3
+//   for the variance, 1.2e-5 hartree for the global extrema, and 1.9e-3
+//   hartree and 0.15 bohr for the local minima, which lie on ridges near
+//   the hydrogens and converge to Multiwfn's values within 3e-5 hartree at
+//   0.05 bohr.
 
 #include "chem/kumo.hpp"
 #include "test_support.hpp"
@@ -39,6 +52,7 @@ namespace {
 // Multiwfn's conversion factors (define.f90): its kcal/mol values are
 // converted back to hartree with the same factor.
 constexpr double multiwfn_kcal = 627.51;
+constexpr double multiwfn_ev = 27.2113838;
 constexpr double bohr_in_angstrom = 0.529177210903;
 
 std::vector<std::string> read_lines(const std::string& path) {
@@ -232,13 +246,56 @@ void check_alie(const chem::kumo::Molecule& mol, const std::vector<std::string>&
                         extrema(lines, "minima"), 8e-4, label + " minimum");
 }
 
+// A property mapped with map_on_density_isosurface() (LEAE on rho = 0.004,
+// where Multiwfn analyses it, or LEA on rho = 0.001): volume, area, global
+// extrema, average and variance, and optionally the local minima.
+struct MappedTolerances {
+    double global;   // hartree, global extrema
+    double minima;   // hartree, local minima
+    double average;  // relative
+    double variance; // relative
+};
+
+void check_mapped(const chem::kumo::Molecule& mol, const std::vector<std::string>& lines,
+                  const std::string& label, chem::kumo::Property property, double isovalue,
+                  bool local_minima, const MappedTolerances& tolerance) {
+    const auto surface = chem::kumo::map_on_density_isosurface(mol, {property}, isovalue);
+    const auto& s = surface.statistics.front();
+    const auto& values = surface.values.front();
+    const auto kcal = [&](const std::string& key, std::size_t index) {
+        return value_after(lines, key, index) / multiwfn_kcal;
+    };
+
+    const double area_rel = 5e-3;
+    compare(surface.mesh.volume(), value_after(lines, "Volume:", 0), area_rel, 0,
+            label + ": volume");
+    compare(s.area, value_after(lines, "Overall surface area:", 0), area_rel, 0, label + ": area");
+    compare(s.negative_area, value_after(lines, "Negative surface area:", 0), area_rel, 0,
+            label + ": negative area");
+    // Minimal and maximal values in eV (five decimals).
+    compare(s.minimum, value_after(lines, "Minimal value:", 0) / multiwfn_ev, 0, tolerance.global,
+            label + ": global minimum");
+    compare(s.maximum, value_after(lines, "Minimal value:", 1) / multiwfn_ev, 0, tolerance.global,
+            label + ": global maximum");
+    // Averages and variances from their kcal/mol values (six significant
+    // digits).
+    compare(s.average, kcal("Overall average value:", 2), tolerance.average, 0,
+            label + ": average");
+    compare(s.total_variance,
+            value_after(lines, "Overall variance:", 2) / (multiwfn_kcal * multiwfn_kcal),
+            tolerance.variance, 0, label + ": variance");
+    if (local_minima)
+        compare_extrema(surface.mesh, values, s.local_minima, extrema(lines, "minima"),
+                        tolerance.minima, label + " minimum");
+}
 } // namespace
 
 int main(int argc, char** argv) {
-    // Arguments: FCHK REFERENCE MODE, repeated. MODE is esp or alie, with
-    // -no-extrema to skip the local extrema (minima only for alie).
+    // Arguments: FCHK REFERENCE MODE, repeated. MODE is esp, alie, leae or
+    // lea, with -no-extrema to skip the local extrema (minima only for alie,
+    // leae and lea).
     if (!kumo_test::require_args(argc, argv, 3, kumo_test::unlimited,
-                                 "FILE.fchk REFERENCE.txt esp|alie[-no-extrema] ...") ||
+                                 "FILE.fchk REFERENCE.txt esp|alie|leae|lea[-no-extrema] ...") ||
         (argc - 1) % 3 != 0)
         return 2;
     return kumo_test::run([&] {
@@ -250,8 +307,17 @@ int main(int argc, char** argv) {
                 check_esp(mol, lines, argv[i + 1], mode == "esp");
             else if (mode == "alie" || mode == "alie-no-extrema")
                 check_alie(mol, lines, argv[i + 1], mode == "alie");
+            else if (mode == "leae" || mode == "leae-no-extrema")
+                check_mapped(mol, lines, argv[i + 1],
+                             chem::kumo::density::total.local_electron_attachment_energy(), 4e-3,
+                             mode == "leae", {1.5e-6, 6e-5, 1e-3, 2.5e-2});
+            else if (mode == "lea" || mode == "lea-no-extrema")
+                check_mapped(mol, lines, argv[i + 1],
+                             chem::kumo::density::total.local_electron_affinity(), 1e-3,
+                             mode == "lea", {4e-5, 6e-3, 1.5e-4, 5e-3});
             else
-                throw std::invalid_argument("expected esp, alie or -no-extrema, got " + mode);
+                throw std::invalid_argument("expected esp, alie, leae, lea or -no-extrema, got " +
+                                            mode);
         }
         std::cout << "largest difference: " << kumo_test::num(worst_ratio) << " of its tolerance ("
                   << worst_label << ")\n";

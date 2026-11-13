@@ -1,9 +1,13 @@
 #pragma once
 #include "chem/kumo/density.hpp"
+#include "chem/kumo/evaluator.hpp"
 #include <Eigen/Core>
 #include <array>
 #include <cstddef>
+#include <filesystem>
 #include <span>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace chem::kumo {
@@ -154,5 +158,40 @@ struct IonizationEnergySurface {
 [[nodiscard]] IonizationEnergySurface local_ionization_energy_surface(const Molecule& molecule,
                                                                       double isovalue = 1e-3,
                                                                       double spacing = 0.25);
+
+/// Scalar properties at the vertices of a density isosurface.
+struct MappedSurface {
+    TriangleMesh mesh;
+    std::vector<Property> properties;          ///< as requested, first occurrence kept
+    std::vector<std::vector<double>> values;   ///< per property, one value per vertex
+    std::vector<SurfaceStatistics> statistics; ///< per property; nonpolar_area unused (0)
+    Backend backend_used = Backend::AO_P;      ///< as Results::backend_used()
+};
+
+/// Evaluate `properties` (one-component Evaluator properties: not Gradient
+/// or Hessian) with Evaluator::evaluate(points) at the vertices of
+/// density_isosurface(molecule, isovalue, spacing), and the statistics of
+/// each on the surface (surface_statistics() with polar threshold 0). The
+/// electrostatic potential is evaluated as at any points, so its values
+/// differ from electrostatic_potential_surface() within the tolerance. The
+/// result does not depend on the number of OpenMP threads. Throws
+/// std::invalid_argument for no properties, a multi-component property, and
+/// as density_isosurface() and Evaluator::evaluate().
+[[nodiscard]] MappedSurface map_on_density_isosurface(const Molecule& molecule,
+                                                      const std::vector<Property>& properties,
+                                                      double isovalue = 1e-3, double spacing = 0.25,
+                                                      const EvaluationOptions& options = {});
+
+/// Write `mesh` as an ASCII PLY file: vertices with x, y, z in bohr and one
+/// double property per entry of `fields` (name, one value per vertex), then
+/// the triangles. `comments` become PLY comment lines. Names must be
+/// nonempty and made of letters, digits and '_' and must differ from x, y,
+/// z and each other; comments must not contain line breaks. Throws
+/// std::invalid_argument for invalid names or comments, a wrong number of
+/// values or a nonfinite one, and std::runtime_error if the file cannot be
+/// written. Values are written with 10 significant digits.
+void write_ply(const std::filesystem::path& path, const TriangleMesh& mesh,
+               const std::vector<std::pair<std::string, std::vector<double>>>& fields,
+               const std::vector<std::string>& comments = {});
 
 } // namespace chem::kumo
