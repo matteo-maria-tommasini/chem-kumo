@@ -127,11 +127,24 @@ struct DensityDerivatives {
 /// Whether the loaded SCF density can be reproduced by occupied MOs.
 enum class OrbitalRepresentationStatus { Valid, Inconsistent, Unavailable };
 
+/// Tolerances of the check of the occupied MOs against the FCHK density
+/// matrices (ElectronicStructureInfo): the total and the spin density
+/// matrices are each reproduced if the Frobenius norm of the difference is
+/// at most orbital_check_absolute_tolerance + orbital_check_relative_tolerance
+/// times the larger of the two matrix norms.
+inline constexpr double orbital_check_relative_tolerance = 1e-8;
+inline constexpr double orbital_check_absolute_tolerance = 1e-10;
+
 /// Immutable diagnostic calculated once while loading the FCHK.
 struct ElectronicStructureInfo {
     OrbitalRepresentationStatus orbital_status = OrbitalRepresentationStatus::Unavailable;
-    /// Largest absolute and relative differences between the FCHK total and
-    /// spin density matrices and their reconstruction from the occupied MOs.
+    /// Differences (Frobenius norm, absolute and relative to the larger
+    /// matrix norm) between the FCHK total and spin density matrices and
+    /// their reconstruction from the occupied MOs; zero when the status is
+    /// Unavailable. FCHK files store about nine significant digits, so the
+    /// spin matrix of a weakly spin-polarized state (for example a
+    /// broken-symmetry singlet), a small difference of two large matrices,
+    /// may fail the check through rounding alone.
     double total_absolute_error = 0.0;
     double total_relative_error = 0.0;
     double spin_absolute_error = 0.0;

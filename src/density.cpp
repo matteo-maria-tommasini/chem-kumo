@@ -144,7 +144,8 @@ ElectronicStructureInfo assess_orbital_representation(const Eigen::MatrixXd& tot
                                             beta_mos.rows() == static_cast<Eigen::Index>(n));
     if (!has_alpha || !has_beta) return info;
     const auto decision = detail::validate_orbital_backend(
-        total, spin, alpha_mos, beta_mos, info.occupied_alpha, info.occupied_beta, unrestricted);
+        total, spin, alpha_mos, beta_mos, info.occupied_alpha, info.occupied_beta, unrestricted,
+        orbital_check_relative_tolerance, orbital_check_absolute_tolerance);
     info.total_absolute_error = decision.total_absolute_error;
     info.total_relative_error = decision.total_relative_error;
     info.spin_absolute_error = decision.spin_absolute_error;

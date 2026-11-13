@@ -200,6 +200,7 @@ test ! -s "$TMP/quiet.err" || fail 'Messages on stderr without --verbose'
 sed "s|$TMP/quiet|$TMP/loud|" "$TMP/quiet.out" | cmp -s - "$TMP/loud.out" ||
     fail '--verbose changes standard output'
 for message in 'Reading formatted checkpoint' 'basis functions' 'Grid:' \
+    'Occupied orbitals vs FCHK density matrices: relative error' 'AO-MO needs both <= 1e-08' \
     'Density contraction:' 'Evaluating the value and kinetic energy density tau' \
     'Evaluated in' 'Writing 8 Cube files' 'Finished in'; do
     grep -Fq "$message" "$TMP/loud.err" || {
@@ -212,6 +213,17 @@ for name in density alpha beta spin density_tau alpha_tau beta_tau spin_tau; do
     cmp -s "$TMP/quiet_${name}.cube" "$TMP/loud_${name}.cube" ||
         fail "--verbose changes ${name} Cube file"
 done
+grep -Fq '(not met)' "$TMP/loud.err" && fail '--verbose reports a failed orbital check for O2'
+# A density matrix that the occupied orbitals do not reproduce: --verbose
+# reports the failed check and the AO-P contraction.
+gzip -dc "$FCHK" | awk '
+    done == 0 && previous ~ /^Total SCF Density/ { $2 = sprintf("%.8E", $2 + 0.05); done = 1 }
+    { print; previous = $0 }' > "$TMP/inconsistent.fchk"
+run_kumo "$TMP/inconsistent.fchk" --spacing 1.0 --margin 1.0 -v --output "$TMP/inconsistent" \
+    > /dev/null 2> "$TMP/inconsistent.err"
+grep -Fq 'AO-MO needs both <= 1e-08 (not met)' "$TMP/inconsistent.err" &&
+    grep -Fq 'the occupied orbitals do not reproduce' "$TMP/inconsistent.err" || {
+    cat "$TMP/inconsistent.err" >&2; fail '--verbose does not report the failed orbital check'; }
 run_kumo "$FCHK" --mo homo -v --spacing 1.0 --margin 1.0 --output "$TMP/mo" \
     > "$TMP/mo.out" 2> "$TMP/mo.err"
 grep -Fq 'Evaluating alpha molecular orbital 9' "$TMP/mo.err" || {
