@@ -21,6 +21,23 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///    capped at reduced_gradient_cap. Total only.
 ///  - SignLambda2Density: sign(lambda2) * rho of the total density, where
 ///    lambda2 is the middle eigenvalue of its Hessian. Total only.
+///  - Lol: localized orbital locator t / (1 + t), t = D0 / tau, in [0, 1].
+///    Total (spin-resolved form, as Elf), Alpha or Beta; not Spin.
+///  - InteractionRegionIndicator: IRI = |grad rho| / rho^1.1 of the total
+///    density, capped at interaction_region_indicator_cap. Total only.
+///  - DensityOverlapRegionsIndicator: DORI = theta / (1 + theta) of the
+///    total density, in [0, 1]. Total only.
+///  - HamiltonianKineticEnergy: K = tau - laplacian / 4, the kinetic energy
+///    density -(1/2) sum_i psi_i lap psi_i (hartree/bohr^3). Any component.
+///  - PotentialEnergyDensity: V = laplacian / 4 - 2 tau (virial theorem).
+///    Total only.
+///  - EnergyDensity: H = tau + V = laplacian / 4 - tau = -K. Total only.
+///  - SpinPolarization: (rho_alpha - rho_beta) / (rho_alpha + rho_beta), in
+///    [-1, 1]; 0 where the total density is not positive. Spin only.
+///  - ShannonEntropyDensity: -rho ln rho of the total density; 0 where rho is
+///    not positive. Total only.
+///  - FisherInformationDensity: |grad rho|^2 / rho of the total density; 0
+///    where rho is not positive. Total only.
 ///  - ElectrostaticPotential: molecular electrostatic potential in hartree/e,
 ///    nuclear plus electronic, from the nuclear charges and the total AO
 ///    density matrix, within EvaluationOptions::potential_tolerance of the
@@ -39,7 +56,16 @@ enum class PropertyKind {
     Elf,
     ReducedGradient,
     SignLambda2Density,
-    ElectrostaticPotential
+    ElectrostaticPotential,
+    Lol,
+    InteractionRegionIndicator,
+    DensityOverlapRegionsIndicator,
+    HamiltonianKineticEnergy,
+    PotentialEnergyDensity,
+    EnergyDensity,
+    SpinPolarization,
+    ShannonEntropyDensity,
+    FisherInformationDensity
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -47,6 +73,11 @@ enum class PropertyKind {
 /// undefined), are reported as this value; it is far above the isovalues
 /// used in NCI analysis (about 0.3 to 0.6).
 inline constexpr double reduced_gradient_cap = 100.0;
+
+/// Upper bound of the interaction region indicator, as reduced_gradient_cap:
+/// larger values and points where the density is not positive are reported
+/// as this value. IRI isovalues are about 1.
+inline constexpr double interaction_region_indicator_cap = 100.0;
 
 /// MO spin channel.
 enum class SpinChannel { Alpha, Beta };
@@ -99,6 +130,47 @@ struct DensityDescriptor {
     /// Molecular electrostatic potential, nuclear plus electronic (Total only).
     constexpr Property electrostatic_potential() const {
         return {PropertyKind::ElectrostaticPotential, component};
+    }
+
+    /// Localized orbital locator (Total, Alpha or Beta).
+    constexpr Property lol() const { return {PropertyKind::Lol, component}; }
+
+    /// Interaction region indicator (Total only).
+    constexpr Property interaction_region_indicator() const {
+        return {PropertyKind::InteractionRegionIndicator, component};
+    }
+
+    /// Density overlap regions indicator (Total only).
+    constexpr Property density_overlap_regions_indicator() const {
+        return {PropertyKind::DensityOverlapRegionsIndicator, component};
+    }
+
+    /// Hamiltonian kinetic energy density K (any component).
+    constexpr Property hamiltonian_kinetic_energy() const {
+        return {PropertyKind::HamiltonianKineticEnergy, component};
+    }
+
+    /// Potential energy density V (Total only).
+    constexpr Property potential_energy_density() const {
+        return {PropertyKind::PotentialEnergyDensity, component};
+    }
+
+    /// Electronic energy density H = G + V (Total only).
+    constexpr Property energy_density() const { return {PropertyKind::EnergyDensity, component}; }
+
+    /// Spin polarization (rho_alpha - rho_beta) / rho (Spin only).
+    constexpr Property spin_polarization() const {
+        return {PropertyKind::SpinPolarization, component};
+    }
+
+    /// Shannon entropy density -rho ln rho (Total only).
+    constexpr Property shannon_entropy_density() const {
+        return {PropertyKind::ShannonEntropyDensity, component};
+    }
+
+    /// Fisher information density |grad rho|^2 / rho (Total only).
+    constexpr Property fisher_information_density() const {
+        return {PropertyKind::FisherInformationDensity, component};
     }
 };
 
