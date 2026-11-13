@@ -355,6 +355,24 @@ test(
     timeout: 300,
 )
 
+# Evaluator::evaluate at arbitrary points against grid evaluation, and the
+# orbital-energy fields (ALIE, LEA, LEAE, local electronegativity, hardness)
+# against their orbital formulas.
+test(
+    'point-evaluation',
+    executable(
+        'kumo-point-evaluation-test',
+        'tests/point_evaluation_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+    ],
+    timeout: 300,
+)
+
 # Grid::line and Grid::plane: geometry, validation, point-by-point evaluation
 # and a line and a plane through Multiwfn reference Cube points.
 test(
@@ -383,6 +401,7 @@ test(
     args: [
         meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
         meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
         meson.current_source_dir() / 'tests/data/multiwfn',
     ],
     timeout: 120,

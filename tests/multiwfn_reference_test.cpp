@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <iostream>
+#include <span>
 #include <string>
 
 namespace {
@@ -38,8 +39,15 @@ struct Tolerance {
     /// What the relative tolerance multiplies: the value, or for quantities
     /// that may be small differences of large terms, the size of those terms:
     /// |tau| + |lap rho| / 4 for K, V and H, and rho (1 + |ln rho|) for
-    /// -rho ln rho, which vanishes at rho = 1.
-    enum class Scale { Value, Energy, Shannon } scale = Scale::Value;
+    /// -rho ln rho, which vanishes at rho = 1, and (|ALIE| + |LEA|) / 2 for
+    /// the local electronegativity (ALIE + LEA) / 2, which crosses zero.
+    enum class Scale { Value, Energy, Shannon, OrbitalEnergies } scale = Scale::Value;
+    /// With significant > 0: at least minimum_significant points must have
+    /// |expected| >= significant, and there the relative tolerance alone
+    /// must hold, so that an absolute term cannot hide a disagreement and the
+    /// test does not compare only values near zero.
+    double significant = 0.0;
+    std::size_t minimum_significant = 0;
 };
 
 void compare(const std::filesystem::path& fchk, const std::filesystem::path& cube_path,
@@ -62,19 +70,29 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
         .add(density::total.value())
         .add(density::total.tau())
         .add(density::total.laplacian());
+    const bool orbital_scale = tolerance.scale == Tolerance::Scale::OrbitalEnergies;
+    if (orbital_scale)
+        request.add(density::total.average_local_ionization_energy())
+            .add(density::total.local_electron_affinity());
     // Keep the Results alive: component() is a view into it.
     const Results results = Evaluator(molecule).evaluate(grid, request);
     const auto actual = results.get(key).component();
     const auto rho = results.get(density::total.value()).component();
     const auto tau = results.get(density::total.tau()).component();
     const auto laplacian = results.get(density::total.laplacian()).component();
+    const auto alie =
+        orbital_scale ? results.get(density::total.average_local_ionization_energy()).component()
+                      : std::span<const double>();
+    const auto lea = orbital_scale
+                         ? results.get(density::total.local_electron_affinity()).component()
+                         : std::span<const double>();
     if (!kumo_test::check(actual.size() == expected.size(),
                           label + ": the Evaluator returns one value per Cube point"))
         return;
 
     // Largest difference as a fraction of the allowed one.
-    double worst = 0.0, worst_relative = 0.0;
-    std::size_t worst_point = 0, skipped = 0;
+    double worst = 0.0, worst_relative = 0.0, worst_significant = 0.0;
+    std::size_t worst_point = 0, skipped = 0, significant = 0;
     bool same_sign = true;
     const auto& atoms = molecule.atoms();
     for (std::size_t p = 0; p < expected.size(); ++p) {
@@ -97,7 +115,8 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
                 ? std::abs(tau[p]) + 0.25 * std::abs(laplacian[p])
             : tolerance.scale == Tolerance::Scale::Shannon
                 ? (rho[p] > 0.0 ? rho[p] * (1.0 + std::abs(std::log(rho[p]))) : 0.0)
-                : std::abs(expected[p]);
+            : orbital_scale ? 0.5 * (std::abs(alie[p]) + std::abs(lea[p]))
+                            : std::abs(expected[p]);
         const double allowed = tolerance.relative * scale + tolerance.absolute;
         const double ratio = difference / std::max(allowed, 1e-300);
         if (ratio > worst) {
@@ -106,6 +125,10 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
         }
         if (std::abs(expected[p]) > 1e3 * tolerance.absolute)
             worst_relative = std::max(worst_relative, difference / std::abs(expected[p]));
+        if (tolerance.significant > 0.0 && std::abs(expected[p]) >= tolerance.significant) {
+            ++significant;
+            worst_significant = std::max(worst_significant, difference / std::abs(expected[p]));
+        }
         if (std::abs(expected[p]) > tolerance.absolute)
             same_sign = same_sign && (actual[p] < 0.0) == (expected[p] < 0.0);
     }
@@ -114,6 +137,19 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
               << worst_point << ": " << actual[worst_point] << " versus " << expected[worst_point]
               << "), max relative difference " << worst_relative << '\n';
     kumo_test::check(same_sign, label + ": every value has the sign of the reference");
+    if (tolerance.significant > 0.0) {
+        std::cout << label << ": " << significant
+                  << " points with |value| >= " << tolerance.significant
+                  << ", max relative difference " << worst_significant << '\n';
+        kumo_test::check(significant >= tolerance.minimum_significant,
+                         label + ": at least " + std::to_string(tolerance.minimum_significant) +
+                             " points with |value| >= " + kumo_test::num(tolerance.significant) +
+                             " (got " + std::to_string(significant) + ")");
+        kumo_test::check(worst_significant <= tolerance.relative,
+                         label + ": where |value| >= " + kumo_test::num(tolerance.significant) +
+                             ", agrees with Multiwfn within " + kumo_test::num(tolerance.relative) +
+                             " relative alone (max " + kumo_test::num(worst_significant) + ")");
+    }
     kumo_test::check(worst <= 1.0, label + ": agrees with Multiwfn within " +
                                        kumo_test::num(tolerance.relative) + " relative + " +
                                        kumo_test::num(tolerance.absolute) + " absolute (max " +
@@ -122,10 +158,12 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
 } // namespace
 
 int main(int argc, char** argv) {
-    if (!kumo_test::require_args(argc, argv, 3, 3, "WATER.fchk O2.fchk MULTIWFN_DIRECTORY"))
+    if (!kumo_test::require_args(argc, argv, 4, 4,
+                                 "WATER.fchk O2.fchk ACROLEIN.fchk MULTIWFN_DIRECTORY"))
         return 2;
     return kumo_test::run([&] {
-        const std::filesystem::path water = argv[1], o2 = argv[2], directory = argv[3];
+        const std::filesystem::path water = argv[1], o2 = argv[2], acrolein = argv[3],
+                                    directory = argv[4];
         compare(water, directory / "h2o_elf.cube.gz", density::total.elf(), "water ELF");
         compare(water, directory / "h2o_rdg.cube.gz", density::total.reduced_gradient(),
                 "water reduced gradient");
@@ -175,5 +213,41 @@ int main(int argc, char** argv) {
         compare(water, directory / "h2o_fisher.cube.gz",
                 density::total.fisher_information_density(), "water Fisher information density",
                 fisher);
+        // Orbital-energy fields (restricted acrolein, unrestricted O2). ALIE,
+        // LEA and the local hardness, of order 1 hartree, take the default
+        // tolerance. LEAE vanishes on the nodal planes of the negative-energy
+        // virtual orbitals, where both programs give rounding noise (-4e-39
+        // versus -1e-34, at most 2.5e-33 apart), so it adds 1e-10 hartree
+        // absolute, 1e-8 of its largest magnitude (0.014 hartree in
+        // acrolein, 0.024 in O2). Most points carry a substantial LEAE: where
+        // |LEAE| >= 1e-3 hartree (12258 acrolein and 11788 O2 points) the
+        // relative tolerance must hold alone, and the largest difference
+        // there is 6.4e-6 relative, the Cube rounding. The local
+        // electronegativity (ALIE + LEA) / 2 crosses zero and is compared on
+        // the scale of its terms, (|ALIE| + |LEA|) / 2 (largest difference
+        // 2.7e-6 of it).
+        const Tolerance orbital{};
+        Tolerance attachment{relative_tolerance, 1e-10};
+        attachment.significant = 1e-3;
+        attachment.minimum_significant = 10000;
+        Tolerance electronegativity;
+        electronegativity.scale = Tolerance::Scale::OrbitalEnergies;
+        compare(acrolein, directory / "acrolein_alie.cube.gz",
+                density::total.average_local_ionization_energy(), "acrolein ALIE", orbital);
+        compare(o2, directory / "o2_alie.cube.gz", density::total.average_local_ionization_energy(),
+                "O2 ALIE", orbital);
+        compare(acrolein, directory / "acrolein_lea.cube.gz",
+                density::total.local_electron_affinity(), "acrolein LEA", orbital);
+        compare(o2, directory / "o2_lea.cube.gz", density::total.local_electron_affinity(),
+                "O2 LEA", orbital);
+        compare(acrolein, directory / "acrolein_leae.cube.gz",
+                density::total.local_electron_attachment_energy(), "acrolein LEAE", attachment);
+        compare(o2, directory / "o2_leae.cube.gz",
+                density::total.local_electron_attachment_energy(), "O2 LEAE", attachment);
+        compare(acrolein, directory / "acrolein_local_electronegativity.cube.gz",
+                density::total.local_electronegativity(), "acrolein local electronegativity",
+                electronegativity);
+        compare(acrolein, directory / "acrolein_local_hardness.cube.gz",
+                density::total.local_hardness(), "acrolein local hardness", orbital);
     });
 }

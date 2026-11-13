@@ -2,6 +2,7 @@
 #include "electrostatic_potential.hpp"
 #include "grid_geometry.hpp"
 #include "isosurface.hpp"
+#include "orbital_energy_fields.hpp"
 #include "parallel_blocks.hpp"
 
 #include <Eigen/Geometry> // cross()
@@ -478,47 +479,10 @@ std::vector<double> average_local_ionization_energy(
     const Molecule& molecule,
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points) {
     if (!points.allFinite()) throw std::invalid_argument("ionization energy points must be finite");
-    if (!molecule.electronic_structure_info().ao_mo_eligible())
-        throw std::invalid_argument(
-            "the average local ionization energy needs occupied MOs that reproduce the FCHK "
-            "density matrices");
-
-    // Occupied orbitals as columns scaled by sqrt(n_i), with their |e_i|.
-    const int nalpha = molecule.occupied_count(Spin::Alpha);
-    const int nbeta = molecule.occupied_count(Spin::Beta);
-    const auto& alpha = detail::SurfaceAccess::orbitals(molecule, Spin::Alpha);
-    const auto& beta = detail::SurfaceAccess::orbitals(molecule, Spin::Beta);
-    const auto& alpha_energies = molecule.orbital_energies(Spin::Alpha);
-    const auto& beta_energies = molecule.orbital_energies(Spin::Beta);
-    if (alpha_energies.size() < static_cast<std::size_t>(nalpha) ||
-        beta_energies.size() < static_cast<std::size_t>(nbeta))
-        throw std::invalid_argument(
-            "the average local ionization energy needs the FCHK orbital energies");
-    Eigen::MatrixXd occupied(alpha.rows(), nalpha + nbeta);
-    Eigen::VectorXd energy(nalpha + nbeta);
-    Eigen::Index n = 0;
-    if (molecule.unrestricted()) {
-        for (int i = 0; i < nalpha; ++i, ++n) {
-            occupied.col(n) = alpha.col(i);
-            energy[n] = std::abs(alpha_energies[static_cast<std::size_t>(i)]);
-        }
-        for (int i = 0; i < nbeta; ++i, ++n) {
-            occupied.col(n) = beta.col(i);
-            energy[n] = std::abs(beta_energies[static_cast<std::size_t>(i)]);
-        }
-    } else {
-        // Restricted: orbitals below max(nalpha, nbeta), doubly occupied
-        // below min(nalpha, nbeta).
-        const int doubly = std::min(nalpha, nbeta), occupied_count = std::max(nalpha, nbeta);
-        for (int i = 0; i < occupied_count; ++i, ++n) {
-            occupied.col(n) = (i < doubly ? std::sqrt(2.0) : 1.0) * alpha.col(i);
-            energy[n] = std::abs(alpha_energies[static_cast<std::size_t>(i)]);
-        }
-    }
-    occupied.conservativeResize(Eigen::NoChange, n);
-    energy.conservativeResize(n);
-
-    const auto& evaluator = detail::SurfaceAccess::evaluator(molecule);
+    const detail::OrbitalEnergyFields fields(molecule, detail::SurfaceAccess::evaluator(molecule),
+                                             detail::SurfaceAccess::orbitals(molecule, Spin::Alpha),
+                                             detail::SurfaceAccess::orbitals(molecule, Spin::Beta),
+                                             false, "the average local ionization energy");
     const auto count = static_cast<std::size_t>(points.cols());
     std::vector<double> result(count);
     constexpr std::size_t block_size = 128;
@@ -527,16 +491,14 @@ std::vector<double> average_local_ionization_energy(
     detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t block) {
         const std::size_t start = block * block_size;
         const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-        Eigen::MatrixXd phi(static_cast<Eigen::Index>(evaluator.basis_size()), b);
-        evaluator.evaluate_batch(points.middleCols(static_cast<Eigen::Index>(start), b), phi);
-        const Eigen::MatrixXd psi2 = (occupied.transpose() * phi).array().square().matrix();
-        for (Eigen::Index t = 0; t < b; ++t) {
-            const double density = psi2.col(t).sum();
+        const auto sums = fields.evaluate(points.middleCols(static_cast<Eigen::Index>(start), b));
+        for (std::size_t t = 0; t < static_cast<std::size_t>(b); ++t) {
+            const double density = sums.occupied_density[t];
             if (!(density > 0.0))
                 throw std::invalid_argument(
                     "the average local ionization energy is undefined where the density "
                     "vanishes");
-            result[start + static_cast<std::size_t>(t)] = energy.dot(psi2.col(t)) / density;
+            result[start + t] = sums.occupied_energy[t] / density;
         }
     });
     return result;

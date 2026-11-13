@@ -218,8 +218,8 @@ const std::span<const double> rho = results.get(density::total.value()).componen
 
 - **Requests.** `density::total`, `alpha`, `beta` and `spin` (alpha minus
   beta) give `value()`, `gradient()`, `hessian()`, `laplacian()`, `tau()`,
-  `elf()`, `reduced_gradient()`, `sign_lambda2_density()` and
-  `electrostatic_potential()`; `orbital::alpha(i)` and `orbital::beta(i)`
+  `elf()`, `reduced_gradient()`, `sign_lambda2_density()`,
+  `electrostatic_potential()` and the fields of the sections below; `orbital::alpha(i)` and `orbital::beta(i)`
   (one-based) give `value()`. A property requested twice is evaluated once,
   and the order of a request does not matter.
 - **Results.** `Results::get(property)` returns a `PropertyField`, one array
@@ -248,6 +248,18 @@ const std::span<const double> rho = results.get(density::total.value()).componen
   (see [OPENMP.md](OPENMP.md)). With AO screening, different requests may differ
   at rounding level, because a block keeps the AOs needed by the most
   demanding property requested.
+- **Arbitrary points (1.13.0).** `evaluate(points, request)` evaluates the
+  same requests at the columns of a `3 x N` matrix (bohr), in column order,
+  for example the vertices of a surface. Values equal grid evaluation at the
+  same points to rounding (the test `point-evaluation` finds at most 5e-15
+  relative, with both backends): densities come from the point kernels
+  (with AO-P too), orbitals from their own pass. The electrostatic potential
+  groups the points by cubes of `potential_cluster_edge` (1.6 bohr) aligned
+  with the axes at multiples of the edge, each evaluated around its centre
+  within `potential_tolerance`; it agrees with grid evaluation within 2e-10
+  in that test. A nonfinite point throws `std::invalid_argument`; an empty
+  matrix gives empty fields. Results do not depend on the number of OpenMP
+  threads.
 
 ## Derived properties: ELF, reduced gradient, sign(lambda2) rho (1.8.0)
 
@@ -376,6 +388,64 @@ Validation (tests `density-fields` and `multiwfn-reference`):
   tolerances of 2e-5 to 1e-4, chosen per field (see
   [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)); the largest
   difference is 41% of its tolerance.
+
+## Orbital-energy fields: ALIE, LEA, LEAE, local electronegativity and hardness (1.13.0)
+
+Five fields combine the SCF orbitals phi_i with their energies e_i
+(hartree), with Multiwfn's definitions (its real-space function 18 and
+user functions 27, -27, 28 and 29). With n_i = 2 for the orbitals of a
+restricted closed-shell calculation and 1 for those of an unrestricted one:
+
+- `average_local_ionization_energy()`: the ALIE of Sjoberg, Murray, Brinck
+  and Politzer, `I = sum_occ n_i |e_i| |phi_i|^2 / rho`, over the occupied
+  orbitals (rho is their density). Low values mark the electrons easiest to
+  remove (electrophilic attack).
+- `local_electron_affinity()`: `EA_L = -sum_vir e_i |phi_i|^2 / sum_vir
+  |phi_i|^2` over all virtual orbitals (Brinck, Murray and Politzer, J. Mol.
+  Model. 9, 342 (2003)). It depends on the high-lying virtuals, so it is
+  meaningful only for basis sets without diffuse functions.
+- `local_electron_attachment_energy()`: `E_att = sum_vir,e_i<0 n_i e_i
+  |phi_i|^2 / rho`, over the virtual orbitals with negative energy only
+  (Brinck, Carlqvist and Stenlid, J. Phys. Chem. A 120, 10023 (2016)). It
+  is more robust than EA_L and admits diffuse functions, but it is 0
+  everywhere when no virtual orbital has a negative energy (as for water at
+  B3LYP/def2-TZVP). Negative values mark sites of nucleophilic attack; the
+  original work uses the rho = 0.004 isosurface.
+- `local_electronegativity()` and `local_hardness()`: `(I + EA_L) / 2` and
+  `(I - EA_L) / 2`.
+
+All five are defined for the total density only, use the orbitals whatever
+the backend (with exact AO values, no screening), and are 0 where their
+denominator vanishes, for example far from the molecule. They need an SCF
+file whose occupied MOs reproduce its density matrices
+(`ElectronicStructureInfo::ao_mo_eligible()`) and its orbital energies; the
+last four also need virtual orbitals. Otherwise `evaluate()` throws
+`std::invalid_argument`. The virtual orbitals are those of the FCHK above
+the occupied ones (fewer than the basis functions if Gaussian removed
+linear dependencies), so EA_L costs about as many orbital evaluations as
+there are MOs. `average_local_ionization_energy(molecule, points)` (in
+`<chem/kumo/surface.hpp>`) returns the same ALIE values, but throws where
+the density vanishes.
+
+Validation (tests `point-evaluation`, `multiwfn-reference`,
+`molecular-surface`):
+
+- the five fields equal their formulas evaluated from
+  `Molecule::orbital_derivatives()` and the orbital energies to 1e-12 of
+  the ALIE for water, O2 (unrestricted) and acrolein (LEAE also to 1e-12 of
+  itself where |LEAE| >= 1e-3 hartree), and the ALIE equals
+  `average_local_ionization_energy()`; LEAE is 0 for water, all fields are
+  0 far from the molecule, and files without orbital energies or with a
+  density the MOs do not reproduce are rejected;
+- Multiwfn 2026.9.1 Cube files of acrolein (all five; one virtual orbital
+  with negative energy) and O2 (ALIE, LEA, LEAE; two) agree point by point
+  within 2e-5 relative. LEAE adds 1e-10 hartree absolute for its nodal
+  planes and is held to 2e-5 relative alone where |LEAE| >= 1e-3 hartree
+  (more than 10000 points per molecule; largest difference there 6.4e-6),
+  and the electronegativity, which crosses zero, is compared on the scale
+  (|I| + |EA_L|) / 2 (see
+  [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)). The largest
+  difference is 54% of its tolerance.
 
 ## Electrostatic potential (1.9.0)
 
