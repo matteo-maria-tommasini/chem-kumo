@@ -75,6 +75,7 @@ kumo molecule.fchk --property density,esp        # electrostatic potential
 kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
 kumo molecule.fchk --esp-surface                 # ESP statistics on rho = 0.001
 kumo molecule.fchk --alie-surface                # ionization energy statistics
+kumo molecule.fchk --property alie,lea,leae      # orbital-energy fields (Cube)
 kumo molecule.fchk --point @1 --point 0,0,1.5 --property density,laplacian
 kumo molecule.fchk --line @1:@2 --property density,lol   # profile -> PREFIX_line.dat
 kumo molecule.fchk --plane @1:@2:@3 --property elf      # map -> PREFIX_plane.dat
@@ -131,6 +132,15 @@ More fields follow Multiwfn's definitions:
   `--spin difference` only.
 - `shannon` (-rho ln rho) and `fisher` (|grad rho|^2 / rho) are the Shannon
   entropy and Fisher information densities of the total density.
+- `alie` (average local ionization energy), `lea` (local electron
+  affinity), `leae` (local electron attachment energy),
+  `local-electronegativity` and `local-hardness` weight the SCF orbitals by
+  their energies (hartree); total density only. They need an SCF file whose
+  occupied orbitals reproduce its density matrices, with orbital energies;
+  `lea` uses all virtual orbitals and suits basis sets without diffuse
+  functions, while `leae` uses only the virtual orbitals with negative
+  energy and is 0 everywhere if there are none. See
+  [docs/API.md](docs/API.md) for the formulas.
 
 `esp` writes the molecular electrostatic potential (nuclear plus
 electronic, in hartree/e) to `PREFIX_density_esp.cube`, for the total

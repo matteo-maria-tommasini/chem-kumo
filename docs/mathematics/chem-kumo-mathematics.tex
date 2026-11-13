@@ -442,6 +442,25 @@ rejected. At each vertex the occupied orbitals are
 contracted with the AO values of a block of 128 vertices, without AO
 screening; the statistics are those above, with the whole surface positive.
 
+\subsection{Fields of the virtual orbitals}
+The local electron affinity, the local electron attachment energy and the
+local electronegativity and hardness follow Multiwfn:
+\begin{equation}
+ \mathrm{EA}_L(\mathbf r)=-\frac{\sum_{i\in\mathrm{vir}}\varepsilon_i|\phi_i(\mathbf r)|^2}
+ {\sum_{i\in\mathrm{vir}}|\phi_i(\mathbf r)|^2},\qquad
+ E_{\mathrm{att}}(\mathbf r)=\frac{\sum_{i\in\mathrm{vir},\,\varepsilon_i<0}
+ n_i\varepsilon_i|\phi_i(\mathbf r)|^2}{\rho(\mathbf r)},
+\end{equation}
+\begin{equation}
+ \chi_L=\tfrac12(\bar I+\mathrm{EA}_L),\qquad \eta_L=\tfrac12(\bar I-\mathrm{EA}_L),
+\end{equation}
+with $n_i=2$ for a restricted and $1$ for an unrestricted calculation (the
+weight cancels in $\mathrm{EA}_L$). The virtual orbitals are the MOs of the
+FCHK above the occupied ones in each spin channel. The same orbital sums,
+on blocks of points, give all four fields and $\bar I$; each field is set
+to $0$ where its denominator vanishes. As fields of the Evaluator they can
+be evaluated on grids, at points and on surfaces.
+
 \section{Validation and benchmark methodology}
 AO, MO, and density spatial derivatives are checked against centered finite
 differences of independent value/gradient evaluations. Finite differences
