@@ -209,8 +209,9 @@ const std::span<const double> rho = results.get(density::total.value()).componen
 - **Errors.** The constructor throws `std::invalid_argument` for invalid
   options or for `AO_MO` on a molecule whose orbitals are not AO-MO
   eligible (`Molecule::electronic_structure_info()` reports the check: its
-  relative differences must be at most `orbital_check_relative_tolerance`,
-  1e-8, for both the total and the spin density matrix); `evaluate()` throws it for an invalid grid, an orbital index of
+  differences, relative to the norm of the total density matrix, must be
+  at most `orbital_check_relative_tolerance`, 1e-8, for both the total and
+  the spin density matrix); `evaluate()` throws it for an invalid grid, an orbital index of
   0, or a derived property requested for a component it is not defined for.
 - **Determinism.** Results do not depend on the number of OpenMP threads,
   and the electrostatic potential does not depend on the block size either

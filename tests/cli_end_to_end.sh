@@ -200,7 +200,8 @@ test ! -s "$TMP/quiet.err" || fail 'Messages on stderr without --verbose'
 sed "s|$TMP/quiet|$TMP/loud|" "$TMP/quiet.out" | cmp -s - "$TMP/loud.out" ||
     fail '--verbose changes standard output'
 for message in 'Reading formatted checkpoint' 'basis functions' 'Grid:' \
-    'Occupied orbitals vs FCHK density matrices: relative error' 'AO-MO needs both <= 1e-08' \
+    'Occupied orbitals vs FCHK density matrices: error relative to the total matrix' \
+    'AO-MO needs both <= 1e-08' \
     'Density contraction:' 'Evaluating the value and kinetic energy density tau' \
     'Evaluated in' 'Writing 8 Cube files' 'Finished in'; do
     grep -Fq "$message" "$TMP/loud.err" || {

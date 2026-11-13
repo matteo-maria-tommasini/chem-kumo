@@ -156,12 +156,14 @@ AO density matrices otherwise; `ao-p` always uses the density matrices, as
 `kumo` did before 1.7.0; `ao-mo` requires the orbital contraction and fails
 if the check did not pass. The check compares the total and spin density
 matrices rebuilt from the occupied orbitals with those of the FCHK and
-requires a relative difference of at most 1e-8 for both; `--verbose` prints
-the two differences. FCHK files store about nine significant digits, so a
-weakly spin-polarized state such as a broken-symmetry singlet, whose spin
-density matrix is a small difference of two large matrices, may fail the
-spin check through rounding alone; the density matrices are then used,
-which gives the same densities. The two contractions agree to about 1e-9
+requires differences of at most 1e-8 relative to the total density matrix
+for both; `--verbose` prints the two differences. The spin matrix is
+measured against the total one because it is rebuilt as a difference of
+two matrices of that size, so the rounding of the FCHK (about nine
+significant digits) scales with the total matrix: measured against the
+spin matrix itself, as in earlier versions, weakly spin-polarized states
+such as broken-symmetry singlets could fail the check through rounding
+alone. The two contractions agree to about 1e-9
 relative, below the six significant digits written to Cube files (in tests,
 at most the last printed digit of about 1% of the values changes), and
 AO-MO is up to about 1.5 times faster for large basis sets. The second

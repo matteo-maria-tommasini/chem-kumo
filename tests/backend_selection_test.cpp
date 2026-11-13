@@ -64,5 +64,36 @@ int main(int argc, char** argv) {
         kumo_test::check_throws<std::invalid_argument>(
             [&] { (void)validate_orbital_backend(pa + pb, pa - pb, a, b, 1, 1, true, -1); },
             "a negative relative tolerance is rejected");
+
+        // Weakly spin-polarized state (as a broken-symmetry singlet): alpha
+        // and beta orbitals differ by 1e-3, so the spin matrix is about 1e-3
+        // of the total one. An error of 1e-9 in the FCHK spin matrix, as from
+        // rounding, is 3.5e-10 of the total matrix (accepted) though 3.5e-7
+        // of the spin matrix; an error of 1e-6 is a real inconsistency.
+        const double eps = 1e-3;
+        Eigen::MatrixXd wa = Eigen::MatrixXd::Zero(3, 2), wb = Eigen::MatrixXd::Zero(3, 2);
+        wa.col(0) = Eigen::Vector3d(1, eps, 0).normalized();
+        wb.col(0) = Eigen::Vector3d(1, -eps, 0).normalized();
+        wa(2, 1) = wb(2, 1) = 1.0;
+        const Eigen::MatrixXd qa = wa * wa.transpose(), qb = wb * wb.transpose();
+        Eigen::MatrixXd bump = Eigen::MatrixXd::Zero(3, 3);
+        bump(0, 2) = bump(2, 0) = 1.0;
+        const auto weak = [&](double error) {
+            return validate_orbital_backend(qa + qb, qa - qb + error * bump, wa, wb, 2, 2, true);
+        };
+        const auto rounding = weak(1e-9);
+        check(rounding.backend == ElectronicBackend::AoMo,
+              "a rounding-size spin error of a weakly polarized state is AO-MO eligible");
+        check(rounding.spin_absolute_error / (qa - qb).norm() > 1e-8 &&
+                  rounding.spin_relative_error < 1e-8,
+              "the spin error is measured against the total density matrix (got " +
+                  kumo_test::num(rounding.spin_relative_error) + ", spin-relative " +
+                  kumo_test::num(rounding.spin_absolute_error / (qa - qb).norm()) + ")");
+        check(weak(1e-6).backend == ElectronicBackend::AoP,
+              "a real spin inconsistency of a weakly polarized state falls back to AO-P");
+        check(
+            validate_orbital_backend(qa + qb + 1e-6 * bump, qa - qb, wa, wb, 2, 2, true).backend ==
+                ElectronicBackend::AoP,
+            "a real total-density inconsistency falls back to AO-P");
     });
 }
