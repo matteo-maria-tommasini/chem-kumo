@@ -1,4 +1,4 @@
-# chem-kumo 1.9.0
+# chem-kumo 1.9.1
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -293,8 +293,8 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.9.0 release registers **78 Meson tests**, all passing in the
-serial and OpenMP builds reported on macOS ARM64 on 2026-11-12, with both
+The 1.9.1 release registers **78 Meson tests**, all passing in the
+serial and OpenMP builds reported on macOS ARM64 on 2026-11-13, with both
 Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
 AddressSanitizer and UndefinedBehaviorSanitizer (except the three HBC cases
 of the `slow` suite). Coverage
@@ -394,8 +394,9 @@ AO shell cutoff, was developed in the same way with Claude and reviewed and
 approved by Matteo Tommasini, as was version 1.7.0 (CLI backend selection,
 verbose mode with progress reports, and OpenMP parallelism of the Evaluator's
 derivative path), version 1.8.0 (ELF, reduced density gradient and
-sign(lambda2) rho, validated against Multiwfn) and version 1.9.0 (the
-molecular electrostatic potential with rigorous far-field error bounds).
+sign(lambda2) rho, validated against Multiwfn), version 1.9.0 (the
+molecular electrostatic potential with rigorous far-field error bounds) and
+version 1.9.1 (a code and documentation audit).
 
 ## License
 

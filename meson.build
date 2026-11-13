@@ -1,7 +1,7 @@
 project(
     'chem-kumo',
     'cpp',
-    version: '1.9.0',
+    version: '1.9.1',
     meson_version: '>=0.63',
     default_options: ['cpp_std=c++20', 'warning_level=2'],
 )
