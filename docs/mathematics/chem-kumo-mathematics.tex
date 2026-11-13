@@ -224,6 +224,28 @@ $\operatorname{sign}(\lambda_2)\rho$ uses the middle eigenvalue
 $\lambda_1\le\lambda_2\le\lambda_3$ of the density Hessian, with
 $\lambda_2=0$ counted as positive.
 
+The localized orbital locator uses the same ingredients as ELF,
+\begin{equation}
+ \mathrm{LOL}=\frac{t}{1+t},\qquad t=\frac{D_0}{\tau},
+\end{equation}
+with $\tau$ and $D_0$ summed over the spin channels for the total LOL. The
+interaction region indicator is $|\nabla\rho|/\rho^{1.1}$, and the density
+overlap regions indicator is $\theta/(1+\theta)$ with
+\begin{equation}
+ \theta=\frac{|\nabla f|^2}{f^3},\quad f=\frac{|\nabla\rho|^2}{\rho^2},
+ \qquad\text{so}\qquad
+ \theta=\frac{4\,|(\mathbf H/\rho)\mathbf q-|\mathbf q|^2\mathbf q|^2}{|\mathbf q|^6},
+ \quad\mathbf q=\frac{\nabla\rho}\rho,
+\end{equation}
+where $\mathbf H$ is the density Hessian; the second form does not depend on
+the scale of $\rho$. The kinetic energy density
+$K=-\tfrac12\sum_i\psi_i\nabla^2\psi_i=\tau-\nabla^2\rho/4$, the
+potential energy density $V=\nabla^2\rho/4-2\tau$ (local virial theorem)
+and the energy density $H=\tau+V=-K$ follow from the Laplacian and $\tau$.
+The spin polarization is $(\rho_\alpha-\rho_\beta)/\rho$, and the Shannon
+and Fisher information densities are $-\rho\ln\rho$ and
+$|\nabla\rho|^2/\rho$.
+
 \section{Molecular electrostatic potential}
 The electrostatic potential, in hartree per elementary charge, is
 \begin{equation}

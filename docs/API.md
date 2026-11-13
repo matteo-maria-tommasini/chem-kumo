@@ -276,6 +276,77 @@ Multiwfn 2026.9.1 Cube files of water and O2 (open shell), point by point.
 They agree within 1.2e-5 relative, at the six significant digits of the
 reference files (see [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
 
+## Density fields: LOL, IRI, DORI, energy densities, spin polarization (1.12.0)
+
+Nine more fields are computed pointwise from the density derivatives, in
+the same pass as ELF and with the same backends, screening and OpenMP
+scheduling (results do not depend on the number of threads). They follow
+Multiwfn's definitions, which the reference tests check:
+
+- `lol()` (`PropertyKind::Lol`), for Total, Alpha or Beta: the localized
+  orbital locator of Schmider and Becke (J. Mol. Struct. THEOCHEM 527, 51
+  (2000)), `LOL = t / (1 + t)` with `t = D0 / tau`, in [0, 1]. D0 is the
+  uniform-gas value of ELF and, as for ELF, the total LOL sums tau and D0
+  over both channels (spin-polarized form; for a closed shell the familiar
+  `D0 = (3/10) (3 pi^2)^(2/3) rho^(5/3)`). It is 0 where there is no
+  density and 1 where tau = 0 but the density is positive (the limit;
+  Multiwfn returns 0 there). Not defined for the spin difference.
+- `interaction_region_indicator()` (`PropertyKind::InteractionRegionIndicator`,
+  Total only): `IRI = |grad rho| / rho^1.1` (Lu and Chen, Chemistry-Methods
+  1, 231 (2021)), with isosurfaces of about 1 showing covalent bonds and
+  weak interactions together. Values above `interaction_region_indicator_cap`
+  (100), and points where `rho <= 0`, are reported as 100. Multiwfn sets IRI
+  to 5 where rho is below `IRI_rhocut` (5e-5 by default); kumo applies no
+  such cut.
+- `density_overlap_regions_indicator()`
+  (`PropertyKind::DensityOverlapRegionsIndicator`, Total only): DORI of de
+  Silva and Corminboeuf (J. Chem. Theory Comput. 10, 3745 (2014)),
+  `theta / (1 + theta)` with
+  `theta = |grad (|grad rho|^2 / rho^2)|^2 / (|grad rho|^2 / rho^2)^3`, in
+  [0, 1]. It is computed from `q = grad rho / rho` as
+  `theta = 4 |(H / rho) q - |q|^2 q|^2 / |q|^6`, which does not depend on
+  the scale of rho. At a critical point of rho (q = 0) DORI is 1, its limit;
+  where `rho <= 0` it is 0, its limit far from the molecule.
+- `hamiltonian_kinetic_energy()` (`PropertyKind::HamiltonianKineticEnergy`,
+  any component): the kinetic energy density
+  `K = -(1/2) sum_i psi_i lap psi_i = tau - lap rho / 4` (hartree/bohr^3),
+  which, unlike tau (G in Bader's notation), can be negative.
+- `potential_energy_density()` (`PropertyKind::PotentialEnergyDensity`,
+  Total only): `V = lap rho / 4 - 2 tau`, from the local virial theorem.
+- `energy_density()` (`PropertyKind::EnergyDensity`, Total only): the
+  electronic energy density `H = G + V = lap rho / 4 - tau = -K`. Its sign
+  at a bond critical point is used to characterize interactions (Cremer and
+  Kraka).
+- `density::spin.spin_polarization()` (`PropertyKind::SpinPolarization`,
+  Spin only): `zeta = (rho_alpha - rho_beta) / (rho_alpha + rho_beta)`, in
+  [-1, 1]: 0 for a closed shell or where there is no density, ±1 where only
+  one spin is present.
+- `shannon_entropy_density()` (`PropertyKind::ShannonEntropyDensity`, Total
+  only): `-rho ln rho`, 0 where `rho <= 0`.
+- `fisher_information_density()` (`PropertyKind::FisherInformationDensity`,
+  Total only): `|grad rho|^2 / rho`, 0 where `rho <= 0`.
+
+`Evaluator::evaluate` throws `std::invalid_argument` if a field is
+requested for a component it is not defined for.
+
+Validation (tests `density-fields` and `multiwfn-reference`):
+
+- the values equal their formulas applied to the Evaluator's own value,
+  gradient, Hessian, Laplacian and tau to 1e-13 (DORI 1e-12), for water,
+  O2 (unrestricted) and acrolein;
+- K agrees with the orbital form `-(1/2) sum_i psi_i lap psi_i`, evaluated
+  with `Molecule::orbital_derivatives()`, to about 1e-13 of
+  `|tau| + |lap rho| / 4`, and DORI with central finite differences of
+  `|grad rho|^2 / rho^2` to about 1e-7 (the tests require 1e-7 and 1e-5);
+- for a closed shell the total LOL equals the unpolarized formula and the
+  spin polarization is 0; LOL and DORI lie in [0, 1] and `|zeta| <= 1`;
+  2 and 4 threads give identical results;
+- Multiwfn 2026.9.1 Cube files of water (LOL, IRI, DORI, K, V, H, Shannon,
+  Fisher) and O2 (LOL, K, spin polarization) agree point by point within
+  tolerances of 2e-5 to 1e-4, chosen per field (see
+  [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)); the largest
+  difference is 41% of its tolerance.
+
 ## Electrostatic potential (1.9.0)
 
 `density::total.electrostatic_potential()`

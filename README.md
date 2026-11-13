@@ -69,6 +69,8 @@ kumo molecule.fchk --property density,gradient,laplacian,tau
 kumo o2.fchk --spin difference --property tau    # tau_alpha - tau_beta
 kumo molecule.fchk --property elf                # electron localization function
 kumo molecule.fchk --property rdg,sign-lambda2-rho  # NCI analysis
+kumo molecule.fchk --property lol,iri,dori       # localization and interaction regions
+kumo o2.fchk --spin difference --property spin-polarization
 kumo molecule.fchk --property density,esp        # electrostatic potential
 kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
 kumo molecule.fchk --esp-surface                 # ESP statistics on rho = 0.001
@@ -112,6 +114,20 @@ Three derived properties are available too:
 The `rdg` and `sign-lambda2-rho` files are the inputs of an NCI analysis:
 an isosurface of s (for example 0.5), colored by sign(lambda2) rho. The
 definitions are in [docs/API.md](docs/API.md).
+
+More fields follow Multiwfn's definitions:
+- `lol` is the localized orbital locator, in [0, 1], for `--spin total`,
+  `alpha` or `beta`, like `elf`.
+- `iri` (interaction region indicator, |grad rho| / rho^1.1, capped at 100)
+  and `dori` (density overlap regions indicator, in [0, 1]) show covalent
+  and weak interactions; total density only.
+- `kinetic-k` is the kinetic energy density K = tau - lap rho / 4, for any
+  `--spin`; `potential-energy` (V = lap rho / 4 - 2 tau) and
+  `energy-density` (H = lap rho / 4 - tau) are for the total density.
+- `spin-polarization` is (rho_alpha - rho_beta) / rho, in [-1, 1], for
+  `--spin difference` only.
+- `shannon` (-rho ln rho) and `fisher` (|grad rho|^2 / rho) are the Shannon
+  entropy and Fisher information densities of the total density.
 
 `esp` writes the molecular electrostatic potential (nuclear plus
 electronic, in hartree/e) to `PREFIX_density_esp.cube`, for the total
