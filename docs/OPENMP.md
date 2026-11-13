@@ -72,7 +72,7 @@ density and 6.77x on density derivatives.
 
 `Evaluator` point path (1.6.0 plus the parallel point path), HBC with
 97,280 grid points (margin 3 bohr, spacing 0.4 bohr), debugoptimized build
-on Apple silicon (4P+4E), best of two runs, seconds:
+on the Apple M3 (4P+4E), best of two runs, seconds:
 
 | Basis | Request | 1 thread | 4 threads | 8 threads | Speedup (8) |
 |---|---|---:|---:|---:|---:|
