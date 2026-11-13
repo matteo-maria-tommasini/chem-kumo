@@ -775,6 +775,20 @@ std::string grid_summary(const chem::kumo::Grid& grid, const Options& o) {
     return out.str();
 }
 
+// Result of the load-time check of the occupied orbitals against the FCHK
+// density matrices, which decides whether AO-MO can be used.
+std::string orbital_check_summary(const Molecule& mol) {
+    const auto& info = mol.electronic_structure_info();
+    if (info.orbital_status == chem::kumo::OrbitalRepresentationStatus::Unavailable)
+        return "Occupied orbitals: not available in the FCHK, so AO-MO cannot be used";
+    std::ostringstream out;
+    out << std::setprecision(2) << "Occupied orbitals vs FCHK density matrices: relative error "
+        << info.total_relative_error << " (total), " << info.spin_relative_error
+        << " (spin); AO-MO needs both <= " << chem::kumo::orbital_check_relative_tolerance;
+    if (!info.ao_mo_eligible()) out << " (not met)";
+    return out.str();
+}
+
 // Which contraction --backend resolves to, and why.
 std::string backend_summary(chem::kumo::Backend backend, const Molecule& mol) {
     const bool eligible = mol.electronic_structure_info().ao_mo_eligible();
@@ -809,6 +823,7 @@ int main(int argc, char** argv) {
         const auto mol = Molecule::from_fchk(o.input);
         console.end("Read in");
         console.say("  " + molecule_summary(mol));
+        console.say("  " + orbital_check_summary(mol));
         if (o.list) {
             if (o.spin.empty() || o.spin == "alpha" || o.spin == "both") list_mos(mol, Spin::Alpha);
             if (o.spin == "beta" || o.spin == "both") list_mos(mol, Spin::Beta);
