@@ -76,6 +76,8 @@ kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
 kumo molecule.fchk --esp-surface                 # ESP statistics on rho = 0.001
 kumo molecule.fchk --alie-surface                # ionization energy statistics
 kumo molecule.fchk --property alie,lea,leae      # orbital-energy fields (Cube)
+kumo molecule.fchk --surface-map --property leae --isovalue 0.004 --ply
+                                                 # LEAE on rho = 0.004, with a PLY file
 kumo molecule.fchk --point @1 --point 0,0,1.5 --property density,laplacian
 kumo molecule.fchk --line @1:@2 --property density,lol   # profile -> PREFIX_line.dat
 kumo molecule.fchk --plane @1:@2:@3 --property elf      # map -> PREFIX_plane.dat
@@ -197,6 +199,21 @@ written as its norm, as in Cube files. A plane map with gnuplot:
 ```gnuplot
 set view map; splot 'molecule_plane.dat' using 1:2:6 with pm3d
 ```
+
+`--surface-map` maps each `--property` (for each `--spin` component) on
+the total-density isosurface (`--isovalue`, default 0.001; `--spacing`,
+default 0.25 bohr) and prints, per property, its extrema, average, average
+deviation, variances and positive and negative areas, and its surface
+minima and maxima with their positions in Angstrom (at most 20 of each are
+listed). Any one-component property can be mapped, not the gradient. For
+the local electron attachment energy use `--isovalue 0.004`, the surface
+of the original work, which Multiwfn also selects for it. `--ply`, with
+`--surface-map`, `--esp-surface` or `--alie-surface`, also writes
+`PREFIX_surface.ply`: an ASCII PLY mesh (coordinates in bohr) with one
+vertex property per mapped field, named as the table columns (`leae_total`;
+`esp` or `alie` for the other two options), which ParaView, Blender or
+MeshLab display colored by value. Its file name is printed after the
+report.
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce

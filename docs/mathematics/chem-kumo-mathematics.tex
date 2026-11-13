@@ -461,6 +461,14 @@ on blocks of points, give all four fields and $\bar I$; each field is set
 to $0$ where its denominator vanishes. As fields of the Evaluator they can
 be evaluated on grids, at points and on surfaces.
 
+\subsection{Any field on the surface}
+Any one-component field of the Evaluator can be evaluated at the vertices
+of the isosurface, with the statistics above (the nonpolar area excepted).
+At arbitrary points the electrostatic potential groups the points by
+cubes of edge $1.6$~bohr fixed in space, each expanded about its centre
+with the far-field bounds of the grid evaluation, so the values do not
+depend on the order of the points or on the number of threads.
+
 \section{Validation and benchmark methodology}
 AO, MO, and density spatial derivatives are checked against centered finite
 differences of independent value/gradient evaluations. Finite differences
