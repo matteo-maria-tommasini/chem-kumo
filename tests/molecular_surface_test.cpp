@@ -555,15 +555,34 @@ void test_ionization_energy_inputs(const char* path) {
                                     const std::string& reason) {
         const auto mol = chem::kumo::Molecule::from_fchk(file);
         std::filesystem::remove(file);
-        std::string message;
-        try {
-            (void)chem::kumo::local_ionization_energy_surface(mol);
-        } catch (const std::invalid_argument& e) {
-            message = e.what();
+        // The surface analysis and the Evaluator's orbital-energy fields.
+        using chem::kumo::density::total;
+        const std::pair<std::string, std::function<void()>> calls[] = {
+            {"the ionization energy surface",
+             [&] { (void)chem::kumo::local_ionization_energy_surface(mol); }},
+            {"the Evaluator ALIE",
+             [&] {
+                 chem::kumo::Request request;
+                 request.add(total.average_local_ionization_energy());
+                 (void)chem::kumo::Evaluator(mol).evaluate(Points(3, 1), request);
+             }},
+            {"the Evaluator LEAE", [&] {
+                 chem::kumo::Request request;
+                 request.add(total.local_electron_attachment_energy());
+                 (void)chem::kumo::Evaluator(mol).evaluate(Points(3, 1), request);
+             }}};
+        for (const auto& [call, run] : calls) {
+            std::string message;
+            try {
+                run();
+            } catch (const std::invalid_argument& e) {
+                message = e.what();
+            }
+            kumo_test::check(message.find(reason) != std::string::npos,
+                             name + ": " + call + " rejects " + what +
+                                 " with a message containing '" + reason + "' (got '" + message +
+                                 "')");
         }
-        kumo_test::check(message.find(reason) != std::string::npos,
-                         name + ": " + what + " is rejected with a message containing '" + reason +
-                             "' (got '" + message + "')");
     };
     check_rejected(modified_fchk(path, "energies",
                                  [](std::string& text) {

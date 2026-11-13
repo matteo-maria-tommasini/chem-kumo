@@ -158,6 +158,46 @@ times the largest observed differences, are:
 The test reports each largest difference as a fraction of its tolerance; it
 is at most 0.41.
 
+### Orbital-energy fields of 1.13.0
+
+Cube files of the ALIE and of Multiwfn's user functions 27 (local electron
+affinity), -27 (local electron attachment energy), 28 (local
+electronegativity) and 29 (local hardness) were computed on 2026-11-13 with
+the same Multiwfn build, grid extension (3 bohr), spacing (0.3 bohr), input
+sequence and scratch `settings.ini` (with `ipolarpara= 0` and `iuserfunc`
+set to the function), from `acrolein.fchk.gz` (restricted; one virtual
+orbital with negative energy, the LUMO at -0.0115 hartree) and `o2.fchk.gz`
+(unrestricted; two beta virtual orbitals at -0.0464 hartree).
+
+| File | FCHK | Multiwfn function |
+|------|------|-------------------|
+| `acrolein_alie.cube.gz` | acrolein | 18, ALIE |
+| `acrolein_lea.cube.gz` | acrolein | 100 with `iuserfunc= 27` |
+| `acrolein_leae.cube.gz` | acrolein | 100 with `iuserfunc= -27` |
+| `acrolein_local_electronegativity.cube.gz` | acrolein | 100 with `iuserfunc= 28` |
+| `acrolein_local_hardness.cube.gz` | acrolein | 100 with `iuserfunc= 29` |
+| `o2_alie.cube.gz` | O2 | 18, ALIE |
+| `o2_lea.cube.gz` | O2 | 100 with `iuserfunc= 27` |
+| `o2_leae.cube.gz` | O2 | 100 with `iuserfunc= -27` |
+
+The test `multiwfn-reference` compares them point by point:
+
+| Quantity | Tolerance | Largest difference observed |
+|----------|-----------|-----------------------------|
+| ALIE, LEA, local hardness | 2e-5 relative | 5.0e-6 relative |
+| LEAE | 2e-5 relative + 1e-10 hartree; 2e-5 relative alone where \|LEAE\| >= 1e-3 hartree | 6.4e-6 relative where \|LEAE\| >= 1e-3 (12258 acrolein and 11788 O2 points); 5.4e-11 hartree near the nodal planes of the virtual orbitals |
+| Local electronegativity | 2e-5 of (\|ALIE\| + \|LEA\|) / 2 | 2.7e-6 of that scale, where the electronegativity crosses zero |
+
+LEAE vanishes on the nodal planes of the virtual orbitals with negative
+energy. There both programs give rounding noise (-4e-39 versus -1e-34), and
+close to them, where LEAE is a few 1e-6 hartree, the relative precision of
+the cancelling orbital sums drops in both: the absolute term of 1e-10
+hartree (1e-8 of the largest |LEAE|) covers these points. The test also
+requires at least 10000 points with |LEAE| >= 1e-3 hartree and the
+relative tolerance alone there, so it cannot pass on near-zero values only.
+
+The largest difference is 0.54 of its tolerance (O2 LEAE).
+
 ### Lines and planes (test `line-plane`)
 
 The test `line-plane` reuses `h2o_lol.cube.gz` and `h2o_elf.cube.gz`, with

@@ -60,6 +60,10 @@ struct ComponentPlan {
 struct EvaluationPlan {
     std::array<ComponentPlan, 4> components{};
     bool orbitals = false;
+    /// ALIE, LEA, LEAE, local electronegativity or hardness requested: they
+    /// come from the SCF orbitals and energies by their own pass.
+    bool orbital_energies = false;
+    bool virtual_orbitals = false; ///< also the virtual-orbital sums
     int maximum_ao_order = -1;
 
     [[nodiscard]] bool needs_electrostatic_potential() const noexcept {
@@ -73,6 +77,18 @@ struct EvaluationPlan {
 
     [[nodiscard]] static constexpr std::size_t index(DensityComponent component) noexcept {
         return static_cast<std::size_t>(component);
+    }
+
+    [[nodiscard]] static const char* orbital_energy_name(PropertyKind kind) noexcept {
+        switch (kind) {
+        case PropertyKind::AverageLocalIonizationEnergy:
+            return "the average local ionization energy";
+        case PropertyKind::LocalElectronAffinity: return "the local electron affinity";
+        case PropertyKind::LocalElectronAttachmentEnergy:
+            return "the local electron attachment energy";
+        case PropertyKind::LocalElectronegativity: return "the local electronegativity";
+        default: return "the local hardness";
+        }
     }
 
     static void require_total(const Property& property, const char* what) {
@@ -171,6 +187,18 @@ struct EvaluationPlan {
                         "the spin polarization is defined only for the spin component");
                 plan.components[index(DensityComponent::Total)].value_input = true;
                 c.value_input = true;
+                break;
+            case PropertyKind::AverageLocalIonizationEnergy:
+                require_total(property, "the average local ionization energy");
+                plan.orbital_energies = true;
+                break;
+            case PropertyKind::LocalElectronAffinity:
+            case PropertyKind::LocalElectronAttachmentEnergy:
+            case PropertyKind::LocalElectronegativity:
+            case PropertyKind::LocalHardness:
+                require_total(property, orbital_energy_name(property.kind));
+                plan.orbital_energies = true;
+                plan.virtual_orbitals = true;
                 break;
             case PropertyKind::Orbital: break;
             default: throw std::invalid_argument("unknown property kind");

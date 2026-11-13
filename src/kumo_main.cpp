@@ -68,8 +68,11 @@ void usage() {
               << "                             elf, lol (total, alpha or beta);\n"
               << "                             rdg, sign-lambda2-rho, iri, dori,\n"
               << "                             potential-energy, energy-density, shannon,\n"
-              << "                             fisher, esp (the electrostatic potential)\n"
-              << "                             (total only); spin-polarization (difference)\n"
+              << "                             fisher, esp (the electrostatic potential),\n"
+              << "                             alie, lea, leae, local-electronegativity,\n"
+              << "                             local-hardness (orbital-energy fields of SCF\n"
+              << "                             orbitals) (total only); spin-polarization\n"
+              << "                             (difference)\n"
               << "  --esp-tolerance HARTREE    Error bound of the electrostatic potential at\n"
               << "                             each point (default 1e-8; 0 is exact and slowest)\n"
               << "  --esp-surface              Print the electrostatic potential statistics on\n"
@@ -495,7 +498,17 @@ std::vector<DensityProperty> select_properties(const std::string& list) {
          "Fisher information density |grad rho|^2 / rho (e/bohr^5)", "Fisher information density"},
         {PropertyKind::ElectrostaticPotential, "esp",
          "Molecular electrostatic potential, nuclear + electronic (hartree/e)",
-         "electrostatic potential"}};
+         "electrostatic potential"},
+        {PropertyKind::AverageLocalIonizationEnergy, "alie",
+         "Average local ionization energy (hartree)", "average local ionization energy"},
+        {PropertyKind::LocalElectronAffinity, "lea", "Local electron affinity (hartree)",
+         "local electron affinity"},
+        {PropertyKind::LocalElectronAttachmentEnergy, "leae",
+         "Local electron attachment energy (hartree)", "local electron attachment energy"},
+        {PropertyKind::LocalElectronegativity, "local-electronegativity",
+         "Local electronegativity (ALIE + LEA) / 2 (hartree)", "local electronegativity"},
+        {PropertyKind::LocalHardness, "local-hardness", "Local hardness (ALIE - LEA) / 2 (hartree)",
+         "local hardness"}};
     std::vector<DensityProperty> result;
     std::size_t start = 0;
     while (true) {
@@ -557,6 +570,11 @@ chem::kumo::Property density_property(Spin component, PropertyKind kind) {
     case PropertyKind::SpinPolarization: return d.spin_polarization();
     case PropertyKind::ShannonEntropyDensity: return d.shannon_entropy_density();
     case PropertyKind::FisherInformationDensity: return d.fisher_information_density();
+    case PropertyKind::AverageLocalIonizationEnergy: return d.average_local_ionization_energy();
+    case PropertyKind::LocalElectronAffinity: return d.local_electron_affinity();
+    case PropertyKind::LocalElectronAttachmentEnergy: return d.local_electron_attachment_energy();
+    case PropertyKind::LocalElectronegativity: return d.local_electronegativity();
+    case PropertyKind::LocalHardness: return d.local_hardness();
     default: return d.value();
     }
 }
@@ -585,7 +603,12 @@ void check_components(const std::vector<std::pair<Spin, std::string>>& component
                                     property.kind == PropertyKind::PotentialEnergyDensity ||
                                     property.kind == PropertyKind::EnergyDensity ||
                                     property.kind == PropertyKind::ShannonEntropyDensity ||
-                                    property.kind == PropertyKind::FisherInformationDensity;
+                                    property.kind == PropertyKind::FisherInformationDensity ||
+                                    property.kind == PropertyKind::AverageLocalIonizationEnergy ||
+                                    property.kind == PropertyKind::LocalElectronAffinity ||
+                                    property.kind == PropertyKind::LocalElectronAttachmentEnergy ||
+                                    property.kind == PropertyKind::LocalElectronegativity ||
+                                    property.kind == PropertyKind::LocalHardness;
             if (total_only && spin != Spin::Total)
                 throw std::invalid_argument("--property " + property.name +
                                             " is defined only for --spin total");
@@ -643,6 +666,11 @@ std::vector<double> scalar_values(const chem::kumo::PropertyField& field, Proper
 // How a property was computed, for Cube comments and table headers. The
 // electrostatic potential always uses the AO density matrix.
 std::string method_label(PropertyKind kind, chem::kumo::Backend used, double esp_tolerance) {
+    if (kind == PropertyKind::AverageLocalIonizationEnergy ||
+        kind == PropertyKind::LocalElectronAffinity ||
+        kind == PropertyKind::LocalElectronAttachmentEnergy ||
+        kind == PropertyKind::LocalElectronegativity || kind == PropertyKind::LocalHardness)
+        return "SCF orbitals and orbital energies";
     if (kind != PropertyKind::ElectrostaticPotential) return backend_label(used);
     if (esp_tolerance == 0.0) return "exact Coulomb integrals over the AO density matrix";
     std::ostringstream bound;
@@ -1092,22 +1120,20 @@ void print_points(const Molecule& mol, const Options& o, const DensitySelection&
         points.push_back(location(spec, mol));
     const Table table(selection, {"x", "y", "z"});
     console.begin(sampling_summary(selection, points.size()));
-    const chem::kumo::Evaluator evaluator(mol, evaluation_options(selection, o, console));
-    std::vector<chem::kumo::Results> results;
-    for (const auto& point : points) {
-        chem::kumo::Grid grid;
-        grid.origin = point;
-        results.push_back(evaluator.evaluate(grid, table.request()));
-    }
+    Eigen::Matrix<double, 3, Eigen::Dynamic> columns(3, static_cast<Eigen::Index>(points.size()));
+    for (std::size_t p = 0; p < points.size(); ++p)
+        columns.col(static_cast<Eigen::Index>(p)) = points[p];
+    const auto results = chem::kumo::Evaluator(mol, evaluation_options(selection, o, console))
+                             .evaluate(columns, table.request());
     console.end("Evaluated in");
+    const auto values = table.columns(results);
     table.header(std::cout,
                  {"kumo " CHEM_KUMO_VERSION ", " + o.input.filename().string() + ": " +
                       std::to_string(points.size()) + " point" + (points.size() > 1 ? "s" : ""),
                   "x y z: position (bohr)"},
-                 results.front().backend_used(), o.esp_tolerance);
+                 results.backend_used(), o.esp_tolerance);
     for (std::size_t p = 0; p < points.size(); ++p)
-        Table::row(std::cout, {points[p].x(), points[p].y(), points[p].z()},
-                   Table::at(table.columns(results[p]), 0));
+        Table::row(std::cout, {points[p].x(), points[p].y(), points[p].z()}, Table::at(values, p));
 }
 
 // --line and --plane: evaluate on the grid and write PREFIX_line.dat or

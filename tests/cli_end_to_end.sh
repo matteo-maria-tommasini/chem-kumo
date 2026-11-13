@@ -312,6 +312,20 @@ data "$TMP/points.txt" | awk '
 data "$TMP/points.txt" | awk 'NR == 2 && ($1 != 0 || $2 != 0 || $3 != 0) { exit 1 }' ||
     fail '--point 0,0,0 is not printed at the origin'
 
+# Orbital-energy fields: chi = (ALIE + LEA) / 2 and eta = (ALIE - LEA) / 2;
+# ALIE > 0 and LEAE <= 0.
+run_kumo "$FCHK" --point @1 --point 0,1,1 --point 0,0,3 \
+    --property alie,lea,leae,local-electronegativity,local-hardness > "$TMP/orbital.txt"
+grep -Fxq '# x y z alie_total lea_total leae_total local-electronegativity_total local-hardness_total' \
+    "$TMP/orbital.txt" || fail 'orbital-energy table lacks the expected column names'
+data "$TMP/orbital.txt" | awk '
+    function abs(x) { return x < 0 ? -x : x }
+    { tolerance = 1e-9 * (abs($4) + abs($5)) }
+    NF != 8 || $4 <= 0 || $6 > 0 { bad = 1 }
+    abs($7 - ($4 + $5) / 2) > tolerance || abs($8 - ($4 - $5) / 2) > tolerance { bad = 1 }
+    END { exit bad || NR != 3 }' ||
+    fail 'orbital-energy fields: ALIE <= 0, LEAE > 0 or chi, eta inconsistent with ALIE and LEA'
+
 LINE_OUTPUT=$(run_kumo "$FCHK" --line @1:@2 --margin 0.5 --spacing 0.05 --property density,lol \
     --output "$TMP/o2")
 [ "$LINE_OUTPUT" = "$TMP/o2_line.dat" ] || fail "--line reported '$LINE_OUTPUT'"
@@ -348,7 +362,8 @@ awk '/^#/ { next } NF == 0 { ++blank; next }
 for options in '--line @1:@1' '--line @1' '--plane @1:@2:0,0,0' '--point @3' '--point 1,2' \
     '--point @1 --output x' '--point @1 --spacing 1' '--line @1:@2 --mo homo' \
     '--line @1:@2 --plane @1:@2:1,0,0' '--line @1:@2 --esp-surface' '--line @1:@2 --list-mo' \
-    '--point @0' '--line @1:@2 --spin alpha --property iri'; do
+    '--point @0' '--line @1:@2 --spin alpha --property iri' \
+    '--point @1 --spin alpha --property alie' '--point @1 --spin difference --property leae'; do
     # shellcheck disable=SC2086 # options are split on purpose
     if "$KUMO" "$FCHK" $options > "$TMP/error.log" 2>&1; then
         fail "$options unexpectedly accepted"

@@ -38,6 +38,20 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///    not positive. Total only.
 ///  - FisherInformationDensity: |grad rho|^2 / rho of the total density; 0
 ///    where rho is not positive. Total only.
+///  - AverageLocalIonizationEnergy: ALIE sum_occ n_i |e_i| |phi_i|^2 / rho,
+///    hartree, over the occupied SCF orbitals. Total only.
+///  - LocalElectronAffinity: LEA -sum_vir e_i |phi_i|^2 / sum_vir |phi_i|^2,
+///    hartree, over all virtual orbitals. Total only.
+///  - LocalElectronAttachmentEnergy: LEAE sum_vir,e_i<0 n_i e_i |phi_i|^2 / rho,
+///    hartree, over the virtual orbitals with negative energy (0 everywhere
+///    if there are none). Total only.
+///  - LocalElectronegativity, LocalHardness: (ALIE + LEA) / 2 and
+///    (ALIE - LEA) / 2, hartree. Total only.
+///    These five use the SCF orbitals and their energies, whatever the
+///    backend, and need orbitals that reproduce the FCHK density matrices;
+///    the last four also need virtual orbitals and are not defined for a
+///    restricted open-shell calculation. Each is 0 where its denominator
+///    vanishes.
 ///  - ElectrostaticPotential: molecular electrostatic potential in hartree/e,
 ///    nuclear plus electronic, from the nuclear charges and the total AO
 ///    density matrix, within EvaluationOptions::potential_tolerance of the
@@ -65,7 +79,12 @@ enum class PropertyKind {
     EnergyDensity,
     SpinPolarization,
     ShannonEntropyDensity,
-    FisherInformationDensity
+    FisherInformationDensity,
+    AverageLocalIonizationEnergy,
+    LocalElectronAffinity,
+    LocalElectronAttachmentEnergy,
+    LocalElectronegativity,
+    LocalHardness
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -78,6 +97,11 @@ inline constexpr double reduced_gradient_cap = 100.0;
 /// larger values and points where the density is not positive are reported
 /// as this value. IRI isovalues are about 1.
 inline constexpr double interaction_region_indicator_cap = 100.0;
+
+/// Edge of the cubes (bohr) that group arbitrary points for the
+/// electrostatic potential in Evaluator::evaluate(points): the cubes are
+/// aligned with the Cartesian axes at multiples of this edge.
+inline constexpr double potential_cluster_edge = 1.6;
 
 /// MO spin channel.
 enum class SpinChannel { Alpha, Beta };
@@ -172,6 +196,29 @@ struct DensityDescriptor {
     constexpr Property fisher_information_density() const {
         return {PropertyKind::FisherInformationDensity, component};
     }
+
+    /// Average local ionization energy (Total only).
+    constexpr Property average_local_ionization_energy() const {
+        return {PropertyKind::AverageLocalIonizationEnergy, component};
+    }
+
+    /// Local electron affinity (Total only).
+    constexpr Property local_electron_affinity() const {
+        return {PropertyKind::LocalElectronAffinity, component};
+    }
+
+    /// Local electron attachment energy (Total only).
+    constexpr Property local_electron_attachment_energy() const {
+        return {PropertyKind::LocalElectronAttachmentEnergy, component};
+    }
+
+    /// Local electronegativity (ALIE + LEA) / 2 (Total only).
+    constexpr Property local_electronegativity() const {
+        return {PropertyKind::LocalElectronegativity, component};
+    }
+
+    /// Local hardness (ALIE - LEA) / 2 (Total only).
+    constexpr Property local_hardness() const { return {PropertyKind::LocalHardness, component}; }
 };
 
 /// The four density components: density::total, alpha, beta, spin.
@@ -308,7 +355,25 @@ public:
     /// derived property requested for a component it is not defined for.
     [[nodiscard]] Results evaluate(const Grid& grid, const Request& request) const;
 
+    /// Evaluate every property in `request` at the columns of `points`
+    /// (bohr), in column order. Values agree with grid evaluation at the same
+    /// points to rounding; the electrostatic potential is evaluated in
+    /// clusters of points within cubes of potential_cluster_edge bohr, fixed
+    /// in space, within the same potential_tolerance. Results do not depend
+    /// on the number of threads. Throws std::invalid_argument for a nonfinite
+    /// point, and as evaluate(Grid) for the request.
+    [[nodiscard]] Results
+    evaluate(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+             const Request& request) const;
+
 private:
+    /// Shared implementation: exactly one of `grid` (validated) and `points`
+    /// is given; `count` is the number of points.
+    [[nodiscard]] Results
+    evaluate_at(const Grid* grid,
+                const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>* points,
+                std::size_t count, const Request& request) const;
+
     const Molecule* molecule_;
     EvaluationOptions options_;
 };
