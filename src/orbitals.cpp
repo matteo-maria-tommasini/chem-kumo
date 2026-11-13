@@ -87,7 +87,7 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
         const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
         Eigen::MatrixXd ao(n, 10 * capacity);
 #ifdef _OPENMP
-#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic)
 #endif
         for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
             try {
@@ -140,7 +140,7 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many orbital blocks for parallel evaluation");
     detail::Progress report(progress, count);
-    detail::for_each_block<detail::Schedule::Static>(nblocks, [&](std::size_t block) {
+    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t block) {
         const std::size_t start = static_cast<std::size_t>(block) * block_size;
         const auto size = std::min(block_size, count - start);
         const auto b = static_cast<Eigen::Index>(size);

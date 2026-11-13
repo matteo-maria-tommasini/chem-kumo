@@ -3,8 +3,12 @@
 ## Scope and design
 
 OpenMP is opt-in (`-Dopenmp=true`; default `false`). Independent spatial
-blocks are assigned with `schedule(static)` in the blocked density,
+blocks are assigned with `schedule(dynamic)` in the blocked density,
 density-derivative, orbital amplitude and blocked orbital-derivative paths.
+With AO screening, blocks in the empty outer region of a grid cost much
+less than blocks near the molecule, so a static assignment of contiguous
+block ranges leaves threads idle; each block is still computed on its own,
+so results do not depend on the schedule or the thread count.
 Input basis data, density matrices and MO coefficients are shared read-only;
 per-block Eigen temporaries are private. Each block writes disjoint output
 indices. Exceptions are captured inside worker loops and rethrown after the
@@ -66,9 +70,13 @@ warm-up; compare speedups only within the same platform and workload.
 See [density benchmarks](../benchmarks/PARALLEL_DENSITY.md) and
 [field benchmarks](../benchmarks/PARALLEL_FIELDS.md).
 
-Blocked density (`densities_blocked`), 1.10.0 release build on the Apple M3
-(4P+4E), HBC with 103,823 points and block size 256: 4.2x (def2-SVP) and
-3.8x (def2-TZVP) with 8 threads, but only 2.8x and 2.5x with 4 threads; see
+Blocked density (`densities_blocked`), release build on the Apple M3
+(4P+4E), HBC with 103,823 points and block size 256, with
+`schedule(dynamic)`: 3.7x (def2-SVP) and 3.5x (def2-TZVP) with 4 threads,
+5.0x and 4.8x with 8 threads. The 1.10.0 release, with `schedule(static)`,
+gave only 2.8x and 2.5x with 4 threads (4.2x and 3.8x with 8), because
+screened blocks far from the molecule are much cheaper and contiguous
+block ranges left threads idle; see
 [density benchmarks](../benchmarks/PARALLEL_DENSITY.md). Before AO screening
 (1.5.0) the same benchmark gave up to 5.05x on the M3, and a dual Xeon E5640
 (2 sockets, 8 physical cores / 16 SMT threads) up to 6.89x on density and

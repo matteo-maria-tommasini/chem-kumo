@@ -49,14 +49,52 @@ reduce scaling. Run on an otherwise idle machine. For a fair comparison of
 OpenMP and non-OpenMP binaries, build both with the **same compiler and
 optimization flags**. This benchmark does not measure CLI end-to-end time.
 
-## Measured scaling: Apple M3, release 1.10.0 (2026-11-13)
+## Measured scaling: Apple M3, dynamic schedule (2026-11-13)
 
 Machine: Apple M3, macOS 27.2 ARM64, 8 physical cores (4 performance + 4
-efficiency), MacPorts Clang 22.1.8, release build (`-O3`) of 1.10.0, with AO
+efficiency), MacPorts Clang 22.1.8, release build (`-O3`) of 1.10.0 with the
+blocked loops changed from `schedule(static)` to `schedule(dynamic)`, with AO
 screening (1.5.0) and the AO shell cutoff (1.6.0). These are observed wall
 times, not a performance guarantee. Each timing is the minimum of three
 measured runs after an untimed warm-up for that thread count. All reported
-configurations returned `max_abs=0` relative to the one-thread reference.
+configurations returned `max_abs=0` relative to the one-thread reference,
+and the checksums equal those of the static schedule.
+
+### HBC / B3LYP / def2-TZVP, 1410 AOs, 10,648 points
+
+| Block size | 1 thread (s) | 2 threads (s) | 4 threads (s) | 8 threads (s) | 16 threads (s) |
+|---:|---:|---:|---:|---:|---:|
+| 64 | 0.322884 | 0.169887 | 0.096825 | 0.078128 | 0.078711 |
+| 128 | 0.385347 | 0.203386 | 0.111042 | 0.086768 | 0.085437 |
+| 256 | 0.541672 | 0.284856 | 0.163322 | 0.122702 | 0.120586 |
+
+With screening, smaller blocks are faster: an AO is kept for a block if it
+is significant at any point of the block, so smaller blocks keep fewer AOs.
+
+### HBC / B3LYP, 103,823 points, block size 256
+
+| Basis | AOs | 1 thread (s) | 2 threads (s) | 4 threads (s) | 8 threads (s) | 16 threads (s) |
+|---|---:|---:|---:|---:|---:|---:|
+| def2-SVP | 678 | 0.796900 | 0.404577 | 0.214061 | 0.158176 | 0.152267 |
+| def2-TZVP | 1410 | 2.687340 | 1.405087 | 0.759516 | 0.561162 | 0.580688 |
+
+Speedup relative to one thread with the **same basis and block size**:
+
+| Basis | 2 threads | 4 threads | 8 threads | 16 threads |
+|---|---:|---:|---:|---:|
+| def2-SVP | 1.97 | 3.72 | 5.04 | 5.23 |
+| def2-TZVP | 1.91 | 3.54 | 4.79 | 4.63 |
+
+A first A/B run of the same change gave 3.67x / 4.24x (def2-SVP) and
+3.59x / 4.78x (def2-TZVP) with 4 / 8 threads, so the four-thread gain is
+reproducible, while the eight-thread def2-SVP figure varied between runs.
+Differences of a few percent between 8 and 16 threads should not be
+interpreted as significant without more independent runs.
+
+## Static schedule: Apple M3, release 1.10.0 (2026-11-13)
+
+Same machine and build as above, but with the blocked loops still using
+`schedule(static)`, as released in 1.10.0.
 
 ### HBC / B3LYP / def2-TZVP, 1410 AOs, 10,648 points
 
@@ -66,9 +104,6 @@ configurations returned `max_abs=0` relative to the one-thread reference.
 | 128 | 0.392738 | 0.206097 | 0.155280 | 0.120261 | 0.095561 |
 | 256 | 0.547389 | 0.287471 | 0.237245 | 0.144920 | 0.127461 |
 
-With screening, smaller blocks are faster: an AO is kept for a block if it
-is significant at any point of the block, so smaller blocks keep fewer AOs.
-
 ### HBC / B3LYP, 103,823 points, block size 256
 
 | Basis | AOs | 1 thread (s) | 2 threads (s) | 4 threads (s) | 8 threads (s) | 16 threads (s) |
@@ -76,22 +111,20 @@ is significant at any point of the block, so smaller blocks keep fewer AOs.
 | def2-SVP | 678 | 0.802822 | 0.412830 | 0.285763 | 0.189389 | 0.175049 |
 | def2-TZVP | 1410 | 2.719077 | 1.438418 | 1.066839 | 0.723465 | 0.619517 |
 
-Speedup relative to one thread with the **same basis and block size**:
-
 | Basis | 2 threads | 4 threads | 8 threads | 16 threads |
 |---|---:|---:|---:|---:|
 | def2-SVP | 1.94 | 2.81 | 4.24 | 4.59 |
 | def2-TZVP | 1.89 | 2.55 | 3.76 | 4.39 |
 
 Screening made the one-thread times 6x (def2-SVP) and 7.5x (def2-TZVP)
-shorter than in the 2026-10-15 measurements below, but the four-thread
-speedup dropped from about 3.7x to 2.5-2.8x; two further def2-SVP sweeps
-gave the same 2.8x. A plausible cause, not yet verified, is load imbalance:
-the blocked density loop uses `schedule(static)`, so each thread gets a
-contiguous range of blocks, and with screening the blocks in the empty
-outer region of the grid cost much less than those near the molecule.
-Differences of a few percent between 8 and 16 threads should not be
-interpreted as significant without more independent runs.
+shorter than in the 2026-10-15 measurements below, but with the static
+schedule the four-thread speedup dropped from about 3.7x to 2.5-2.8x; two
+further def2-SVP sweeps gave the same 2.8x. The cause was load imbalance,
+confirmed by the dynamic-schedule measurements above: `schedule(static)`
+gives each thread a contiguous range of blocks, and with screening the
+blocks in the empty outer region of the grid cost much less than those
+near the molecule. Dynamic scheduling restores the four-thread speedup to
+about 3.5-3.7x without changing any result.
 
 ## Earlier measurement: Apple M3, before AO screening (2026-10-15)
 
