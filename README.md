@@ -1,4 +1,4 @@
-# chem-kumo 1.11.0
+# chem-kumo 1.12.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -343,7 +343,7 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.11.0 release registers **80 Meson tests**, all passing in the
+The 1.12.0 release registers **81 Meson tests**, all passing in the
 serial and OpenMP builds reported on macOS ARM64 on 2026-11-13, with both
 Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
 AddressSanitizer and UndefinedBehaviorSanitizer (except the three HBC cases
@@ -450,9 +450,12 @@ sign(lambda2) rho, validated against Multiwfn), version 1.9.0 (the
 molecular electrostatic potential with rigorous far-field error bounds),
 version 1.9.1 (a code and documentation audit), version 1.10.0 (the
 electrostatic potential on a molecular surface, validated against
-Multiwfn) and version 1.11.0 (the average local ionization energy on a
+Multiwfn), version 1.11.0 (the average local ionization energy on a
 molecular surface, also validated against Multiwfn, and dynamic OpenMP
-scheduling of the blocked grid loops).
+scheduling of the blocked grid loops) and version 1.12.0 (LOL, IRI, DORI,
+the kinetic, potential and total energy densities, the spin polarization
+and the Shannon and Fisher information densities, validated against
+Multiwfn).
 
 ## License
 
