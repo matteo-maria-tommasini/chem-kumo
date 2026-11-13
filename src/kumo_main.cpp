@@ -782,7 +782,8 @@ std::string orbital_check_summary(const Molecule& mol) {
     if (info.orbital_status == chem::kumo::OrbitalRepresentationStatus::Unavailable)
         return "Occupied orbitals: not available in the FCHK, so AO-MO cannot be used";
     std::ostringstream out;
-    out << std::setprecision(2) << "Occupied orbitals vs FCHK density matrices: relative error "
+    out << std::setprecision(2)
+        << "Occupied orbitals vs FCHK density matrices: error relative to the total matrix "
         << info.total_relative_error << " (total), " << info.spin_relative_error
         << " (spin); AO-MO needs both <= " << chem::kumo::orbital_check_relative_tolerance;
     if (!info.ao_mo_eligible()) out << " (not met)";

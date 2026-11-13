@@ -8,6 +8,15 @@
 namespace chem::kumo::detail {
 /// AO-P is authoritative. AO-MO is eligible only after validating BOTH
 /// total and spin density matrices against the occupied-orbital reconstruction.
+///
+/// Both differences are measured relative to the norm of the total density
+/// matrix. The spin matrix P_alpha - P_beta is rebuilt as a difference of two
+/// matrices of the size of the total one, so the rounding of the FCHK
+/// coefficients (about nine significant digits) gives it an error that
+/// scales with the total matrix, not with the spin matrix itself; relative
+/// to a small spin matrix (a weakly spin-polarized state such as a
+/// broken-symmetry singlet) that error would fail a check that the orbitals
+/// actually pass. The scale is never below the spin matrix norm.
 enum class ElectronicBackend { AoP, AoMo };
 
 struct BackendDecision {
@@ -44,7 +53,7 @@ validate_orbital_backend(const Eigen::MatrixXd& total, const Eigen::MatrixXd& sp
     const double total_error = (total - reconstructed_total).norm();
     const double spin_error = (spin - reconstructed_spin).norm();
     const double total_scale = std::max(total.norm(), reconstructed_total.norm());
-    const double spin_scale = std::max(spin.norm(), reconstructed_spin.norm());
+    const double spin_scale = std::max({spin.norm(), reconstructed_spin.norm(), total_scale});
     decision.total_absolute_error = total_error;
     decision.spin_absolute_error = spin_error;
     decision.total_relative_error = total_scale > 0.0 ? total_error / total_scale : total_error;

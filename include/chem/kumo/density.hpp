@@ -131,20 +131,22 @@ enum class OrbitalRepresentationStatus { Valid, Inconsistent, Unavailable };
 /// matrices (ElectronicStructureInfo): the total and the spin density
 /// matrices are each reproduced if the Frobenius norm of the difference is
 /// at most orbital_check_absolute_tolerance + orbital_check_relative_tolerance
-/// times the larger of the two matrix norms.
+/// times the norm of the total density matrix (the larger of the FCHK and
+/// rebuilt ones, and never less than that of the spin matrix).
 inline constexpr double orbital_check_relative_tolerance = 1e-8;
 inline constexpr double orbital_check_absolute_tolerance = 1e-10;
 
 /// Immutable diagnostic calculated once while loading the FCHK.
 struct ElectronicStructureInfo {
     OrbitalRepresentationStatus orbital_status = OrbitalRepresentationStatus::Unavailable;
-    /// Differences (Frobenius norm, absolute and relative to the larger
-    /// matrix norm) between the FCHK total and spin density matrices and
-    /// their reconstruction from the occupied MOs; zero when the status is
-    /// Unavailable. FCHK files store about nine significant digits, so the
-    /// spin matrix of a weakly spin-polarized state (for example a
-    /// broken-symmetry singlet), a small difference of two large matrices,
-    /// may fail the check through rounding alone.
+    /// Differences (Frobenius norm, absolute and relative to the norm of
+    /// the total density matrix) between the FCHK total and spin density
+    /// matrices and their reconstruction from the occupied MOs; zero when
+    /// the status is Unavailable. The spin matrix is rebuilt as a difference
+    /// of two matrices of the size of the total one, so its rounding error
+    /// (FCHK files store about nine significant digits) scales with the
+    /// total matrix; measuring it against the total matrix lets weakly
+    /// spin-polarized states, such as broken-symmetry singlets, pass.
     double total_absolute_error = 0.0;
     double total_relative_error = 0.0;
     double spin_absolute_error = 0.0;
