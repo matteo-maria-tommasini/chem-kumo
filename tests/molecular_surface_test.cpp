@@ -1,20 +1,28 @@
 // Molecular surfaces: the isosurface construction on analytic functions, the
 // surface statistics on a mesh with exact answers, and the density
-// isosurface and electrostatic potential surface of a molecule.
+// isosurface, electrostatic potential surface and average local ionization
+// energy surface of a molecule.
 
 #include "chem/kumo.hpp"
 #include "chem/kumo/basis_evaluator.hpp"
 #include "electrostatic_potential.hpp"
+#include "gzip_input.hpp"
 #include "isosurface.hpp"
 #include "omp_support.hpp"
 #include "test_support.hpp"
 
 #include <Eigen/Geometry>
+#include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
 #include <numbers>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -394,6 +402,198 @@ void test_molecule(const char* path) {
         name + ": an isovalue below 1e-8 is rejected");
 }
 
+// Average local ionization energy at `point` from the public orbital API:
+// sum over the occupied alpha and beta spin orbitals of |e_i| phi_i^2,
+// divided by the sum of phi_i^2. Restricted files return the same orbitals
+// and energies for both channels. `density` receives the denominator.
+double ionization_energy(const chem::kumo::Molecule& mol, const Eigen::Vector3d& point,
+                         double& density) {
+    double weighted = 0.0;
+    density = 0.0;
+    for (auto channel : {chem::kumo::Spin::Alpha, chem::kumo::Spin::Beta}) {
+        const auto& energies = mol.orbital_energies(channel);
+        for (int i = 0; i < mol.occupied_count(channel); ++i) {
+            const double phi =
+                mol.orbital_derivatives(point, static_cast<std::size_t>(i) + 1, channel).value;
+            weighted += std::abs(energies[static_cast<std::size_t>(i)]) * phi * phi;
+            density += phi * phi;
+        }
+    }
+    return weighted / density;
+}
+
+void test_ionization_energy(const char* path) {
+    using chem::kumo::Spin;
+    const std::string name = path;
+    const auto mol = chem::kumo::Molecule::from_fchk(path);
+    kumo_test::set_threads(1);
+    const auto surface = chem::kumo::local_ionization_energy_surface(mol);
+    const auto& mesh = surface.mesh;
+    const auto plain = chem::kumo::density_isosurface(mol);
+    kumo_test::check(plain.vertices == mesh.vertices && plain.triangles == mesh.triangles,
+                     name + ": ionization energy surface on the density_isosurface mesh");
+
+    // Against the orbital formula at every 50th vertex, and at points near
+    // and between the nuclei.
+    Points points(3, 0);
+    const auto add = [&](const Eigen::Vector3d& x) {
+        points.conservativeResize(Eigen::NoChange, points.cols() + 1);
+        points.col(points.cols() - 1) = x;
+    };
+    for (std::size_t v = 0; v < mesh.vertices.size(); v += 50)
+        add(mesh.vertices[v]);
+    const auto& atoms = mol.atoms();
+    for (std::size_t a = 0; a < atoms.size(); ++a) {
+        add(atoms[a].position + Eigen::Vector3d(0.1, -0.2, 0.3));
+        add(0.5 * (atoms[a].position + atoms[(a + 1) % atoms.size()].position) +
+            Eigen::Vector3d(0.0, 0.4, 0.0));
+    }
+    const auto values = chem::kumo::average_local_ionization_energy(mol, points);
+    double worst = 0.0, worst_density = 0.0;
+    for (Eigen::Index p = 0; p < points.cols(); ++p) {
+        double density = 0.0;
+        const double expected = ionization_energy(mol, points.col(p), density);
+        worst = std::max(worst, std::abs(values[static_cast<std::size_t>(p)] - expected) /
+                                    std::abs(expected));
+        // The occupied orbitals reproduce the FCHK density (to the precision
+        // of its printed matrices).
+        worst_density =
+            std::max(worst_density,
+                     std::abs(density - mol.density_derivatives(points.col(p)).value) / density);
+    }
+    kumo_test::check(worst <= 1e-12, name +
+                                         ": agrees with the orbital formula to 1e-12 relative "
+                                         "(largest difference " +
+                                         kumo_test::num(worst) + ")");
+    kumo_test::check(worst_density <= 1e-7,
+                     name +
+                         ": the orbital density is the FCHK density to 1e-7 relative "
+                         "(largest difference " +
+                         kumo_test::num(worst_density) + ")");
+    double surface_difference = 0.0;
+    for (std::size_t v = 0; v < mesh.vertices.size(); v += 50)
+        surface_difference =
+            std::max(surface_difference, std::abs(surface.ionization_energy[v] - values[v / 50]));
+    kumo_test::check(surface_difference <= 1e-14,
+                     name +
+                         ": surface values agree with the point evaluation to 1e-14 (largest "
+                         "difference " +
+                         kumo_test::num(surface_difference) + ")");
+
+    // A weighted average of the occupied |e_i|.
+    double lowest = std::numeric_limits<double>::infinity(), highest = 0.0;
+    for (auto channel : {Spin::Alpha, Spin::Beta})
+        for (int i = 0; i < mol.occupied_count(channel); ++i) {
+            const double e = std::abs(mol.orbital_energies(channel)[static_cast<std::size_t>(i)]);
+            lowest = std::min(lowest, e);
+            highest = std::max(highest, e);
+        }
+    const auto& s = surface.statistics;
+    kumo_test::check(s.minimum >= lowest && s.maximum <= highest,
+                     name + ": values between the smallest and largest occupied |e_i|");
+    const auto again = chem::kumo::surface_statistics(mesh, surface.ionization_energy);
+    kumo_test::check(again.average == s.average && again.total_variance == s.total_variance,
+                     name + ": statistics are surface_statistics() of the values");
+    kumo_test::check(s.negative_area == 0.0 && s.positive_area == s.area &&
+                         s.positive_average == s.average,
+                     name + ": the whole surface is positive");
+
+    for (int threads : {2, 4}) {
+        kumo_test::set_threads(threads);
+        const auto parallel = chem::kumo::local_ionization_energy_surface(mol);
+        kumo_test::check(parallel.mesh.vertices == mesh.vertices &&
+                             parallel.ionization_energy == surface.ionization_energy,
+                         name + ": identical mesh and values with " + std::to_string(threads) +
+                             " threads");
+    }
+    kumo_test::set_threads(1);
+
+    Points bad(3, 1);
+    bad.col(0) << 0.0, std::numeric_limits<double>::quiet_NaN(), 0.0;
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { (void)chem::kumo::average_local_ionization_energy(mol, bad); },
+        name + ": a nonfinite point is rejected");
+    bad.col(0) << 0.0, 0.0, 1e3;
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { (void)chem::kumo::average_local_ionization_energy(mol, bad); },
+        name + ": a point where the density vanishes is rejected");
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { (void)chem::kumo::local_ionization_energy_surface(mol, 0.99e-8); },
+        name + ": an isovalue below 1e-8 is rejected");
+}
+
+// Copy of a gzip FCHK with `change` applied to its text, in a temporary file.
+std::filesystem::path modified_fchk(const char* path, const std::string& tag,
+                                    const std::function<void(std::string&)>& change) {
+    auto text = chem::kumo::detail::read_gzip_file(path, "FCHK");
+    change(text);
+    const auto output =
+        std::filesystem::temp_directory_path() /
+        ("kumo-surface-test-" + tag + "-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".fchk");
+    std::ofstream(output) << text;
+    return output;
+}
+
+// The record with header `label`, as [begin, end) offsets in `text`.
+std::pair<std::size_t, std::size_t> record(const std::string& text, const std::string& label) {
+    const auto begin = text.find("\n" + label);
+    if (begin == std::string::npos) throw std::runtime_error("FCHK lacks " + label);
+    const auto header_end = text.find('\n', begin + 1);
+    const auto count = std::stoul(text.substr(text.rfind("N=", header_end) + 2));
+    std::size_t end = header_end;
+    for (std::size_t line = 0; line < (count + 4) / 5; ++line)
+        end = text.find('\n', end + 1);
+    return {begin + 1, end + 1};
+}
+
+// Files whose orbitals cannot give the ionization energy.
+void test_ionization_energy_inputs(const char* path) {
+    const std::string name = path;
+    // The error names the reason (`reason` is part of its message).
+    const auto check_rejected = [&](const std::filesystem::path& file, const std::string& what,
+                                    const std::string& reason) {
+        const auto mol = chem::kumo::Molecule::from_fchk(file);
+        std::filesystem::remove(file);
+        std::string message;
+        try {
+            (void)chem::kumo::local_ionization_energy_surface(mol);
+        } catch (const std::invalid_argument& e) {
+            message = e.what();
+        }
+        kumo_test::check(message.find(reason) != std::string::npos,
+                         name + ": " + what + " is rejected with a message containing '" + reason +
+                             "' (got '" + message + "')");
+    };
+    check_rejected(modified_fchk(path, "energies",
+                                 [](std::string& text) {
+                                     const auto [begin, end] =
+                                         record(text, "Alpha Orbital Energies");
+                                     text.erase(begin, end - begin);
+                                 }),
+                   "a file without orbital energies", "orbital energies");
+    // A density matrix that the occupied MOs do not reproduce (as for a
+    // post-SCF density): one off-diagonal element changed.
+    check_rejected(modified_fchk(path, "density",
+                                 [](std::string& text) {
+                                     const auto [begin, end] = record(text, "Total SCF Density");
+                                     const auto first = text.find('\n', begin) + 1;
+                                     std::istringstream line(text.substr(first, 80));
+                                     std::vector<double> values(5);
+                                     for (auto& v : values)
+                                         line >> v;
+                                     values[1] += 0.05;
+                                     std::ostringstream out;
+                                     out << std::scientific << std::setprecision(8);
+                                     for (double v : values)
+                                         out << std::setw(16) << v;
+                                     text.replace(first, text.find('\n', first) - first, out.str());
+                                     (void)end;
+                                 }),
+                   "a density matrix that the occupied MOs do not reproduce",
+                   "reproduce the FCHK density matrices");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -402,8 +602,11 @@ int main(int argc, char** argv) {
         test_sphere();
         test_octahedron();
         test_extraction_errors();
-        for (int file = 1; file < argc; ++file)
+        for (int file = 1; file < argc; ++file) {
             test_molecule(argv[file]);
+            test_ionization_energy(argv[file]);
+        }
+        test_ionization_energy_inputs(argv[1]);
         if (kumo_test::failures == 0) std::cout << "molecular surfaces OK\n";
     });
 }

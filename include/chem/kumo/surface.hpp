@@ -10,6 +10,8 @@ namespace chem::kumo {
 
 /// Hartree in kcal/mol (CODATA 2018), for reporting potentials.
 inline constexpr double hartree_in_kcal_per_mol = 627.5094740631;
+/// Hartree in eV (CODATA 2018), for reporting energies.
+inline constexpr double hartree_in_electronvolt = 27.211386245988;
 
 /// Closed, oriented triangle mesh. Vertex positions are in bohr; each
 /// triangle lists its vertices counter-clockwise seen from outside, so that
@@ -113,5 +115,44 @@ struct PotentialSurface {
 /// Throws std::invalid_argument for invalid options.
 [[nodiscard]] PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
                                                                const SurfaceOptions& options = {});
+
+/// Average local ionization energy (Sjoberg, Murray, Brinck and Politzer),
+/// hartree, at the columns of `points` (bohr):
+///
+///   I(r) = sum_i n_i |e_i| |phi_i(r)|^2 / sum_i n_i |phi_i(r)|^2,
+///
+/// over the occupied SCF orbitals phi_i, with energies e_i and occupations
+/// n_i (2 for the doubly occupied orbitals of a restricted calculation,
+/// otherwise 1), as in Multiwfn. The denominator is the density of the
+/// occupied orbitals, which equals the FCHK total density to within the
+/// precision of the FCHK matrices (ElectronicStructureInfo). The result does
+/// not depend on the number of OpenMP threads.
+///
+/// Throws std::invalid_argument if a point is not finite, the FCHK has no
+/// orbital energies, its occupied MOs do not reproduce its density matrices
+/// (ElectronicStructureInfo::ao_mo_eligible(); for example a post-SCF
+/// density), or the density vanishes at a point.
+[[nodiscard]] std::vector<double> average_local_ionization_energy(
+    const Molecule& molecule,
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points);
+
+/// Average local ionization energy on a density isosurface and its statistics.
+struct IonizationEnergySurface {
+    TriangleMesh mesh;
+    std::vector<double> ionization_energy; ///< per vertex, hartree
+    /// Statistics of the ionization energy. It is positive, so A+ = A, the
+    /// positive average is the average and sigma^2_+ = sigma^2_tot is the
+    /// variance about it (Multiwfn's "Variance"); the negative quantities,
+    /// nu, the nonpolar area and MPI carry no information.
+    SurfaceStatistics statistics;
+};
+
+/// Average local ionization energy (average_local_ionization_energy()) on
+/// the total-density isosurface of density_isosurface(), with its surface
+/// statistics. Throws as density_isosurface() and
+/// average_local_ionization_energy().
+[[nodiscard]] IonizationEnergySurface local_ionization_energy_surface(const Molecule& molecule,
+                                                                      double isovalue = 1e-3,
+                                                                      double spacing = 0.25);
 
 } // namespace chem::kumo

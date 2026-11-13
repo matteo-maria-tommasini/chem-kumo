@@ -144,6 +144,30 @@ done
 if "$KUMO" "$FCHK" --spacing 1 --isovalue 0.002 --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     fail '--isovalue without --esp-surface unexpectedly accepted'
 fi
+# --alie-surface prints the average local ionization energy statistics on the
+# same isosurface (O2: minimum about 15.40 eV, average about 16.32 eV).
+run_kumo "$FCHK" --alie-surface > "$TMP/alie.log"
+grep -Fqx 'Average local ionization energy on the total-density isosurface rho = 0.001 e/bohr^3' \
+    "$TMP/alie.log" || fail '--alie-surface: no isosurface line'
+grep -Eqx 'Surface: [0-9]+ vertices, [0-9]+ triangles, grid spacing 0.25 bohr' "$TMP/alie.log" ||
+    fail '--alie-surface: no surface summary with the default spacing 0.25'
+awk '$1 == "Minimum" && $3 > 15.3 && $3 < 15.5 {found = 1} END {exit !found}' "$TMP/alie.log" ||
+    fail '--alie-surface: minimum of O2 not near 15.40 eV'
+awk '$1 == "Average" && $3 > 16.2 && $3 < 16.4 {found = 1} END {exit !found}' "$TMP/alie.log" ||
+    fail '--alie-surface: average of O2 not near 16.32 eV'
+grep -Eq '^Surface minima: [0-9]+$' "$TMP/alie.log" || fail '--alie-surface: no minima list'
+run_kumo "$FCHK" --alie-surface --isovalue 0.002 --spacing 0.3 > "$TMP/alie2.log"
+grep -Fq 'rho = 0.002 e/bohr^3' "$TMP/alie2.log" && grep -Fq 'grid spacing 0.3 bohr' "$TMP/alie2.log" ||
+    fail '--alie-surface: --isovalue or --spacing not applied'
+awk -v a="$(area "$TMP/alie.log")" -v b="$(area "$TMP/alie2.log")" 'BEGIN {exit !(b < a)}' ||
+    fail '--alie-surface: the rho = 0.002 surface is not smaller than the rho = 0.001 one'
+for options in '--esp-surface' '--esp-tolerance 0' '--property esp' '--output x' '--margin 2' \
+    '--spin total' '--mo homo' '--backend ao-p' '--isovalue 1e-9'; do
+    # shellcheck disable=SC2086 # options are split on purpose
+    if "$KUMO" "$FCHK" --alie-surface $options > "$TMP/error.log" 2>&1; then
+        fail "--alie-surface $options unexpectedly accepted"
+    fi
+done
 # Density backends: the Cube comment names the contraction used, and the AO-MO
 # and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
 # selects AO-MO).

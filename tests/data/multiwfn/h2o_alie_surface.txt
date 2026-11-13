@@ -1,0 +1,27 @@
+ Global surface minimum:  0.338680 a.u. at  -0.001644   1.885500  -0.230226 Ang
+ Global surface maximum:  0.588598 a.u. at   1.771480   0.009341  -0.361509 Ang
+
+ The number of surface minima:     2
+   #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)
+     1  0.33867996    9.215950  212.525062       0.007131  -1.886040  -0.223602
+*    2  0.33867951    9.215938  212.524779      -0.001644   1.885500  -0.230226
+
+ The number of surface maxima:     2
+   #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)
+     1  0.58859640   16.016522  369.350124      -1.771718   0.009986  -0.361029
+*    2  0.58859778   16.016560  369.350995       1.771480   0.009341  -0.361509
+
+       ================= Summary of surface analysis =================
+
+ Volume:   193.38642 Bohr^3  (  28.65691 Angstrom^3)
+ Estimated density according to mass and volume (M/V):    1.0439 g/cm^3
+ Minimal value:      9.21594 eV,   Maximal value:     16.01656 eV
+ Overall surface area:         163.13858 Bohr^2  (  45.68346 Angstrom^2)
+ Positive surface area:        163.13858 Bohr^2  (  45.68346 Angstrom^2)
+ Negative surface area:          0.00000 Bohr^2  (   0.00000 Angstrom^2)
+ Average value:    0.44425146 a.u. (     12.08870 eV,    278.77224 kcal/mol)
+ Variance:     0.00425345 a.u.^2  (      3.14951 eV^2,  0.16749E+04 kcal/mol^2)
+ Overall skewness:         0.1509789140
+ Positive skewness:        0.1509789140
+
+ Surface analysis finished!
