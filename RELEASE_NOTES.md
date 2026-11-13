@@ -1,3 +1,75 @@
+# chem-kumo 1.11.0 — release notes
+
+The library and the `kumo` CLI compute the average local ionization energy
+(ALIE) of Sjoberg, Murray, Brinck and Politzer, at any points and on the
+molecular surface, as a companion to the electrostatic potential surface
+analysis of 1.10.0. The blocked grid loops of OpenMP builds are scheduled
+dynamically and run faster. The public API is extended in a
+source-compatible way; existing outputs are unchanged.
+
+Library changes:
+
+- `average_local_ionization_energy(molecule, points)` (in
+  `<chem/kumo/surface.hpp>`): the ALIE in hartree at the columns of
+  `points`, sum_i n_i |e_i| |phi_i|^2 / sum_i n_i |phi_i|^2 over the
+  occupied SCF orbitals, with occupations 2 for the doubly occupied
+  orbitals of a restricted calculation and 1 otherwise; this is Multiwfn's
+  definition.
+- `local_ionization_energy_surface(molecule, isovalue, spacing)` returns an
+  `IonizationEnergySurface`: the mesh of `density_isosurface()` (defaults
+  0.001 e/bohr^3 and 0.25 bohr), the ALIE at its vertices and its
+  `SurfaceStatistics` (extrema and local extrema, average, variance,
+  average deviation). `hartree_in_electronvolt` converts the energies.
+- Both throw `std::invalid_argument` for a file without orbital energies or
+  whose occupied MOs do not reproduce the density matrices (for example a
+  post-SCF density), a nonfinite point, or a point where the density
+  vanishes. Results do not depend on the number of OpenMP threads.
+
+CLI changes:
+
+- `kumo FILE --alie-surface` prints the ALIE analysis in hartree and eV,
+  with the local minima (sites of electrophilic attack) and maxima and
+  their positions in Angstrom. `--isovalue` and `--spacing` apply as for
+  `--esp-surface`; options that only concern Cube output, and
+  `--esp-tolerance`, are rejected. The `--esp-surface` report is unchanged.
+
+Performance:
+
+- OpenMP builds assign the blocks of the blocked density, density
+  derivative, AO-MO and orbital loops with `schedule(dynamic)` instead of
+  `schedule(static)`: with AO screening, blocks far from the molecule cost
+  much less than those near it, and a static assignment left threads idle.
+  On the Apple M3 (4P+4E), HBC with 103,823 points, the blocked density
+  speedup at 4 / 8 threads rose from 2.8x / 4.0x to 3.7x / 5.0x
+  (def2-SVP) and from 2.5x / 3.7x to 3.5x / 4.8x (def2-TZVP). Results are
+  bit-identical across schedules and thread counts.
+
+Validation:
+
+- The test `molecular-surface` checks the ALIE against the orbital formula
+  evaluated with `Molecule::orbital_derivatives()` to 1e-12 relative, for
+  restricted (water) and unrestricted (O2) files, its bounds, thread
+  independence and the rejected inputs.
+- The test `multiwfn-surface-reference` compares water, O2 and acrolein
+  with new Multiwfn 2026.9.1 ALIE references at 0.05 bohr (kumo at its
+  default 0.25 bohr): average within 1.5e-5 relative, variance within 6e-3
+  (O2), global extrema and local minima within 2.5e-4 hartree. The
+  tolerances are about three times these discretization differences,
+  documented in `tests/REFERENCE_CUBES.md`; the largest difference is 35%
+  of its tolerance.
+- 80/80 Meson tests passed on macOS ARM64 on 2026-11-13 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings. CI builds and tests on ubuntu-latest
+  and macos-latest, and runs the suite under AddressSanitizer and
+  UndefinedBehaviorSanitizer without the `slow` suite.
+
+Documentation: `docs/API.md`, the README and the mathematics document
+describe the ALIE; `docs/OPENMP.md` and `benchmarks/PARALLEL_DENSITY.md`
+have new release-build speedups of the blocked density and of the
+`Evaluator` point path on the Apple M3.
+
+---
+
 # chem-kumo 1.10.0 — release notes
 
 The library and the `kumo` CLI analyse the electrostatic potential (ESP) on
