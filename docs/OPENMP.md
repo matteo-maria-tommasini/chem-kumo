@@ -66,9 +66,13 @@ warm-up; compare speedups only within the same platform and workload.
 See [density benchmarks](../benchmarks/PARALLEL_DENSITY.md) and
 [field benchmarks](../benchmarks/PARALLEL_FIELDS.md).
 
-The Apple M3 (4P+4E) achieved up to 5.05x on density; dual Xeon E5640
-(2 sockets, 8 physical cores / 16 SMT threads) achieved up to 6.89x on
-density and 6.77x on density derivatives.
+Blocked density (`densities_blocked`), 1.10.0 release build on the Apple M3
+(4P+4E), HBC with 103,823 points and block size 256: 4.2x (def2-SVP) and
+3.8x (def2-TZVP) with 8 threads, but only 2.8x and 2.5x with 4 threads; see
+[density benchmarks](../benchmarks/PARALLEL_DENSITY.md). Before AO screening
+(1.5.0) the same benchmark gave up to 5.05x on the M3, and a dual Xeon E5640
+(2 sockets, 8 physical cores / 16 SMT threads) up to 6.89x on density and
+6.77x on density derivatives; the Xeon has not been measured again.
 
 `Evaluator` point path, 1.10.0 release build (MacPorts Clang 22, `-O3`) on
 the Apple M3 (4P+4E), HBC with 97,280 grid points (margin 3 bohr, spacing
