@@ -11,7 +11,8 @@
 namespace chem::kumo {
 namespace detail {
 struct AoMoTestAccess;
-}
+struct SurfaceAccess;
+} // namespace detail
 /// SCF density component. Difference means alpha minus beta.
 /// For MO evaluation only Alpha and Beta are meaningful channels.
 enum class Spin { Total, Alpha, Beta, Difference };
@@ -239,6 +240,7 @@ public:
 private:
     friend class Evaluator;
     friend struct detail::AoMoTestAccess;
+    friend struct detail::SurfaceAccess;
     /// Internal multi-component AO-P contraction; one AO derivative evaluation per point.
     [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,

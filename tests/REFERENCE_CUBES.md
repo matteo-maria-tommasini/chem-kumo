@@ -108,6 +108,70 @@ The O2 file confirms that both programs use the spin-polarized form of the
 total ELF for open shells. There are no sign differences in sign(lambda2)
 rho.
 
+## Multiwfn references for the ESP surface analysis
+
+`tests/data/multiwfn/` also contains the output of Multiwfn's quantitative
+molecular surface analysis (main function 12) of the ESP on the
+rho = 0.001 e/bohr^3 isosurface of the total density, computed with the
+same Multiwfn build and settings (`iESPcode= 1`) on 2026-11-13:
+
+| File | FCHK |
+|------|------|
+| `h2o_esp_surface.txt` | `hybrids/h2o_b3lyp_def2tzvp.fchk.gz` |
+| `o2_esp_surface.txt` | `o2.fchk.gz` |
+| `acrolein_esp_surface.txt` | `acrolein.fchk.gz` |
+
+Each file is the part of the output from the global extrema to the end of
+the summary, with terminal colour codes and Multiwfn's floating-point
+exception note removed. The water analysis was run with this input:
+
+    h2o.fchk
+    12
+    3
+    0.05
+    0
+    -1
+    -1
+    q
+
+where 12 opens the surface analysis (default surface: rho = 0.001; mapped
+function: ESP), 3 and 0.05 set the grid spacing to 0.05 bohr instead of
+the default 0.25, 0 starts the analysis, and the rest leaves the program.
+All other options keep their defaults, including the merging of surface
+vertices closer than half the spacing.
+
+The fine spacing makes the references nearly converged: from 0.25 to 0.05
+bohr Multiwfn's water area changes by 1e-3 relative and its variance by
+5e-4, and at 0.05 bohr the two programs agree to about 3e-5 on water's area,
+variance, Pi and MPI.
+
+**Test.** The test `multiwfn-surface-reference` runs
+`electrostatic_potential_surface()` with its default spacing of 0.25 bohr
+and compares the volume, areas, global extrema, averages, variances, nu,
+Pi and MPI, and for water and acrolein the local extrema (count, value and
+position). Multiwfn prints variances, Pi and MPI with more digits in
+kcal/mol than in hartree, so those values are read in kcal/mol and divided
+by Multiwfn's 627.51 kcal/mol per hartree. The differences are kumo's
+discretization error at 0.25 bohr, which falls as the spacing squared, plus
+Multiwfn's at 0.05 bohr. The largest observed differences, and the
+tolerances, are:
+
+| Quantity | Largest difference | Tolerance |
+|----------|--------------------|-----------|
+| Volume and areas | 1.6e-3 relative (O2 negative area) | 5e-3 relative |
+| Averages, Pi, MPI | 1.6e-3 relative (O2 positive average) | 5e-3 relative + 2e-6 hartree/e |
+| Variances | 3.4e-3 relative (O2) | 1e-2 relative + 2e-8 hartree^2 |
+| nu | 2.2e-4 (O2) | 1e-3 |
+| Nonpolar area fraction | 1.9e-4 (water) | 2e-3 |
+| Extremum values | 1.4e-5 hartree/e (acrolein) | 4e-5 hartree/e |
+| Extremum positions | 0.13 bohr (acrolein) | 0.4 bohr |
+
+O2 has the largest relative differences because its potential is small
+(below 6 kcal/mol in magnitude): kumo's own variance changes by 5e-3 from
+0.25 to 0.05 bohr. The local extrema of O2 are not compared: its
+potential is constant along rings around the axis, and Multiwfn lists 141
+minima and 90 maxima on them, an artefact of the mesh.
+
 **Citation.** Multiwfn asks that work using it cite T. Lu and F. Chen,
 J. Comput. Chem. 33, 580 (2012) and T. Lu, J. Chem. Phys. 161, 082503
 (2024).

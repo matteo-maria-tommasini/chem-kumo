@@ -34,6 +34,7 @@ kumo_lib = library(
         'src/basis_evaluator.cpp',
         'src/boys_function.cpp',
         'src/electrostatic_potential.cpp',
+        'src/surface.cpp',
         'src/density.cpp',
         'src/cube.cpp',
         'src/orbitals.cpp',
@@ -74,6 +75,7 @@ install_headers(
     'include/chem/kumo/cube.hpp',
     'include/chem/kumo/subspace_projector.hpp',
     'include/chem/kumo/weighted_overlap.hpp',
+    'include/chem/kumo/surface.hpp',
     subdir: 'chem/kumo',
 )
 executable('kumo-example', 'examples/fchk_to_cube.cpp', dependencies: kumo_dep)
@@ -619,6 +621,49 @@ test(
     electrostatic_potential_exe,
     args: [meson.current_source_dir() / 'tests/data/hbc/hbc_b3lyp_631gdp.fchk.gz'],
     suite: 'slow',
+    timeout: 300,
+)
+
+# Molecular surfaces: isosurface construction and statistics against
+# analytic cases, the density isosurface and the potential on it.
+molecular_surface_exe = executable(
+    'kumo-molecular-surface-test',
+    ['tests/molecular_surface_test.cpp'],
+    include_directories: include_directories('src'),
+    dependencies: kumo_dep,
+)
+test(
+    'molecular-surface',
+    molecular_surface_exe,
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+    ],
+    timeout: 300,
+)
+
+# Electrostatic potential surface analysis against Multiwfn references at a
+# grid spacing of 0.05 bohr (water, O2 and acrolein). Local extrema are
+# compared for water and acrolein; those of O2 lie on rings of equal value.
+multiwfn_surface_reference_exe = executable(
+    'kumo-multiwfn-surface-reference-test',
+    ['tests/multiwfn_surface_reference_test.cpp'],
+    dependencies: kumo_dep,
+)
+test(
+    'multiwfn-surface-reference',
+    multiwfn_surface_reference_exe,
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/h2o_esp_surface.txt',
+        'yes',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/o2_esp_surface.txt',
+        'no',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/acrolein_esp_surface.txt',
+        'yes',
+    ],
     timeout: 300,
 )
 
