@@ -71,6 +71,7 @@ kumo molecule.fchk --property elf                # electron localization functio
 kumo molecule.fchk --property rdg,sign-lambda2-rho  # NCI analysis
 kumo molecule.fchk --property density,esp        # electrostatic potential
 kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
+kumo molecule.fchk --esp-surface                 # ESP statistics on rho = 0.001
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -123,6 +124,21 @@ that nucleus. `--esp-tolerance` sets the error bound at each point (default
 it. On the default grid, water (def2-TZVP) takes about 2 s on one core and
 HBC (def2-SVP, 1.5 million points) about 3 minutes on 8 cores, or 2
 minutes with `--esp-tolerance 1e-6`.
+
+`--esp-surface` writes no Cube file: it computes the electrostatic potential
+on the isosurface rho = 0.001 e/bohr^3 of the total density (`--isovalue`
+changes it) and prints its statistics in hartree/e and kcal/mol: global and
+local extrema (V_s,min and V_s,max, with positions in Angstrom), averages
+over the whole surface and its positive and negative parts, variances
+sigma^2_+, sigma^2_- and sigma^2_tot, the balance of charges nu, the
+internal charge separation Pi, the molecular polarity index, and the
+surface area, positive, negative and nonpolar (|V| <= 10 kcal/mol) areas
+and enclosed volume. The surface is built on a grid with `--spacing`
+(default 0.25 bohr here) and its vertices are placed on the analytic
+isosurface; `--esp-tolerance` applies to the potential at the vertices.
+Acrolein takes about 1 s; HBC (def2-SVP) about 30 s on 8 cores. The
+results agree with Multiwfn's surface analysis (see
+[docs/API.md](docs/API.md)).
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce
@@ -311,8 +327,9 @@ sign(lambda2) rho against their formulas, an independent orbital form of the
 Pauli term and Multiwfn reference Cube files; the Boys function against
 quadrature; the electrostatic potential against closed forms, the multipole
 expansion of the analytic AO moments, the Poisson equation and Multiwfn,
-and its far-field approximations against their error bounds; scalar-field
-operations; and
+and its far-field approximations against their error bounds; molecular
+surfaces and their ESP statistics against closed forms and Multiwfn;
+scalar-field operations; and
 Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
 density components remain in the suite.

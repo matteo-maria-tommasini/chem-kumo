@@ -368,6 +368,101 @@ point: they agree within 2e-5 relative plus 1e-7 hartree/e, the rounding of
 the reference files and of their grid coordinates (see
 [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
 
+## Electrostatic potential on a molecular surface (1.10.0)
+
+`<chem/kumo/surface.hpp>` computes the electrostatic potential on an
+isosurface of the total electron density and the statistics of Politzer
+and Murray that describe it (extrema, averages, variances, balance of
+charges, internal charge separation, molecular polarity index):
+
+```cpp
+#include <chem/kumo.hpp>
+
+const auto mol = chem::kumo::Molecule::from_fchk("acrolein.fchk.gz");
+const auto surface = chem::kumo::electrostatic_potential_surface(mol);
+const auto& s = surface.statistics;
+std::cout << s.minimum << ' ' << s.maximum << ' ' << s.total_variance << ' '
+          << s.balance << '\n';
+for (std::size_t v : s.local_minima)  // vertices, by increasing value
+    std::cout << surface.potential[v] << " at " << surface.mesh.vertices[v].transpose() << '\n';
+```
+
+`SurfaceOptions` sets the density isovalue (default 0.001 e/bohr^3, the
+usual molecular surface), the grid spacing of the surface construction
+(default 0.25 bohr) and the error bound of the potential at each vertex
+(`potential_tolerance`, default 1e-8 hartree/e; 0 is exact).
+`PotentialSurface` holds the mesh, the potential at its vertices (hartree/e)
+and the statistics. The result does not depend on the number of OpenMP
+threads.
+
+Surface. `density_isosurface(molecule, isovalue, spacing)` returns the
+isosurface alone as a `TriangleMesh`: vertex positions in bohr and
+triangles oriented outwards, with `area()` and the enclosed `volume()`. The
+total density is evaluated on an axis-aligned grid around the atoms, whose
+margin grows from 4 bohr until the grid boundary lies outside the
+isosurface. Each grid cell is split into six tetrahedra around its main
+diagonal; the surface crosses every tetrahedron edge whose ends lie on
+either side of the isovalue, and each tetrahedron contributes a triangle or
+a quadrilateral (split along its shorter diagonal). Every vertex is then
+moved onto the isosurface itself, by Newton steps along its edge on the
+analytic density and its gradient, safeguarded by bisection, to 1e-10 bohr.
+The mesh is closed and consistently oriented, so its volume follows from
+the divergence theorem. Isovalues below 1e-8 e/bohr^3
+(`minimum_density_isovalue`) are rejected: the AO cutoff changes the
+density by about 1e-13 e/bohr^3. An isosurface that extends more than 16
+bohr beyond the atoms is an error.
+
+Potential. The vertices are evaluated in clusters (those on the edges of a
+block of 8 x 8 x 8 grid cells) with the far-field approximations of the
+Evaluator, within `potential_tolerance` at every vertex.
+
+Statistics. `surface_statistics(mesh, values, polar_threshold)` works for
+any function given at the vertices. It integrates the piecewise-linear
+interpolation of the vertex values exactly over each triangle; the positive
+region (V >= 0) and the negative one are bounded by the zero line of that
+interpolation, which may cross triangles, and likewise for the averages of
+|V - average| and |V| and for the nonpolar area (|V| <= `polar_threshold`,
+default 10 kcal/mol). With A+ and A- the positive and negative areas:
+
+- averages over the whole surface, A+ and A- (NaN for an empty region);
+- variances sigma^2_+ and sigma^2_- about the positive and negative
+  averages (0 for an empty region), and sigma^2_tot = sigma^2_+ + sigma^2_-;
+- balance of charges nu = sigma^2_+ sigma^2_- / (sigma^2_tot)^2, in
+  [0, 1/4] (NaN if sigma^2_tot = 0);
+- internal charge separation Pi = (1/A) integral |V - average|, and the
+  molecular polarity index MPI = (1/A) integral |V|, both in hartree/e;
+- global extrema, the smallest and largest vertex values, and local
+  extrema: vertices whose value is below (above) those of all neighbours
+  and neighbours of neighbours, the criterion of Multiwfn. Where the
+  potential is constant along a ring (linear molecules such as O2) the
+  local extrema found on that ring depend on the mesh.
+
+Accuracy and cost. The results converge at second order in the grid
+spacing. On water, O2 and acrolein, area and volume at the default spacing
+are within 0.15% of their values at 0.05 bohr, averages within 0.1% and
+variances within 0.5% (O2) or 0.1%; global extrema within 2e-5 hartree/e.
+Acrolein takes 1.3
+s on one core; HBC def2-SVP (116,000 vertices) 28 s on 8 cores, of which
+2.5 s for the surface.
+
+Validation (tests `molecular-surface` and `multiwfn-surface-reference`):
+
+- on a sphere, the vertices lie on it within 1e-9 bohr, the mesh is closed
+  and oriented with Euler characteristic 2, area and volume converge to
+  those of the sphere at second order, and the statistics of a linear
+  function agree with their closed forms (averages R/2, variances R^2/12,
+  nu = 1/4, Pi = MPI = R/2, nonpolar band 4 pi R c);
+- on an octahedron the statistics of linear functions agree with
+  hand-computed integrals to 1e-14, including regions cut through
+  triangles;
+- on water and O2 the vertices lie on rho = 0.001 within 1e-9 bohr, the
+  potential agrees with the exact one within the tolerance (and to 1e-12
+  with tolerance 0), and 2 and 4 threads give identical meshes and values;
+- the statistics and the local extrema of water, O2 and acrolein agree with
+  Multiwfn 2026.9.1 at a grid spacing of 0.05 bohr (see
+  [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)); the largest
+  difference is 35% of its tolerance.
+
 ## Cube files (1.4.0)
 
 `Field::write_cube(path, comment)` writes a scalar Gaussian Cube file in
@@ -404,7 +499,8 @@ not read.
 
 Malformed or unsupported FCHK records, invalid grids, invalid evaluation
 options, properties requested for components they are not defined for, and
-out-of-range MO indices are reported with exceptions. The library does not
+out-of-range MO indices, and invalid surface options or meshes are
+reported with exceptions. The library does not
 infer absent MO coefficients or orbital energies. The reference data cover
 O2, acrolein and water (Gaussian 09 Cubegen and Multiwfn Cube files), and
 the HBC fixtures (6-31G(d,p) with Cartesian d and SP shells, def2-SVP,
