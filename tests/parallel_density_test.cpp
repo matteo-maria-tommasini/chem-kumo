@@ -2,6 +2,7 @@
 #include "omp_support.hpp"
 #include "test_support.hpp"
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -19,11 +20,15 @@ int main(int argc, char** argv) {
                                      chem::kumo::Spin::Beta, chem::kumo::Spin::Difference};
             kumo_test::set_threads(1);
             const auto reference = mol.densities_blocked(grid, components, 64);
+            // Single-thread results by block size: with the same blocks, other
+            // thread counts must give identical values (blocks are independent).
+            std::map<std::size_t, std::map<chem::kumo::Spin, chem::kumo::Field>> serial;
             for (int threads : {1, 2, 4}) {
                 kumo_test::set_threads(threads);
                 for (std::size_t block :
                      {std::size_t(1), std::size_t(32), std::size_t(64), std::size_t(128)}) {
                     const auto fields = mol.densities_blocked(grid, components, block);
+                    if (threads == 1) serial.emplace(block, fields);
                     for (auto spin : components) {
                         const auto a = reference.at(spin).values();
                         const auto b = fields.at(spin).values();
@@ -49,6 +54,10 @@ int main(int argc, char** argv) {
                                              std::to_string(mismatches) +
                                              " points differ, max_abs=" + kumo_test::num(worst) +
                                              ")");
+                        const auto same = serial.at(block).at(spin).values();
+                        kumo_test::check(std::equal(same.begin(), same.end(), b.begin(), b.end()),
+                                         label +
+                                             ": identical to 1 thread with the same block size");
                     }
                 }
             }

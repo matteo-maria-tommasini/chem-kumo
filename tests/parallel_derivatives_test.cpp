@@ -1,6 +1,8 @@
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
 #include "test_support.hpp"
+#include <map>
+#include <vector>
 #include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
@@ -24,11 +26,15 @@ int main(int argc, char** argv) {
             for (auto spin : {chem::kumo::Spin::Total, chem::kumo::Spin::Alpha,
                               chem::kumo::Spin::Beta, chem::kumo::Spin::Difference}) {
                 const auto reference = mol.density_derivatives_blocked(points, spin, 32);
+                // Single-thread results by block size: with the same blocks,
+                // other thread counts must give identical values.
+                std::map<std::size_t, std::vector<chem::kumo::DensityDerivatives>> serial;
                 for (int threads : {1, 2, 4}) {
                     kumo_test::set_threads(threads);
                     for (std::size_t block :
                          {std::size_t(1), std::size_t(16), std::size_t(32), std::size_t(64)}) {
                         const auto actual = mol.density_derivatives_blocked(points, spin, block);
+                        if (threads == 1) serial.emplace(block, actual);
                         const std::string label = std::string(argv[file]) + " spin " +
                                                   std::to_string(static_cast<int>(spin)) +
                                                   " threads " + std::to_string(threads) +
@@ -55,6 +61,21 @@ int main(int argc, char** argv) {
                                              "and within 1e-10 of the 1-thread, block-32 "
                                              "reference (" +
                                              std::to_string(mismatches) + " points differ)");
+                        const auto& same = serial.at(block);
+                        std::size_t different = 0;
+                        for (std::size_t i = 0; i < actual.size(); ++i) {
+                            const auto& a = actual[i];
+                            const auto& b = same[i];
+                            if (a.value != b.value || a.gradient != b.gradient ||
+                                a.hessian != b.hessian || a.laplacian != b.laplacian ||
+                                a.tau != b.tau)
+                                ++different;
+                        }
+                        kumo_test::check(different == 0,
+                                         label +
+                                             ": identical to 1 thread with the same block "
+                                             "size (" +
+                                             std::to_string(different) + " points differ)");
                     }
                 }
             }

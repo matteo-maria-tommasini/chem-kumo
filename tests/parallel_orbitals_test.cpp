@@ -1,6 +1,8 @@
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
 #include "test_support.hpp"
+#include <map>
+#include <vector>
 #include <Eigen/Core>
 #include <algorithm>
 #include <cmath>
@@ -35,6 +37,9 @@ int main(int argc, char** argv) {
                 const auto reference = mol.orbitals(grid, indices, spin);
                 const auto derivative_reference =
                     mol.orbital_derivatives_blocked(points, indices[1], spin, 64);
+                // Single-thread derivatives by block size: with the same blocks,
+                // other thread counts must give identical values.
+                std::map<std::size_t, std::vector<chem::kumo::OrbitalDerivatives>> serial;
                 for (int threads : {1, 2, 4}) {
                     kumo_test::set_threads(threads);
                     const std::string label = name + " spin " +
@@ -49,13 +54,13 @@ int main(int argc, char** argv) {
                             if (!kumo_test::check(a.size() == b.size(),
                                                   mo + ": same number of grid points"))
                                 continue;
+                            // Same blocks as the reference, so identical values.
                             std::size_t mismatches = 0;
                             for (std::size_t i = 0; i < a.size(); ++i)
-                                if (!std::isfinite(b[i]) || std::abs(a[i] - b[i]) > 1e-10)
-                                    ++mismatches;
+                                if (!std::isfinite(b[i]) || a[i] != b[i]) ++mismatches;
                             kumo_test::check(mismatches == 0,
                                              mo +
-                                                 ": grid values finite and within 1e-10 of the "
+                                                 ": grid values finite and identical to the "
                                                  "1-thread reference (" +
                                                  std::to_string(mismatches) + " points differ)");
                         }
@@ -64,6 +69,7 @@ int main(int argc, char** argv) {
                          {std::size_t(1), std::size_t(32), std::size_t(64), std::size_t(128)}) {
                         const auto derivatives =
                             mol.orbital_derivatives_blocked(points, indices[1], spin, block);
+                        if (threads == 1) serial.emplace(block, derivatives);
                         const std::string mo = label + " MO " + std::to_string(indices[1]) +
                                                " block " + std::to_string(block);
                         if (!kumo_test::check(derivatives.size() == derivative_reference.size(),
@@ -84,6 +90,16 @@ int main(int argc, char** argv) {
                                              ": value, gradient and Hessian finite and within "
                                              "1e-10 of the 1-thread, block-64 reference (" +
                                              std::to_string(mismatches) + " points differ)");
+                        const auto& same = serial.at(block);
+                        std::size_t different = 0;
+                        for (std::size_t j = 0; j < derivatives.size(); ++j)
+                            if (derivatives[j].value != same[j].value ||
+                                derivatives[j].gradient != same[j].gradient ||
+                                derivatives[j].hessian != same[j].hessian)
+                                ++different;
+                        kumo_test::check(different == 0,
+                                         mo + ": identical to 1 thread with the same block size (" +
+                                             std::to_string(different) + " points differ)");
                     }
                 }
             }

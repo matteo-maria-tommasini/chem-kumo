@@ -70,9 +70,11 @@ jobs:
       # Compiler warnings fail the build (GCC on Ubuntu, Clang on macOS), so
       # that a new warning is caught here rather than by users. Warnings
       # inside Eigen's headers are not reported (it is a system include).
+      # The benchmarks are compiled too (not run), so that an API change
+      # cannot leave them broken.
       - name: Configure
         if: ${{ !matrix.sanitize }}
-        run: meson setup build --buildtype=debugoptimized -Dwerror=true
+        run: meson setup build --buildtype=debugoptimized -Dwerror=true -Dbenchmarks=true
       # Warnings are checked by the other jobs. Sanitizer instrumentation can
       # make GCC report extra false-positive warnings, so they do not fail here.
       - name: Configure (sanitizers)
