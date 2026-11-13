@@ -642,9 +642,10 @@ test(
     timeout: 300,
 )
 
-# Electrostatic potential surface analysis against Multiwfn references at a
-# grid spacing of 0.05 bohr (water, O2 and acrolein). Local extrema are
-# compared for water and acrolein; those of O2 lie on rings of equal value.
+# Surface analyses against Multiwfn references at a grid spacing of 0.05
+# bohr (water, O2 and acrolein): the electrostatic potential and the average
+# local ionization energy. Local extrema are compared for water and acrolein;
+# those of O2 lie on rings of equal value.
 multiwfn_surface_reference_exe = executable(
     'kumo-multiwfn-surface-reference-test',
     ['tests/multiwfn_surface_reference_test.cpp'],
@@ -656,13 +657,22 @@ test(
     args: [
         meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
         meson.current_source_dir() / 'tests/data/multiwfn/h2o_esp_surface.txt',
-        'yes',
+        'esp',
         meson.current_source_dir() / 'tests/data/o2.fchk.gz',
         meson.current_source_dir() / 'tests/data/multiwfn/o2_esp_surface.txt',
-        'no',
+        'esp-no-extrema',
         meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
         meson.current_source_dir() / 'tests/data/multiwfn/acrolein_esp_surface.txt',
-        'yes',
+        'esp',
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/h2o_alie_surface.txt',
+        'alie',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/o2_alie_surface.txt',
+        'alie-no-extrema',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/acrolein_alie_surface.txt',
+        'alie',
     ],
     timeout: 300,
 )

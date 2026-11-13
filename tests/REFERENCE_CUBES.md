@@ -172,6 +172,64 @@ O2 has the largest relative differences because its potential is small
 potential is constant along rings around the axis, and Multiwfn lists 141
 minima and 90 maxima on them, an artefact of the mesh.
 
+## Multiwfn references for the average local ionization energy
+
+The same analysis with the average local ionization energy (ALIE) as the
+mapped function, on the same isosurface, with the same build and settings,
+on 2026-11-13:
+
+| File | FCHK |
+|------|------|
+| `h2o_alie_surface.txt` | `hybrids/h2o_b3lyp_def2tzvp.fchk.gz` |
+| `o2_alie_surface.txt` | `o2.fchk.gz` |
+| `acrolein_alie_surface.txt` | `acrolein.fchk.gz` |
+
+The files are trimmed in the same way. The water analysis was run with this
+input:
+
+    h2o.fchk
+    12
+    2
+    2
+    3
+    0.05
+    0
+    -1
+    -1
+    q
+
+where `2` and `2` select the ALIE as the mapped function. Multiwfn's ALIE
+(`avglocion` in `function.f90`) is sum_i n_i |e_i| phi_i^2 / sum_i n_i
+phi_i^2 over the occupied orbitals, the definition kumo uses; for the ALIE
+it prints the average and the variance about it, in hartree.
+
+At 0.05 bohr kumo and Multiwfn agree to 4e-7 relative on the average of
+water and acrolein, 2.5e-4 on their variances, 5e-4 on that of O2, and
+5e-5 hartree on every local maximum of acrolein.
+
+**Test.** The test `multiwfn-surface-reference` runs
+`local_ionization_energy_surface()` with its default spacing of 0.25 bohr
+and compares the volume, area, global extrema, average and variance, and
+for water and acrolein the local minima (count, value and position):
+
+| Quantity | Largest difference | Tolerance |
+|----------|--------------------|-----------|
+| Volume and area | as for the ESP | 5e-3 relative |
+| Average | 1.5e-5 relative (acrolein) | 5e-5 relative |
+| Variance | 6.1e-3 relative (O2) | 2e-2 relative |
+| Global minimum | 1.0e-5 hartree (acrolein) | 4e-5 hartree |
+| Global maximum | 1.4e-4 hartree (water) | 4e-4 hartree |
+| Local minima, values | 2.5e-4 hartree (acrolein) | 8e-4 hartree |
+| Local minima, positions | 0.14 bohr (acrolein) | 0.4 bohr |
+
+The variance of O2 moves by 7e-3 in kumo from 0.25 to 0.05 bohr, and the
+acrolein minimum with the largest difference converges to Multiwfn's value
+within 1e-6 hartree at 0.05 bohr, so these are discretization errors.
+Local maxima are not compared: they lie on sharp ridges at the hydrogen
+tips, and at 0.25 bohr kumo finds 9 maxima for acrolein where Multiwfn
+finds 8 at 0.05 bohr. As for the ESP, the local extrema of O2 lie on rings
+and are not compared.
+
 **Citation.** Multiwfn asks that work using it cite T. Lu and F. Chen,
 J. Comput. Chem. 33, 580 (2012) and T. Lu, J. Chem. Phys. 161, 082503
 (2024).

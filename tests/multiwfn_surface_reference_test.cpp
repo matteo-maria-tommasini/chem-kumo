@@ -1,16 +1,26 @@
-// Electrostatic potential surface analysis against Multiwfn.
+// Surface analyses against Multiwfn: the electrostatic potential (ESP) and
+// the average local ionization energy (ALIE).
 //
-// The references (tests/data/multiwfn/*_esp_surface.txt, provenance in
-// tests/REFERENCE_CUBES.md) are Multiwfn's quantitative molecular surface
-// analysis of the ESP on the rho = 0.001 isosurface with a grid spacing of
-// 0.05 bohr, near its converged limit. kumo runs with its default spacing of
-// 0.25 bohr, so the differences are kumo's discretization error at that
-// spacing, which falls as the spacing squared, plus Multiwfn's at 0.05 bohr.
-// The largest observed differences are 1.6e-3 relative for areas and
-// averages (the small potential of O2), 3.4e-3 for variances (O2, where kumo
-// itself moves by 5e-3 from 0.25 to 0.05 bohr), 1.4e-5 hartree/e for extremum
-// values and 0.13 bohr for extremum positions; the tolerances allow about
-// three times as much.
+// The references (tests/data/multiwfn/*_esp_surface.txt and
+// *_alie_surface.txt, provenance in tests/REFERENCE_CUBES.md) are Multiwfn's
+// quantitative molecular surface analysis on the rho = 0.001 isosurface with
+// a grid spacing of 0.05 bohr, near its converged limit. kumo runs with its
+// default spacing of 0.25 bohr, so the differences are kumo's discretization
+// error at that spacing, which falls as the spacing squared, plus Multiwfn's
+// at 0.05 bohr. The tolerances allow about three times the largest observed
+// differences:
+//
+// - ESP: 1.6e-3 relative for areas and averages (the small potential of O2),
+//   3.4e-3 for variances (O2, where kumo itself moves by 5e-3 from 0.25 to
+//   0.05 bohr), 1.4e-5 hartree/e for extremum values and 0.13 bohr for
+//   extremum positions;
+// - ALIE: 1.5e-5 relative for the average, 6.1e-3 for the variance (O2; 5e-4
+//   with kumo at 0.05 bohr), 1.0e-5 hartree for the global minimum, 1.4e-4
+//   hartree for the global maximum and 2.5e-4 hartree for the local minima
+//   (a minimum of acrolein near its C-H bond, which converges to Multiwfn's
+//   value within 1e-6 at 0.05 bohr) and 0.14 bohr for their positions. Local ALIE
+//   maxima lie on sharp ridges at the hydrogen tips, where their number and
+//   values depend on the mesh, so they are not compared.
 
 #include "chem/kumo.hpp"
 #include "test_support.hpp"
@@ -94,20 +104,26 @@ std::vector<Extremum> extrema(const std::vector<std::string>& lines, const std::
     throw std::runtime_error("reference lacks '" + label + "'");
 }
 
-// Largest ratio of |difference| to tolerance, for the report.
+// Largest ratio of |difference| to tolerance, and its comparison, for the
+// report.
 double worst_ratio = 0.0;
+std::string worst_label;
 
 void compare(double actual, double expected, double rel, double abs, const std::string& label) {
     const double tolerance = std::max(abs, rel * std::abs(expected));
-    worst_ratio = std::max(worst_ratio, std::abs(actual - expected) / tolerance);
+    const double ratio = std::abs(actual - expected) / tolerance;
+    if (ratio > worst_ratio) {
+        worst_ratio = ratio;
+        worst_label = label;
+    }
     kumo_test::check_close(actual, expected, rel, abs, label);
 }
 
-// Each reference extremum has a kumo extremum of the same kind within
-// `distance` bohr and `value` hartree/e, and the counts agree.
-void compare_extrema(const chem::kumo::PotentialSurface& surface,
+// Each reference extremum has a kumo extremum of the same kind within 0.4
+// bohr and `tolerance` (in the unit of `values`), and the counts agree.
+void compare_extrema(const chem::kumo::TriangleMesh& mesh, const std::vector<double>& values,
                      const std::vector<std::size_t>& found, const std::vector<Extremum>& expected,
-                     const std::string& label) {
+                     double tolerance, const std::string& label) {
     if (!kumo_test::check(found.size() == expected.size(),
                           label + ": " + std::to_string(expected.size()) + " local extrema (got " +
                               std::to_string(found.size()) + ")"))
@@ -117,7 +133,7 @@ void compare_extrema(const chem::kumo::PotentialSurface& surface,
         std::size_t best = found.size();
         double nearest = 0.0;
         for (std::size_t f = 0; f < found.size(); ++f) {
-            const double d = (surface.mesh.vertices[found[f]] - e.position).norm();
+            const double d = (mesh.vertices[found[f]] - e.position).norm();
             if (!used[f] && (best == found.size() || d < nearest)) {
                 best = f;
                 nearest = d;
@@ -129,16 +145,14 @@ void compare_extrema(const chem::kumo::PotentialSurface& surface,
                                  kumo_test::num(e.position.z()) + ") bohr";
         // A surface vertex lies within about a grid spacing of the extremum.
         compare(nearest, 0.0, 0.0, 0.4, what + ": distance to the nearest kumo extremum");
-        compare(surface.potential[found[best]], e.value, 0.0, 4e-5, what + ": value");
+        compare(values[found[best]], e.value, 0.0, tolerance, what + ": value");
     }
 }
 
-void check_case(const std::string& fchk, const std::string& reference, bool local_extrema) {
-    const auto lines = read_lines(reference);
-    const auto mol = chem::kumo::Molecule::from_fchk(fchk);
+void check_esp(const chem::kumo::Molecule& mol, const std::vector<std::string>& lines,
+               const std::string& label, bool local_extrema) {
     const auto surface = chem::kumo::electrostatic_potential_surface(mol);
     const auto& s = surface.statistics;
-    const std::string label = reference;
     const auto kcal = [&](const std::string& key, std::size_t index) {
         return value_after(lines, key, index) / multiwfn_kcal;
     };
@@ -185,27 +199,62 @@ void check_case(const std::string& fchk, const std::string& reference, bool loca
             label + ": balance nu");
 
     if (local_extrema) {
-        compare_extrema(surface, s.local_minima, extrema(lines, "minima"), label + " minimum");
-        compare_extrema(surface, s.local_maxima, extrema(lines, "maxima"), label + " maximum");
+        compare_extrema(surface.mesh, surface.potential, s.local_minima, extrema(lines, "minima"),
+                        4e-5, label + " minimum");
+        compare_extrema(surface.mesh, surface.potential, s.local_maxima, extrema(lines, "maxima"),
+                        4e-5, label + " maximum");
     }
+}
+
+void check_alie(const chem::kumo::Molecule& mol, const std::vector<std::string>& lines,
+                const std::string& label, bool local_minima) {
+    const auto surface = chem::kumo::local_ionization_energy_surface(mol);
+    const auto& s = surface.statistics;
+
+    const double area_rel = 5e-3;
+    compare(surface.mesh.volume(), value_after(lines, "Volume:", 0), area_rel, 0,
+            label + ": volume");
+    compare(s.area, value_after(lines, "Overall surface area:", 0), area_rel, 0, label + ": area");
+    compare(s.positive_area, s.area, 1e-14, 0, label + ": positive area");
+
+    compare(s.minimum, value_after(lines, "Global surface minimum:", 0), 0, 4e-5,
+            label + ": global minimum");
+    compare(s.maximum, value_after(lines, "Global surface maximum:", 0), 0, 4e-4,
+            label + ": global maximum");
+    compare(s.average, value_after(lines, "Average value:", 0), 5e-5, 0, label + ": average");
+    compare(s.positive_average, s.average, 1e-14, 0, label + ": positive average");
+    compare(s.total_variance, value_after(lines, "Variance:", 0), 2e-2, 0, label + ": variance");
+    kumo_test::check(s.negative_area == 0.0,
+                     label + ": negative area 0 (got " + kumo_test::num(s.negative_area) + ")");
+
+    if (local_minima)
+        compare_extrema(surface.mesh, surface.ionization_energy, s.local_minima,
+                        extrema(lines, "minima"), 8e-4, label + " minimum");
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    // Arguments: FCHK REFERENCE yes|no (compare local extrema), repeated.
+    // Arguments: FCHK REFERENCE MODE, repeated. MODE is esp or alie, with
+    // -no-extrema to skip the local extrema (minima only for alie).
     if (!kumo_test::require_args(argc, argv, 3, kumo_test::unlimited,
-                                 "FILE.fchk REFERENCE.txt yes|no ...") ||
+                                 "FILE.fchk REFERENCE.txt esp|alie[-no-extrema] ...") ||
         (argc - 1) % 3 != 0)
         return 2;
     return kumo_test::run([&] {
         for (int i = 1; i + 2 < argc; i += 3) {
-            const std::string extrema_flag = argv[i + 2];
-            if (extrema_flag != "yes" && extrema_flag != "no")
-                throw std::invalid_argument("expected yes or no, got " + extrema_flag);
-            check_case(argv[i], argv[i + 1], extrema_flag == "yes");
+            const std::string mode = argv[i + 2];
+            const auto lines = read_lines(argv[i + 1]);
+            const auto mol = chem::kumo::Molecule::from_fchk(argv[i]);
+            if (mode == "esp" || mode == "esp-no-extrema")
+                check_esp(mol, lines, argv[i + 1], mode == "esp");
+            else if (mode == "alie" || mode == "alie-no-extrema")
+                check_alie(mol, lines, argv[i + 1], mode == "alie");
+            else
+                throw std::invalid_argument("expected esp, alie or -no-extrema, got " + mode);
         }
-        std::cout << "largest difference: " << kumo_test::num(worst_ratio) << " of its tolerance\n";
-        if (kumo_test::failures == 0) std::cout << "ESP surface analysis agrees with Multiwfn\n";
+        std::cout << "largest difference: " << kumo_test::num(worst_ratio) << " of its tolerance ("
+                  << worst_label << ")\n";
+        if (kumo_test::failures == 0) std::cout << "surface analyses agree with Multiwfn\n";
     });
 }

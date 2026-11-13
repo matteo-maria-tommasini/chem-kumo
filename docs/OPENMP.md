@@ -27,7 +27,10 @@ count either. The electrostatic potential on a molecular surface (1.10.0)
 evaluates the surface vertices in clusters (those on the edges of a block of
 8 x 8 x 8 grid cells) in the same way; the mesh itself is built serially,
 and its vertices are placed on the isosurface with the blocked density
-path, so the results do not depend on the thread count. The pointwise
+path, so the results do not depend on the thread count. The average local
+ionization energy on the surface evaluates the vertices in fixed blocks of
+128 with `schedule(dynamic)`, each value depending only on its point, so it
+does not depend on the thread count either. The pointwise
 derivative APIs remain serial. AO screening
 (1.5.0) is decided per block of grid points and the AO shell cutoff (1.6.0)
 per point, so neither depends on the thread count; see [API.md](API.md).
