@@ -49,10 +49,16 @@ is hard-coded. On dual-socket NUMA machines the optimal policy can vary.
 
 ## Validation and benchmarks
 
-The 34-test suite passed on macOS ARM64 with OpenMP off/on, and on Debian
-x86-64 with GCC 14 OpenMP enabled. Tests and HBC benchmarks compared
-parallel results to one-thread references with reported `max_abs=0` in the
-measured cases; this does not prove universal thread safety.
+The full test suite passes on macOS ARM64 with OpenMP off and on (MacPorts
+Clang 22); earlier releases were also checked on Debian x86-64 with GCC 14
+and OpenMP enabled. CI (ubuntu-latest, macos-latest, and a sanitizer build
+on Ubuntu) runs the serial build only, so OpenMP builds must be tested
+locally with `./build-and-test.sh --clean --openmp`. The `parallel-*` tests
+compare blocked results across worker counts, and `evaluator-parallel`
+requires `Evaluator` results to be bit-identical to one thread for both
+backends and several block sizes. Tests and HBC benchmarks found no
+difference from one-thread references in the measured cases; this does not
+prove universal thread safety.
 
 The optional benchmark targets (`-Dbenchmarks=true`) measure compute paths
 without FCHK reading or Cube writing. Times are minimum wall times after a
@@ -62,6 +68,20 @@ See [density benchmarks](../benchmarks/PARALLEL_DENSITY.md) and
 
 The Apple M3 (4P+4E) achieved up to 5.05x on density; dual Xeon E5640
 (2 sockets, 8 physical cores / 16 SMT threads) achieved up to 6.89x on
-density and 6.77x on density derivatives. These are observed speedups, not
-performance guarantees. In particular, an OpenMP-enabled library does not
+density and 6.77x on density derivatives.
+
+`Evaluator` point path (1.6.0 plus the parallel point path), HBC with
+97,280 grid points (margin 3 bohr, spacing 0.4 bohr), debugoptimized build
+on Apple silicon (4P+4E), best of two runs, seconds:
+
+| Basis | Request | 1 thread | 4 threads | 8 threads | Speedup (8) |
+|---|---|---:|---:|---:|---:|
+| def2-SVP | gradient | 1.18 | 0.32 | 0.25 | 4.8x |
+| def2-SVP | Hessian | 2.76 | 0.86 | 0.62 | 4.5x |
+| def2-SVP | AO_MO density | 0.42 | 0.11 | 0.083 | 5.1x |
+| def2-TZVP | gradient | 2.45 | 0.72 | 0.57 | 4.3x |
+| def2-TZVP | Hessian | 5.83 | 1.74 | 1.41 | 4.1x |
+| def2-TZVP | AO_MO density | 0.84 | 0.23 | 0.19 | 4.5x |
+
+These are observed speedups, not performance guarantees. In particular, an OpenMP-enabled library does not
 imply that every CLI operation or every pointwise API is parallel.
