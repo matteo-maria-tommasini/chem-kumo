@@ -72,6 +72,7 @@ kumo molecule.fchk --property rdg,sign-lambda2-rho  # NCI analysis
 kumo molecule.fchk --property density,esp        # electrostatic potential
 kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
 kumo molecule.fchk --esp-surface                 # ESP statistics on rho = 0.001
+kumo molecule.fchk --alie-surface                # ionization energy statistics
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -139,6 +140,14 @@ isosurface; `--esp-tolerance` applies to the potential at the vertices.
 Acrolein takes about 1 s; HBC (def2-SVP) about 30 s on 8 cores. The
 results agree with Multiwfn's surface analysis (see
 [docs/API.md](docs/API.md)).
+
+`--alie-surface` does the same for the average local ionization energy, the
+occupied orbital energies averaged with the orbital densities as weights,
+in hartree and eV: global and local extrema (the minima mark the sites of
+electrophilic attack), average, variance and average deviation, area and
+volume. It needs the orbitals and orbital energies of an SCF calculation
+whose occupied orbitals reproduce the FCHK density. Acrolein takes about
+0.3 s.
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce
@@ -328,7 +337,8 @@ Pauli term and Multiwfn reference Cube files; the Boys function against
 quadrature; the electrostatic potential against closed forms, the multipole
 expansion of the analytic AO moments, the Poisson equation and Multiwfn,
 and its far-field approximations against their error bounds; molecular
-surfaces and their ESP statistics against closed forms and Multiwfn;
+surfaces and their ESP and average local ionization energy statistics
+against closed forms, the orbital formula and Multiwfn;
 scalar-field operations; and
 Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and

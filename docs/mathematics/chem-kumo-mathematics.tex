@@ -402,6 +402,24 @@ vertices closer than $h/2$, and assigns each triangle the mean of its
 vertex values; both discretizations converge to the same limit, and at
 $h=0.05$\,bohr they agree to about $3\times10^{-5}$ relative on water.
 
+\subsection{Average local ionization energy}
+The average local ionization energy of Sj\"oberg, Murray, Brinck and
+Politzer is
+\begin{equation}
+ \bar I(\mathbf r)=\frac{\sum_in_i|\varepsilon_i|\,|\phi_i(\mathbf r)|^2}
+ {\sum_in_i|\phi_i(\mathbf r)|^2},
+\end{equation}
+summed over the occupied SCF orbitals with energies $\varepsilon_i$ and
+occupations $n_i$ (2 for the doubly occupied orbitals of a restricted
+calculation, 1 otherwise), as in Multiwfn. It is a weighted average of the
+$|\varepsilon_i|$, so it lies between the smallest and the largest of them.
+The denominator equals the total density only when the occupied orbitals
+reproduce the SCF density matrices, which is checked when the FCHK is
+loaded; files that fail the check (for example post-SCF densities) are
+rejected. At each vertex the occupied orbitals are
+contracted with the AO values of a block of 128 vertices, without AO
+screening; the statistics are those above, with the whole surface positive.
+
 \section{Validation and benchmark methodology}
 AO, MO, and density spatial derivatives are checked against centered finite
 differences of independent value/gradient evaluations. Finite differences
@@ -418,7 +436,8 @@ moments far from the molecule, and against the Poisson equation
 $\nabla^2V_{\mathrm{el}}=4\pi\rho$ by finite differences. The surface
 construction and statistics are checked on a sphere and an octahedron with
 closed-form answers, and the surface statistics of three molecules against
-Multiwfn.
+Multiwfn, for the electrostatic potential and the average local ionization
+energy, which is also checked against its orbital formula.
 These tests establish agreement on the tested FCHK cases, not universal
 support for every Gaussian basis or method.
 

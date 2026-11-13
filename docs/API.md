@@ -463,6 +463,68 @@ Validation (tests `molecular-surface` and `multiwfn-surface-reference`):
   [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)); the largest
   difference is 35% of its tolerance.
 
+## Average local ionization energy on a molecular surface
+
+The average local ionization energy (ALIE) of Sjoberg, Murray, Brinck and
+Politzer is the orbital-energy average weighted by the orbital densities,
+
+    I(r) = sum_i n_i |e_i| |phi_i(r)|^2 / sum_i n_i |phi_i(r)|^2,
+
+over the occupied SCF orbitals phi_i with energies e_i (hartree) and
+occupations n_i: 2 for the doubly occupied orbitals of a restricted
+calculation, 1 otherwise (alpha and beta orbitals of an unrestricted one,
+singly occupied orbitals of a restricted open-shell one). This is
+Multiwfn's definition. Low values on the molecular surface mark the
+electrons that are easiest to remove, so the surface minima indicate sites
+of electrophilic attack.
+
+```cpp
+const auto surface = chem::kumo::local_ionization_energy_surface(mol);
+const auto& s = surface.statistics;
+for (std::size_t v : s.local_minima)  // by increasing value
+    std::cout << surface.ionization_energy[v] * chem::kumo::hartree_in_electronvolt << " eV at "
+              << surface.mesh.vertices[v].transpose() << " bohr\n";
+```
+
+`local_ionization_energy_surface(molecule, isovalue, spacing)` uses the
+mesh of `density_isosurface()` (same defaults: 0.001 e/bohr^3 and 0.25
+bohr) and returns an `IonizationEnergySurface`: the mesh, the energy at
+each vertex (hartree) and its `SurfaceStatistics`. The ALIE is positive, so
+the whole surface is the positive region: `average`, `total_variance` (the
+variance about the average) and `charge_separation` (the average deviation)
+are the meaningful statistics, with the extrema and the local extrema.
+`average_local_ionization_energy(molecule, points)` evaluates it at any
+points (columns in bohr).
+
+The denominator is the density of the occupied orbitals. It equals the
+FCHK total density to within the precision of the FCHK matrices, and only
+when the occupied MOs reproduce the density matrices
+(`ElectronicStructureInfo::ao_mo_eligible()`); otherwise, for example for a
+post-SCF density, the functions throw `std::invalid_argument`, as they do
+for a file without orbital energies, a nonfinite point or a point where the
+density vanishes. Results do not depend on the number of OpenMP threads.
+
+Accuracy and cost. On water, O2 and acrolein, the average at the default
+spacing is within 1.5e-5 relative of Multiwfn at 0.05 bohr, the variance
+within 0.6% (O2) and the global and local minima within 2.5e-4 hartree.
+Local maxima lie on sharp ridges at the hydrogen tips; their number and
+values depend on the mesh more than the minima do. Acrolein takes 0.3 s on
+one core.
+
+Validation (tests `molecular-surface` and `multiwfn-surface-reference`):
+
+- at vertices and at points near and between the nuclei, the values agree
+  with the orbital formula evaluated with `Molecule::orbital_derivatives()`
+  to 1e-12 relative, for restricted (water) and unrestricted (O2) files;
+- the values lie between the smallest and largest occupied |e_i|, and 2 and
+  4 threads give identical results;
+- files without orbital energies, or whose density matrix the occupied MOs
+  do not reproduce, are rejected;
+- the average, variance, global extrema and local minima of water, O2 and
+  acrolein agree with Multiwfn 2026.9.1 at a grid spacing of 0.05 bohr (see
+  [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)); the largest
+  difference is 35% of its tolerance.
+
 ## Cube files (1.4.0)
 
 `Field::write_cube(path, comment)` writes a scalar Gaussian Cube file in
@@ -499,7 +561,8 @@ not read.
 
 Malformed or unsupported FCHK records, invalid grids, invalid evaluation
 options, properties requested for components they are not defined for, and
-out-of-range MO indices, and invalid surface options or meshes are
+out-of-range MO indices, invalid surface options or meshes, and FCHK
+files whose orbitals cannot give the average local ionization energy are
 reported with exceptions. The library does not
 infer absent MO coefficients or orbital energies. The reference data cover
 O2, acrolein and water (Gaussian 09 Cubegen and Multiwfn Cube files), and
