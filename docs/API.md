@@ -252,7 +252,7 @@ Gaussian product centre, and P is contracted with the expansion
 coefficients once per evaluation. Each grid point then needs, for every
 primitive pair, one Boys function F_m(T), the Hermite Coulomb integrals
 R_tuv and a dot product. Pure shells are handled by transforming P to
-Cartesian components. Shells up to l = 16 are supported.
+Cartesian components. Shells up to l = 13 are supported.
 
 Far field. The Evaluator processes the grid in clusters of 8 x 8 x 8
 points and splits the error budget `potential_tolerance` (EvaluationOptions,
