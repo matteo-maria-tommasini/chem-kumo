@@ -51,10 +51,15 @@ public:
         basis_.noalias() = columns * inverse_sqrt;
     }
 
+    /// Number of AOs.
     [[nodiscard]] Eigen::Index ambient_dimension() const noexcept { return metric_.rows(); }
 
+    /// Dimension of the subspace: the number of input columns, which must be
+    /// linearly independent within the rank tolerance (otherwise the
+    /// constructor throws).
     [[nodiscard]] Eigen::Index dimension() const noexcept { return basis_.cols(); }
 
+    /// S-orthonormal basis of the subspace, one AO coefficient vector per column.
     [[nodiscard]] const Eigen::MatrixXd& orthonormal_basis() const noexcept { return basis_; }
 
     /// Apply to one or several columns of AO expansion coefficients.

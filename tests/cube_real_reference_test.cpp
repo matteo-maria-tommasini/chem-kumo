@@ -1,4 +1,5 @@
 #include "chem/kumo/cube.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <cmath>
@@ -9,12 +10,9 @@
 
 namespace {
 
-void require(bool condition, const std::string& message) {
-    if (!condition) throw std::runtime_error(message);
-}
-
+// Absolute tolerance; `expected` is always a finite literal here.
 void near(double actual, double expected, double tolerance, const std::string& message) {
-    require(std::isfinite(actual) && std::abs(actual - expected) <= tolerance, message);
+    kumo_test::check_close(actual, expected, 0.0, tolerance, message);
 }
 
 struct Reference {
@@ -32,46 +30,60 @@ struct Reference {
 
 void check_reference(const std::filesystem::path& directory, const Reference& reference) {
     const auto cube = chem::kumo::read_cube(directory / reference.filename);
+    const std::string file = std::string(reference.filename) + ": ";
     const auto& grid = cube.field.grid();
     const auto& atoms = cube.field.atoms();
     const auto values = cube.field.values();
 
-    require(cube.metadata.first_comment == reference.first_comment, "first comment mismatch");
-    require(cube.metadata.second_comment == reference.second_comment, "second comment mismatch");
-    require(!cube.metadata.coordinates_in_angstrom, "Gaussian reference must use bohr");
-    require(atoms.size() == reference.atoms, "atom count mismatch");
+    kumo_test::check(cube.metadata.first_comment == reference.first_comment,
+                     file + "first comment is '" + reference.first_comment + "' (got '" +
+                         cube.metadata.first_comment + "')");
+    kumo_test::check(cube.metadata.second_comment == reference.second_comment,
+                     file + "second comment is '" + reference.second_comment + "' (got '" +
+                         cube.metadata.second_comment + "')");
+    kumo_test::check(!cube.metadata.coordinates_in_angstrom, file + "Gaussian reference uses bohr");
+    if (!kumo_test::check(atoms.size() == reference.atoms, file + std::to_string(reference.atoms) +
+                                                               " atoms (got " +
+                                                               std::to_string(atoms.size()) + ")"))
+        return;
     for (int axis = 0; axis < 3; ++axis) {
-        require(grid.counts[axis] == reference.counts[axis], "grid count mismatch");
-        near(grid.origin[axis], reference.origin[axis], 1e-12, "grid origin mismatch");
+        const std::string a = " (axis " + std::to_string(axis) + ")";
+        kumo_test::check(grid.counts[axis] == reference.counts[axis],
+                         file + "grid count " + std::to_string(reference.counts[axis]) + a +
+                             " (got " + std::to_string(grid.counts[axis]) + ")");
+        near(grid.origin[axis], reference.origin[axis], 1e-12, file + "grid origin" + a);
         for (int component = 0; component < 3; ++component)
             near(grid.steps(component, axis), axis == component ? 0.166667 : 0.0, 1e-12,
-                 "grid step mismatch");
+                 file + "grid step component " + std::to_string(component) + a);
         near(atoms.front().position[axis], reference.first_position[axis], 1e-12,
-             "atom position mismatch");
+             file + "first atom position" + a);
     }
-    require(atoms.front().atomic_number == reference.first_atomic_number, "atomic number mismatch");
-    near(atoms.front().nuclear_charge, reference.first_charge, 1e-12, "nuclear charge mismatch");
+    kumo_test::check(atoms.front().atomic_number == reference.first_atomic_number,
+                     file + "first atomic number " + std::to_string(reference.first_atomic_number) +
+                         " (got " + std::to_string(atoms.front().atomic_number) + ")");
+    near(atoms.front().nuclear_charge, reference.first_charge, 1e-12,
+         file + "first nuclear charge");
 
     const std::size_t expected_count = static_cast<std::size_t>(reference.counts[0]) *
                                        static_cast<std::size_t>(reference.counts[1]) *
                                        static_cast<std::size_t>(reference.counts[2]);
-    require(values.size() == expected_count, "sample count mismatch");
+    if (!kumo_test::check(values.size() == expected_count, file + std::to_string(expected_count) +
+                                                               " samples (got " +
+                                                               std::to_string(values.size()) + ")"))
+        return;
     const std::array<std::size_t, 3> indices{0, expected_count / 2, expected_count - 1};
     for (std::size_t i = 0; i < indices.size(); ++i) {
         const double expected = reference.sample_values[i];
         near(values[indices[i]], expected, 1e-12 + 1e-10 * std::abs(expected),
-             "Gaussian reference sample mismatch");
+             file + "Gaussian reference sample " + std::to_string(indices[i]));
     }
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "usage: kumo-cube-real-reference-test DATA_DIRECTORY\n";
-        return 2;
-    }
-    try {
+    if (!kumo_test::require_args(argc, argv, 1, 1, "DATA_DIRECTORY")) return 2;
+    return kumo_test::run([&] {
         // Literal reference values come from independently supplied Gaussian Cube files,
         // not from chem-kumo's Cube writer or a second parser in this test.
         const std::array<Reference, 3> references{{{"o2_density.cube",
@@ -106,9 +118,5 @@ int main(int argc, char** argv) {
                                                     {3.08107e-21, 1.53016e-07, 2.85068e-17}}}};
         for (const auto& reference : references)
             check_reference(argv[1], reference);
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
-        return 1;
-    }
-    return 0;
+    });
 }

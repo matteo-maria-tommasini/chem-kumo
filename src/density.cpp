@@ -10,9 +10,6 @@
 #include <array>
 #include <cstdint>
 #include <exception>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
 #include <Eigen/LU>
 #include <cmath>
 #include <fstream>
@@ -42,6 +39,29 @@ Eigen::MatrixXd unpack(const std::vector<double>& packed, std::size_t n) {
 
 constexpr const char* alpha_count_label = "Number of alpha electrons";
 constexpr const char* beta_count_label = "Number of beta electrons";
+
+// Density derivatives at point j of a block of b points, from the AO panels
+// `ao` (values, then x, y, z gradients, then, for ao_order 2, the six
+// Hessian panels in ao_hessian_column order) and product = P [values x y z].
+// `out` must start zeroed; Hessians are left zero for ao_order 1.
+void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
+                          const Eigen::Ref<const Eigen::MatrixXd>& product, Eigen::Index b,
+                          Eigen::Index j, int ao_order, DensityDerivatives& out) {
+    const auto y = product.col(j);
+    out.value = ao.col(j).dot(y);
+    for (int a = 0; a < 3; ++a) {
+        const auto ga = ao.col((a + 1) * b + j);
+        out.gradient[a] = 2.0 * ga.dot(y);
+        out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
+        if (ao_order == 2)
+            for (int c = a; c < 3; ++c) {
+                const auto hac = ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
+                const double v = 2.0 * (hac.dot(y) + ga.dot(product.col((c + 1) * b + j)));
+                out.hessian(a, c) = out.hessian(c, a) = v;
+            }
+    }
+    out.laplacian = out.hessian.trace();
+}
 
 // Atoms from the FCHK geometry, in bohr.
 std::vector<Atom> read_atoms(const FormattedCheckpoint& f) {
@@ -156,6 +176,9 @@ void write_field_cube(const std::filesystem::path& path, const std::string& comm
                       const Grid& grid, const std::vector<Atom>& atoms,
                       const std::vector<double>& values, std::size_t orbital_index = 0) {
     const bool orbital = orbital_index != 0;
+    // Fail closed: Cube readers, read_cube() included, reject such values.
+    if (!std::all_of(values.begin(), values.end(), [](double v) { return std::isfinite(v); }))
+        throw std::invalid_argument("nonfinite Cube sample");
     std::ofstream out(path);
     if (!out)
         throw std::runtime_error(orbital ? "cannot open orbital cube output"
@@ -227,7 +250,7 @@ double Field::operator()(int i, int j, int k) const {
     if (i < 0 || j < 0 || k < 0 || i >= grid_.counts[0] || j >= grid_.counts[1] ||
         k >= grid_.counts[2])
         throw std::out_of_range("field index");
-    return values_.at((static_cast<std::size_t>(i) * grid_.counts[1] + j) * grid_.counts[2] + k);
+    return values_.at(detail::grid_index(grid_, i, j, k));
 }
 
 void Field::write_cube(const std::filesystem::path& path, const std::string& comment) const {
@@ -355,24 +378,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
                 // applies P to all four, improving reuse of the (potentially large) P.
                 auto product = product_storage.topLeftCorner(m, 4 * b);
                 product.noalias() = pk * ao.leftCols(4 * b);
-                const auto phi = ao.middleCols(0, b);
-                const auto y = product.middleCols(0, b);
-                for (Eigen::Index j = 0; j < b; ++j) {
-                    auto& out = result[start + static_cast<std::size_t>(j)];
-                    out.value = phi.col(j).dot(y.col(j));
-                    for (int a = 0; a < 3; ++a) {
-                        const auto ga = ao.col((a + 1) * b + j);
-                        out.gradient[a] = 2.0 * ga.dot(y.col(j));
-                        out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
-                        for (int c = a; c < 3; ++c) {
-                            const auto hac = ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
-                            const double v =
-                                2.0 * (hac.dot(y.col(j)) + ga.dot(product.col((c + 1) * b + j)));
-                            out.hessian(a, c) = out.hessian(c, a) = v;
-                        }
-                    }
-                    out.laplacian = out.hessian.trace();
-                }
+                for (Eigen::Index j = 0; j < b; ++j)
+                    contract_derivatives(ao, product, b, j, 2,
+                                         result[start + static_cast<std::size_t>(j)]);
             } catch (...) {
                 worker_errors.capture();
             }
@@ -440,7 +448,6 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                     detail::significant_aos(input.leftCols(panels * b), screening_threshold);
                 const auto ao = detail::kept_rows(input.leftCols(panels * b), kept, ao_kept);
                 const auto m = static_cast<Eigen::Index>(kept.size());
-                const auto phi = ao.middleCols(0, b);
                 // P times the value and gradient panels (empty if not needed).
                 const auto product_panel = [&](Eigen::MatrixXd& storage, bool needed) {
                     return storage.topLeftCorner(needed ? m : 0, needed ? 4 * b : 0);
@@ -457,27 +464,8 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                 // linear primitive properties for alpha/beta as needed.
                 for (Eigen::Index j = 0; j < b; ++j) {
                     DensityDerivatives t, s;
-                    const auto contract = [&](const Eigen::Ref<const Eigen::MatrixXd>& product,
-                                              DensityDerivatives& out) {
-                        const auto y = product.col(j);
-                        out.value = phi.col(j).dot(y);
-                        for (int a = 0; a < 3; ++a) {
-                            const auto ga = ao.col((a + 1) * b + j);
-                            out.gradient[a] = 2.0 * ga.dot(y);
-                            out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
-                            if (ao_order == 2)
-                                for (int c = a; c < 3; ++c) {
-                                    const auto hac =
-                                        ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
-                                    const double v =
-                                        2.0 * (hac.dot(y) + ga.dot(product.col((c + 1) * b + j)));
-                                    out.hessian(a, c) = out.hessian(c, a) = v;
-                                }
-                        }
-                        out.laplacian = out.hessian.trace();
-                    };
-                    if (total_needed) contract(product_total, t);
-                    if (spin_needed) contract(product_spin, s);
+                    if (total_needed) contract_derivatives(ao, product_total, b, j, ao_order, t);
+                    if (spin_needed) contract_derivatives(ao, product_spin, b, j, ao_order, s);
                     const auto combine = [&](double sign) {
                         DensityDerivatives d;
                         d.value = 0.5 * (t.value + sign * s.value);
@@ -710,47 +698,36 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     // Keep the same arithmetic and point ordering in serial and OpenMP builds.
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many grid blocks for parallel evaluation");
-    detail::FirstException worker_errors;
     detail::Progress report(progress, count);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) if (nblocks > 1)
-#endif
-    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(block) * block_size;
-            const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, b);
-            for (Eigen::Index t = 0; t < b; ++t)
-                points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
-            Eigen::MatrixXd phi(m, b);
-            evaluator_.evaluate_batch(points, phi);
-            // Contract only the AOs that are significant somewhere in the
-            // block; if all of them are, use the full matrices as they are.
-            const auto kept = detail::significant_aos(phi, screening_threshold);
-            const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
-            if (screened) phi = detail::select_rows(phi, kept);
-            std::map<Spin, Eigen::VectorXd> rho;
-            for (std::size_t i = 0; i < contracted.size(); ++i) {
-                const Eigen::MatrixXd y =
-                    screened ? Eigen::MatrixXd(detail::select_submatrix(*matrices[i], kept) * phi)
-                             : Eigen::MatrixXd(*matrices[i] * phi);
-                rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
-            }
-            for (auto& [spin, values] : buffers) {
-                Eigen::Map<Eigen::VectorXd> out(values.data() + start, b);
-                if (rho.contains(spin))
-                    out = rho.at(spin);
-                else if (spin == Spin::Total)
-                    out = rho.at(Spin::Alpha) + rho.at(Spin::Beta);
-                else
-                    out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
-            }
-            report.advance(static_cast<std::size_t>(b));
-        } catch (...) {
-            worker_errors.capture();
+    detail::for_each_block<detail::Schedule::Static>(nblocks, [&](std::size_t block) {
+        const std::size_t start = static_cast<std::size_t>(block) * block_size;
+        const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
+        const auto points = detail::grid_points(grid, start, static_cast<std::size_t>(b));
+        Eigen::MatrixXd phi(m, b);
+        evaluator_.evaluate_batch(points, phi);
+        // Contract only the AOs that are significant somewhere in the
+        // block; if all of them are, use the full matrices as they are.
+        const auto kept = detail::significant_aos(phi, screening_threshold);
+        const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
+        if (screened) phi = detail::select_rows(phi, kept);
+        std::map<Spin, Eigen::VectorXd> rho;
+        for (std::size_t i = 0; i < contracted.size(); ++i) {
+            const Eigen::MatrixXd y =
+                screened ? Eigen::MatrixXd(detail::select_submatrix(*matrices[i], kept) * phi)
+                         : Eigen::MatrixXd(*matrices[i] * phi);
+            rho[contracted[i]] = (phi.array() * y.array()).colwise().sum().transpose();
         }
-    }
-    worker_errors.rethrow_if_any();
+        for (auto& [spin, values] : buffers) {
+            Eigen::Map<Eigen::VectorXd> out(values.data() + start, b);
+            if (rho.contains(spin))
+                out = rho.at(spin);
+            else if (spin == Spin::Total)
+                out = rho.at(Spin::Alpha) + rho.at(Spin::Beta);
+            else
+                out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
+        }
+        report.advance(static_cast<std::size_t>(b));
+    });
     std::map<Spin, Field> result;
     for (auto& [spin, values] : buffers)
         result.emplace(spin, Field(grid, atoms_, std::move(values)));

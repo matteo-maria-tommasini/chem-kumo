@@ -12,9 +12,15 @@ namespace chem::kumo {
 /// Missing records or mismatched types are errors; no binary CHK support.
 class FormattedCheckpoint {
 public:
+    /// Read and parse a plain or gzip-compressed FCHK (detected from its
+    /// content). Throws std::runtime_error if the file cannot be read or a
+    /// record is malformed or truncated.
     explicit FormattedCheckpoint(const std::filesystem::path& path);
 
+    /// Whether a record with this exact label exists.
     [[nodiscard]] bool contains(const std::string& label) const;
+    /// Typed accessors. Each throws std::runtime_error if the record is
+    /// missing or has another type (scalar or array, integer or real).
     [[nodiscard]] long long integer(const std::string& label) const;
     [[nodiscard]] double real(const std::string& label) const;
     [[nodiscard]] const std::vector<long long>& integers(const std::string& label) const;

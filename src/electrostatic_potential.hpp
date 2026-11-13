@@ -124,6 +124,16 @@ private:
     [[nodiscard]] double pair_potential(const PrimitivePair& pair, const Eigen::Vector3d& point,
                                         Scratch& scratch) const;
     [[nodiscard]] double electronic(const Eigen::Vector3d& point, Scratch& scratch) const;
+    /// Sum of |e_k| over the Hermite terms of each order L of a pair.
+    void multipole_weights(const PrimitivePair& pair, std::vector<double>& weights) const;
+    void plan_pair_levels(FarFieldPlan& plan) const;
+    void plan_source_clusters(FarFieldPlan& plan) const;
+    [[nodiscard]] std::vector<std::size_t> expand_far_field(const Eigen::Vector3d& center,
+                                                            const FarFieldPlan& plan,
+                                                            Scratch& scratch) const;
+    [[nodiscard]] double local_polynomial(const Eigen::Vector3d& h, const Scratch& scratch) const;
+    /// Offset of (t, u, v) in a side_^3 Hermite table.
+    [[nodiscard]] std::size_t hermite_offset(int t, int u, int v) const;
 
     std::vector<PrimitivePair> pairs_;
     std::vector<double> coefficients_;

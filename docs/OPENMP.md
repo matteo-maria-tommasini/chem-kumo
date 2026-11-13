@@ -13,9 +13,15 @@ The `Evaluator` point path (all density derivatives, and AO_MO densities)
 runs its blocks of `block_size` grid points on worker threads with
 `schedule(dynamic)`; each block is passed to the serial block kernel on its
 own, so block boundaries and results do not depend on the thread count.
-The pointwise derivative APIs remain serial. AO screening (1.5.0) is
-decided per block of grid points and the AO shell cutoff (1.6.0) per point,
-so neither depends on the thread count; see [API.md](API.md).
+The derived properties (ELF, reduced gradient, sign(lambda2) rho; 1.8.0)
+are computed in the same point path from each block's derivatives. The
+electrostatic potential (1.9.0) has its own pass over clusters of
+8 x 8 x 8 grid points, also scheduled with `schedule(dynamic)`; cluster
+boundaries depend only on the grid and each value only on its point, its
+cluster and the far-field plan, so the results do not depend on the thread
+count either. The pointwise derivative APIs remain serial. AO screening
+(1.5.0) is decided per block of grid points and the AO shell cutoff (1.6.0)
+per point, so neither depends on the thread count; see [API.md](API.md).
 
 ## Building and testing
 

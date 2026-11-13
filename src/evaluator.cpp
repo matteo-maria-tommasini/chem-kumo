@@ -11,12 +11,12 @@
 #include <initializer_list>
 #include <cstdint>
 #include <limits>
+#include <map>
+#include <numbers>
 #include <span>
 #include <stdexcept>
 #include <vector>
-#ifdef _OPENMP
-#include <omp.h>
-#endif
+
 namespace chem::kumo {
 namespace {
 Spin spin_of(DensityComponent c) {
@@ -54,6 +54,13 @@ bool uses_point_path(const detail::EvaluationPlan& plan, Backend backend) {
                        [&](const auto& c) { return uses_point_path(c, backend); });
 }
 
+// Fields evaluated on the grid path: orbitals always, densities with AO-P
+// (`backend` is the resolved backend, AO_P or AO_MO).
+bool on_grid_path(const Property& key, Backend backend) {
+    return key.kind == PropertyKind::Orbital ||
+           (key.kind == PropertyKind::Density && backend == Backend::AO_P);
+}
+
 const detail::ComponentPlan& plan_for(const detail::EvaluationPlan& plan, DensityComponent c) {
     return plan.components[detail::EvaluationPlan::index(c)];
 }
@@ -69,7 +76,7 @@ const detail::ComponentPlan& plan_for(const detail::EvaluationPlan& plan, Densit
 // Channels without density contribute nothing; with no density at all the
 // ELF is 0. The result is finite and in [0, 1] for any finite input.
 double elf(std::initializer_list<const DensityDerivatives*> channels) {
-    constexpr double pi = 3.141592653589793238462643383279502884;
+    constexpr double pi = std::numbers::pi;
     static const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
     double pauli = 0.0;
     double uniform = 0.0;
@@ -87,7 +94,7 @@ double elf(std::initializer_list<const DensityDerivatives*> channels) {
 // capped at reduced_gradient_cap (also where rho <= 0 or rho^(4/3)
 // underflows, where s is undefined or infinite).
 double reduced_gradient(const DensityDerivatives& d) {
-    constexpr double pi = 3.141592653589793238462643383279502884;
+    constexpr double pi = std::numbers::pi;
     static const double scale = 2.0 * std::cbrt(3.0 * pi * pi);
     if (!(d.value > 0.0)) return reduced_gradient_cap;
     const double denominator = scale * std::pow(d.value, 4.0 / 3.0);
@@ -171,43 +178,26 @@ void evaluate_point_path(const Grid& grid, std::size_t n, std::size_t block_size
 
     const std::size_t nblocks =
         detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
-    detail::FirstException worker_errors;
     detail::Progress report(progress, n);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if (nblocks > 1)
-#endif
-    for (std::int64_t index = 0; index < static_cast<std::int64_t>(nblocks); ++index) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(index) * block_size;
-            const std::size_t count = std::min(block_size, n - start);
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
-            for (std::size_t local = 0; local < count; ++local)
-                points.col(static_cast<Eigen::Index>(local)) =
-                    detail::grid_point(grid, start + local);
-            const auto block = evaluate_block(points, needed);
+    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t index) {
+        const std::size_t start = static_cast<std::size_t>(index) * block_size;
+        const std::size_t count = std::min(block_size, n - start);
+        const auto points = detail::grid_points(grid, start, count);
+        const auto block = evaluate_block(points, needed);
 
-            for (auto& [key, output] : fields) {
-                // Orbitals and AO-P densities come from the grid path, and
-                // the electrostatic potential from its own pass.
-                if (key.kind == PropertyKind::Orbital ||
-                    key.kind == PropertyKind::ElectrostaticPotential ||
-                    (key.kind == PropertyKind::Density && backend == Backend::AO_P))
-                    continue;
-                store_block(output, key, block, count, start);
-            }
-            // Serialized and monotonic; a throwing callback is captured
-            // like any other block error.
-            report.advance(count);
-        } catch (...) {
-            worker_errors.capture();
+        for (auto& [key, output] : fields) {
+            // Orbitals and AO-P densities come from the grid path, and
+            // the electrostatic potential from its own pass.
+            if (on_grid_path(key, backend) || key.kind == PropertyKind::ElectrostaticPotential)
+                continue;
+            store_block(output, key, block, count, start);
         }
-    }
-    worker_errors.rethrow_if_any();
+        // Serialized and monotonic; a throwing callback is captured
+        // like any other block error.
+        report.advance(count);
+    });
 }
 
-// Electrostatic potential pass, in blocks of grid points scheduled like the
-// point path; each point is computed independently with a fixed summation
-// order, so the values do not depend on the number of threads.
 // Electrostatic potential pass. The grid is split into clusters of up to
 // cluster_side^3 points (index boxes), each evaluated around its own centre
 // with one far-field plan whose radius covers the largest cluster. Cluster
@@ -237,51 +227,41 @@ void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double to
     // Slightly enlarged to cover rounding in the point coordinates.
     const auto plan = potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);
 
-    const auto ntiles = static_cast<std::int64_t>(tiles[0]) * tiles[1] * tiles[2];
-    detail::FirstException worker_errors;
+    const auto ntiles = static_cast<std::size_t>(tiles[0]) * static_cast<std::size_t>(tiles[1]) *
+                        static_cast<std::size_t>(tiles[2]);
     detail::Progress report(progress, n);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(dynamic) if (ntiles > 1)
-#endif
-    for (std::int64_t index = 0; index < ntiles; ++index) {
-        try {
-            const Eigen::Vector3i tile(static_cast<int>(index / (tiles[1] * tiles[2])),
-                                       static_cast<int>((index / tiles[2]) % tiles[1]),
-                                       static_cast<int>(index % tiles[2]));
-            Eigen::Vector3i begin, end;
-            for (int a = 0; a < 3; ++a) {
-                begin[a] = tile[a] * cluster_side;
-                end[a] = std::min(begin[a] + cluster_side, grid.counts[a]);
-            }
-            const Eigen::Vector3i size = end - begin;
-            const auto count = static_cast<std::size_t>(size.prod());
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
-            std::vector<std::size_t> targets(count);
-            std::size_t local = 0;
-            for (int i = begin[0]; i < end[0]; ++i)
-                for (int j = begin[1]; j < end[1]; ++j)
-                    for (int k = begin[2]; k < end[2]; ++k, ++local) {
-                        points.col(static_cast<Eigen::Index>(local)) =
-                            grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
-                        targets[local] = (static_cast<std::size_t>(i) *
-                                              static_cast<std::size_t>(grid.counts[1]) +
-                                          static_cast<std::size_t>(j)) *
-                                             static_cast<std::size_t>(grid.counts[2]) +
-                                         static_cast<std::size_t>(k);
-                    }
-            const Eigen::Vector3d center =
-                grid.origin +
-                grid.steps * (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>());
-            std::vector<double> values(count);
-            potential.evaluate_cluster(points, center, plan, values);
-            for (std::size_t p = 0; p < count; ++p)
-                output[targets[p]] = values[p];
-            report.advance(count);
-        } catch (...) {
-            worker_errors.capture();
+    detail::for_each_block<detail::Schedule::Dynamic>(ntiles, [&](std::size_t index) {
+        const auto per_plane = static_cast<std::size_t>(tiles[1] * tiles[2]);
+        const Eigen::Vector3i tile(static_cast<int>(index / per_plane),
+                                   static_cast<int>((index / static_cast<std::size_t>(tiles[2])) %
+                                                    static_cast<std::size_t>(tiles[1])),
+                                   static_cast<int>(index % static_cast<std::size_t>(tiles[2])));
+        Eigen::Vector3i begin, end;
+        for (int a = 0; a < 3; ++a) {
+            begin[a] = tile[a] * cluster_side;
+            end[a] = std::min(begin[a] + cluster_side, grid.counts[a]);
         }
-    }
-    worker_errors.rethrow_if_any();
+        const Eigen::Vector3i size = end - begin;
+        const auto count = static_cast<std::size_t>(size.prod());
+        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
+        std::vector<std::size_t> targets(count);
+        std::size_t local = 0;
+        for (int i = begin[0]; i < end[0]; ++i)
+            for (int j = begin[1]; j < end[1]; ++j)
+                for (int k = begin[2]; k < end[2]; ++k, ++local) {
+                    points.col(static_cast<Eigen::Index>(local)) =
+                        grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
+                    targets[local] = detail::grid_index(grid, i, j, k);
+                }
+        const Eigen::Vector3d center =
+            grid.origin +
+            grid.steps * (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>());
+        std::vector<double> values(count);
+        potential.evaluate_cluster(points, center, plan, values);
+        for (std::size_t p = 0; p < count; ++p)
+            output[targets[p]] = values[p];
+        report.advance(count);
+    });
 }
 } // namespace
 
@@ -310,9 +290,7 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
     // Plan the requested properties before resolving the electronic backend.
     const auto plan = detail::EvaluationPlan::from(request);
     const auto& info = molecule_->electronic_structure_info();
-    const Backend backend =
-        detail::choose_backend(options_.backend, info.ao_mo_eligible(), molecule_->basis_size(),
-                               info.occupied_alpha, info.occupied_beta, plan);
+    const Backend backend = detail::choose_backend(options_.backend, info.ao_mo_eligible(), plan);
     Results result;
     result.backend_used_ = backend;
     for (auto key : request.properties()) {
@@ -323,15 +301,11 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
 
     // Progress is reported over all passes on the grid: the point path (if
     // any), then one pass per field evaluated on the grid path below.
-    const auto on_grid_path = [&](const Property& key) {
-        return key.kind == PropertyKind::Orbital ||
-               (key.kind == PropertyKind::Density && backend != Backend::AO_MO);
-    };
     const bool point_pass = uses_point_path(plan, backend);
     const bool potential_pass = plan.needs_electrostatic_potential();
     std::size_t passes = (point_pass ? 1 : 0) + (potential_pass ? 1 : 0);
     for (const auto& entry : result.fields_)
-        passes += on_grid_path(entry.first) ? 1 : 0;
+        passes += on_grid_path(entry.first, backend) ? 1 : 0;
     std::size_t completed = 0; // points of the passes already finished
     ProgressCallback pass_progress;
     if (options_.progress)
@@ -372,7 +346,7 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
 
     // Grid path: orbitals always, densities only with AO-P.
     for (auto& [key, output] : result.fields_) {
-        if (!on_grid_path(key)) continue;
+        if (!on_grid_path(key, backend)) continue;
         const Field field =
             key.kind == PropertyKind::Density
                 ? molecule_

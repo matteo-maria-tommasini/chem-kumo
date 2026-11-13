@@ -66,4 +66,22 @@ inline Eigen::Vector3d grid_point(const Grid& grid, std::size_t linear) {
                                                       static_cast<double>(k));
 }
 
+/// Linear index of grid point (i, j, k) in Field order (k fastest).
+inline std::size_t grid_index(const Grid& grid, int i, int j, int k) {
+    return (static_cast<std::size_t>(i) * static_cast<std::size_t>(grid.counts[1]) +
+            static_cast<std::size_t>(j)) *
+               static_cast<std::size_t>(grid.counts[2]) +
+           static_cast<std::size_t>(k);
+}
+
+/// Cartesian positions (bohr) of grid points start, ..., start + count - 1,
+/// one per column.
+inline Eigen::Matrix<double, 3, Eigen::Dynamic> grid_points(const Grid& grid, std::size_t start,
+                                                            std::size_t count) {
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
+    for (std::size_t local = 0; local < count; ++local)
+        points.col(static_cast<Eigen::Index>(local)) = grid_point(grid, start + local);
+    return points;
+}
+
 } // namespace chem::kumo::detail

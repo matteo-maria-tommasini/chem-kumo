@@ -170,6 +170,52 @@ The mathematical derivation is in
 Performance methodology and HBC measurements are in
 [SPATIAL_DERIVATIVES.md](../benchmarks/SPATIAL_DERIVATIVES.md).
 
+## Evaluator (1.4.0)
+
+`Evaluator` (`<chem/kumo/evaluator.hpp>`) evaluates typed requests on a
+`Grid` and is the interface the CLI uses for all density output.
+
+```cpp
+Evaluator evaluator(molecule, {.potential_tolerance = 1e-6});
+Request request;
+request.add(density::total.value())
+    .add(density::total.gradient())
+    .add(density::total.electrostatic_potential())
+    .add(orbital::alpha(5).value());
+const Results results = evaluator.evaluate(grid, request);
+const std::span<const double> rho = results.get(density::total.value()).component();
+```
+
+- **Requests.** `density::total`, `alpha`, `beta` and `spin` (alpha minus
+  beta) give `value()`, `gradient()`, `hessian()`, `laplacian()`, `tau()`,
+  `elf()`, `reduced_gradient()`, `sign_lambda2_density()` and
+  `electrostatic_potential()`; `orbital::alpha(i)` and `orbital::beta(i)`
+  (one-based) give `value()`. A property requested twice is evaluated once,
+  and the order of a request does not matter.
+- **Results.** `Results::get(property)` returns a `PropertyField`, one array
+  per component in Field order (third grid axis fastest): gradients have 3
+  components (x, y, z), Hessians 6 (xx, xy, xz, yy, yz, zz), the others 1.
+  `component()` returns a `std::span` into the Results, which must stay
+  alive while the span is used. `Results::backend_used()` reports the
+  density contraction actually used.
+- **Options** (`EvaluationOptions`): `backend` (`AUTO`, `AO_P`, `AO_MO`; see
+  the README), `block_size` (grid points per block, default 128),
+  `screening_threshold` (AO screening, default 1e-12, 0 exact),
+  `potential_tolerance` (electrostatic potential error bound, default 1e-8
+  hartree/e, 0 exact), `progress` (see Density methods) and `threads`
+  (only 0 and 1 are accepted; use `OMP_NUM_THREADS` in OpenMP builds).
+- **Lifetime.** The Evaluator keeps a pointer to the `Molecule`, which must
+  outlive it and every call to `evaluate()`.
+- **Errors.** The constructor throws `std::invalid_argument` for invalid
+  options or for `AO_MO` on a molecule whose orbitals are not AO-MO
+  eligible; `evaluate()` throws it for an invalid grid, an orbital index of
+  0, or a derived property requested for a component it is not defined for.
+- **Determinism.** Results do not depend on the number of OpenMP threads,
+  and the electrostatic potential does not depend on the block size either
+  (see [OPENMP.md](OPENMP.md)). With AO screening, different requests may differ
+  at rounding level, because a block keeps the AOs needed by the most
+  demanding property requested.
+
 ## Derived properties: ELF, reduced gradient, sign(lambda2) rho (1.8.0)
 
 The Evaluator computes three derived quantities pointwise from the density
@@ -227,7 +273,7 @@ Multiwfn 2026.9.1 Cube files of water and O2 (open shell), point by point.
 They agree within 1.2e-5 relative, at the six significant digits of the
 reference files (see [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
 
-## Electrostatic potential
+## Electrostatic potential (1.9.0)
 
 `density::total.electrostatic_potential()`
 (`PropertyKind::ElectrostaticPotential`) is the molecular electrostatic
@@ -322,12 +368,48 @@ point: they agree within 2e-5 relative plus 1e-7 hartree/e, the rounding of
 the reference files and of their grid coordinates (see
 [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
 
+## Cube files (1.4.0)
+
+`Field::write_cube(path, comment)` writes a scalar Gaussian Cube file in
+bohr with six significant digits; non-finite values are rejected.
+`read_cube(path)` (`<chem/kumo/cube.hpp>`) reads uncompressed or
+gzip-compressed scalar Cube files (compression is detected from the gzip
+signature) and returns a `CubeData`: a `Field` in bohr, whatever the units
+of the header, and `CubeMetadata` with the two comment lines and the
+original coordinate convention, which `write_cube(const CubeData&, path)`
+keeps. Orbital Cube variants (negative atom counts, several datasets) are
+not read.
+
+## Auxiliary numerical APIs (1.4.0)
+
+- `BasisEvaluator::overlap_matrix()` and `cartesian_moments()`: analytic AO
+  overlap and Cartesian moments through second order about the origin, in
+  FCHK AO order.
+- `Molecule::density_matrix(spin)`: the AO density matrix of a component,
+  as stored in (or derived from) the FCHK; the electron count is Tr(P S).
+- `integrate_rectangular(field)`, `integrate_trapezoidal(field)` and
+  `grid_cell_volume(field)` (`<chem/kumo/field_integrals.hpp>`): quadrature
+  of a sampled field on its affine grid.
+- `FieldSampler` (`<chem/kumo/field_sampler.hpp>`): trilinear interpolation
+  of a Field at any point, returning `FieldSample{value, inside}` (zero
+  outside the grid). The Field must outlive the sampler.
+- `SubspaceProjector` (`<chem/kumo/subspace_projector.hpp>`): projector,
+  orthogonal in the AO overlap metric, onto the span of a set of AO
+  coefficient columns, with a relative rank tolerance.
+- `WeightedOverlapAccumulator` and `weighted_overlap_matrix()`
+  (`<chem/kumo/weighted_overlap.hpp>`): AO matrices weighted by a sampled
+  field over a quadrature supplied by the caller.
+
 ## Errors and limitations
 
-Malformed or unsupported FCHK records, invalid grids, and out-of-range MO
-indices are reported with exceptions. The library does not infer absent MO
-coefficients or orbital energies. Validation currently covers O2 and
-acrolein reference files; higher-angular-momentum shells and other FCHK
-variants require additional reference cases.
+Malformed or unsupported FCHK records, invalid grids, invalid evaluation
+options, properties requested for components they are not defined for, and
+out-of-range MO indices are reported with exceptions. The library does not
+infer absent MO coefficients or orbital energies. The reference data cover
+O2, acrolein and water (Gaussian 09 Cubegen and Multiwfn Cube files), and
+the HBC fixtures (6-31G(d,p) with Cartesian d and SP shells, def2-SVP,
+def2-TZVP with f shells) cover larger bases; shells beyond f and other FCHK
+variants (for example ECPs) have no reference cases yet. The mathematical
+background is in [mathematics/chem-kumo-mathematics.tex](mathematics/chem-kumo-mathematics.tex).
 
 The distributed FCHK fixtures use `.fchk.gz`; `Molecule::from_fchk` accepts both plain and gzip-compressed inputs.

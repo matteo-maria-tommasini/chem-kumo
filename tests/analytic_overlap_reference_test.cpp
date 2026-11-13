@@ -1,4 +1,5 @@
 #include "chem/kumo/basis_evaluator.hpp"
+#include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
@@ -124,7 +125,7 @@ Eigen::MatrixXd reference_block(const Block& a, const Block& b, const HermiteRul
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
     try {
         const HermiteRule rule(12);
         for (int file = 1; file < argc; ++file) {

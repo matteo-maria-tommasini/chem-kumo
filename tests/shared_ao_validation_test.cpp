@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "test_support.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,11 +15,9 @@ constexpr std::array<DensityComponent, 4> components{
     DensityComponent::Spin};
 constexpr std::array<Spin, 4> spins{Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
 
+// Both finite and within 5e-11 * max(1, |got|, |expected|).
 void close(double got, double expected, const char* name) {
-    const double tolerance = 5e-11 * std::max({1.0, std::abs(got), std::abs(expected)});
-    if (!std::isfinite(got) || !std::isfinite(expected) || std::abs(got - expected) > tolerance)
-        throw std::runtime_error(std::string(name) + ": shared AO mismatch: " +
-                                 std::to_string(got) + " vs " + std::to_string(expected));
+    kumo_test::check_close(got, expected, 5e-11, 5e-11, name);
 }
 
 Grid make_grid() {
@@ -60,13 +59,18 @@ void validate(const Molecule& molecule, std::size_t block_size) {
         constexpr std::array<int, 6> cols{0, 1, 2, 1, 2, 2};
         for (std::size_t p = 0; p < n; ++p) {
             for (int a = 0; a < 3; ++a)
-                close(grad.component(a)[p], reference[p].gradient[a], "gradient");
+                close(grad.component(a)[p], reference[p].gradient[a],
+                      "shared AO gradient matches density_derivatives_blocked()");
             for (int a = 0; a < 6; ++a)
-                close(hess.component(a)[p], reference[p].hessian(rows[a], cols[a]), "hessian");
-            close(lap.component()[p], reference[p].laplacian, "laplacian");
-            close(tau.component()[p], reference[p].tau, "tau");
+                close(hess.component(a)[p], reference[p].hessian(rows[a], cols[a]),
+                      "shared AO Hessian matches density_derivatives_blocked()");
+            close(lap.component()[p], reference[p].laplacian,
+                  "shared AO Laplacian matches density_derivatives_blocked()");
+            close(tau.component()[p], reference[p].tau,
+                  "shared AO tau matches density_derivatives_blocked()");
             close(lap.component()[p],
-                  hess.component(0)[p] + hess.component(3)[p] + hess.component(5)[p], "trace");
+                  hess.component(0)[p] + hess.component(3)[p] + hess.component(5)[p],
+                  "Laplacian equals the Hessian trace");
         }
     }
     // Verify spin algebra for every primitive, including the kinetic density.
@@ -79,25 +83,26 @@ void validate(const Molecule& molecule, std::size_t block_size) {
         for (std::size_t a = 0; a < total.components.size(); ++a)
             for (std::size_t p = 0; p < n; ++p) {
                 close(total.component(a)[p], alpha.component(a)[p] + beta.component(a)[p],
-                      "total spin identity");
+                      "total = alpha + beta");
                 close(spin.component(a)[p], alpha.component(a)[p] - beta.component(a)[p],
-                      "difference spin identity");
+                      "spin = alpha - beta");
             }
     }
 }
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 3) return 2;
-    try {
+    if (!kumo_test::require_args(argc, argv, 2, 2, "FILE1.fchk FILE2.fchk")) return 2;
+    return kumo_test::run([&] {
         for (int i = 1; i < argc; ++i) {
             const auto molecule = Molecule::from_fchk(argv[i]);
             for (std::size_t b :
-                 {std::size_t{1}, std::size_t{7}, std::size_t{128}, std::size_t{256}})
+                 {std::size_t{1}, std::size_t{7}, std::size_t{128}, std::size_t{256}}) {
+                const int failures_before = kumo_test::failures;
                 validate(molecule, b);
+                if (kumo_test::failures != failures_before)
+                    std::cerr << "  (in " << argv[i] << " with block size " << b << ")\n";
+            }
         }
-    } catch (const std::exception& e) {
-        std::cerr << "shared AO validation: " << e.what() << '\n';
-        return 1;
-    }
+    });
 }

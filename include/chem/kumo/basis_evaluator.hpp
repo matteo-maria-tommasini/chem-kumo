@@ -11,13 +11,20 @@
 
 namespace chem::kumo {
 
+/// Powers (x, y, z) of a Cartesian Gaussian x^x y^y z^z exp(-a r^2).
 struct CartesianPower {
     int x = 0;
     int y = 0;
     int z = 0;
 };
 
+/// Cartesian components of angular momentum l in Gaussian FCHK order:
+/// explicit orders for d and f (xx, yy, zz, xy, xz, yz for d), then
+/// lexicographic in (lx, ly) from g on. Throws for negative l.
 [[nodiscard]] std::vector<CartesianPower> gaussian_cartesian_order(int l);
+/// (2l + 1) x ncart matrix taking normalized Cartesian components, in the
+/// order above, to real pure components in Gaussian order m = 0, +1, -1,
+/// +2, -2, ... (Schlegel and Frisch 1995). Throws for l < 2.
 [[nodiscard]] Eigen::MatrixXd gaussian_cartesian_to_pure(int l);
 
 /// AO values and Cartesian spatial derivatives at a fixed nuclear geometry.
@@ -49,21 +56,27 @@ public:
     /// evaluate_into_reference() does not apply the cutoff.
     static constexpr double ao_cutoff = 1e-14;
 
+    /// Precompute normalized primitive weights, pure transforms and shell
+    /// cutoff radii.
     explicit BasisEvaluator(BasisSet basis);
 
     [[nodiscard]] const BasisSet& basis() const noexcept { return basis_; }
 
+    /// Number of AOs.
     [[nodiscard]] std::size_t basis_size() const noexcept { return basis_.function_count(); }
 
     /// Analytic all-space AO overlap in Gaussian FCHK ordering.
     [[nodiscard]] Eigen::MatrixXd overlap_matrix() const;
     /// Analytic Cartesian moments through order two, computed in one shell-pair traversal.
     [[nodiscard]] CartesianAOMoments cartesian_moments() const;
+    /// AO values at one point (bohr), in FCHK order.
     [[nodiscard]] Eigen::VectorXd evaluate(const Eigen::Vector3d& point) const;
     /// Exact spatial derivatives through second order, including mixed terms.
     [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point) const;
     /// Compute only derivatives up to order 1 or 2; omitted Hessians are zero.
     [[nodiscard]] AODerivatives evaluate_derivatives(const Eigen::Vector3d& point, int order) const;
+    /// AO values at one point into `output`, which must have basis_size()
+    /// entries.
     void evaluate_into(const Eigen::Vector3d& point, Eigen::Ref<Eigen::VectorXd> output) const;
     /// Original pointwise evaluator retained as a regression oracle.
     void evaluate_into_reference(const Eigen::Vector3d& point,
@@ -87,6 +100,7 @@ public:
 private:
     struct PreparedBlock {
         Eigen::Vector3d origin = Eigen::Vector3d::Zero();
+        int angular_momentum = 0;
         std::vector<double> exponents;
         std::vector<CartesianPower> powers;
         Eigen::MatrixXd primitive_weights;
@@ -114,6 +128,7 @@ private:
     int max_angular_momentum_ = 0;
 };
 
+/// MO coefficient set read by MolecularOrbitals.
 enum class OrbitalSpin {
     Alpha,
     Beta,
@@ -122,14 +137,21 @@ enum class OrbitalSpin {
 /// MO coefficient matrix evaluator; `orbital` indices here are zero-based.
 class MolecularOrbitals {
 public:
+    /// Read the "Alpha MO coefficients" or "Beta MO coefficients" record;
+    /// throws std::runtime_error if it is missing or has the wrong size.
     explicit MolecularOrbitals(const FormattedCheckpoint& fchk,
                                OrbitalSpin spin = OrbitalSpin::Alpha);
 
-    [[nodiscard]] std::size_t basis_size() const noexcept;
-    [[nodiscard]] std::size_t orbital_count() const noexcept;
+    [[nodiscard]] std::size_t basis_size() const noexcept;    ///< rows: AOs
+    [[nodiscard]] std::size_t orbital_count() const noexcept; ///< columns: MOs
+    /// Amplitude of one MO from AO values at a point; throws
+    /// std::out_of_range for an index past the last MO and std::runtime_error
+    /// for a size mismatch.
     [[nodiscard]] double evaluate(std::size_t orbital, const Eigen::VectorXd& ao_values) const;
+    /// Amplitudes of all MOs from AO values at a point.
     [[nodiscard]] Eigen::VectorXd evaluate_all(const Eigen::VectorXd& ao_values) const;
 
+    /// basis_size() x orbital_count() coefficients, one MO per column.
     [[nodiscard]] const Eigen::MatrixXd& coefficients() const noexcept { return coefficients_; }
 
 private:

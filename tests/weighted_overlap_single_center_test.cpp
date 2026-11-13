@@ -2,6 +2,7 @@
 // The integration rule is deliberately test-only; no production quadrature API.
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
+#include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <cmath>
@@ -104,7 +105,7 @@ double block_error(const Eigen::MatrixXd& a, const Eigen::MatrixXd& b,
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
     try {
         for (int arg = 1; arg < argc; ++arg) {
             chem::kumo::FormattedCheckpoint fchk(argv[arg]);

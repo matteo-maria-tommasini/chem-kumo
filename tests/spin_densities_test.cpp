@@ -8,11 +8,8 @@
 #include <stdexcept>
 
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        std::cerr << "usage: " << argv[0] << " FILE1.fchk FILE2.fchk\n";
-        return 2;
-    }
-    try {
+    if (!kumo_test::require_args(argc, argv, 2, 2, "FILE1.fchk FILE2.fchk")) return 2;
+    return kumo_test::run([&] {
         for (int t = 1; t < argc; ++t) {
             const auto molecule = chem::kumo::Molecule::from_fchk(argv[t]);
             auto grid = chem::kumo::Grid::around(molecule.atoms(), 1.5, 0.6);
@@ -37,9 +34,5 @@ int main(int argc, char** argv) {
                                  ": spin densities consistent within 1e-9 (max_abs=" +
                                  kumo_test::num(worst) + ")");
         }
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR: " << e.what() << '\n';
-        return 1;
-    }
-    return kumo_test::exit_code();
+    });
 }

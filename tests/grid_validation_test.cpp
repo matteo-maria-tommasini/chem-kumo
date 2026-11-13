@@ -66,36 +66,35 @@ void check_all(const Molecule& molecule, const Grid& grid, const std::string& na
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "usage: " << argv[0] << " o2.fchk.gz\n";
-        return 2;
-    }
-    const auto molecule = Molecule::from_fchk(argv[1]);
+    if (!kumo_test::require_args(argc, argv, 1, 1, "o2.fchk.gz")) return 2;
+    return kumo_test::run([&] {
+        const auto molecule = Molecule::from_fchk(argv[1]);
 
-    check_all(molecule, unit_grid(0.25), "regular grid", true);
-    // |det(steps)| = 1e-21: valid geometry, only the scale is small.
-    check_all(molecule, unit_grid(1e-7), "small-spacing grid", true);
+        check_all(molecule, unit_grid(0.25), "regular grid", true);
+        // |det(steps)| = 1e-21: valid geometry, only the scale is small.
+        check_all(molecule, unit_grid(1e-7), "small-spacing grid", true);
 
-    Grid collinear = unit_grid(0.25);
-    collinear.steps.col(2) = collinear.steps.col(0);
-    check_all(molecule, collinear, "collinear axes", false);
+        Grid collinear = unit_grid(0.25);
+        collinear.steps.col(2) = collinear.steps.col(0);
+        check_all(molecule, collinear, "collinear axes", false);
 
-    Grid zero_step = unit_grid(0.25);
-    zero_step.steps.col(1).setZero();
-    check_all(molecule, zero_step, "zero step", false);
+        Grid zero_step = unit_grid(0.25);
+        zero_step.steps.col(1).setZero();
+        check_all(molecule, zero_step, "zero step", false);
 
-    Grid nonfinite_origin = unit_grid(0.25);
-    nonfinite_origin.origin.x() = std::numeric_limits<double>::quiet_NaN();
-    check_all(molecule, nonfinite_origin, "nonfinite origin", false);
+        Grid nonfinite_origin = unit_grid(0.25);
+        nonfinite_origin.origin.x() = std::numeric_limits<double>::quiet_NaN();
+        check_all(molecule, nonfinite_origin, "nonfinite origin", false);
 
-    Grid nonfinite_step = unit_grid(0.25);
-    nonfinite_step.steps(0, 0) = std::numeric_limits<double>::infinity();
-    check_all(molecule, nonfinite_step, "nonfinite step", false);
+        Grid nonfinite_step = unit_grid(0.25);
+        nonfinite_step.steps(0, 0) = std::numeric_limits<double>::infinity();
+        check_all(molecule, nonfinite_step, "nonfinite step", false);
 
-    Grid zero_count = unit_grid(0.25);
-    zero_count.counts[1] = 0;
-    check_all(molecule, zero_count, "zero count", false);
+        Grid zero_count = unit_grid(0.25);
+        zero_count.counts[1] = 0;
+        check_all(molecule, zero_count, "zero count", false);
 
-    if (kumo_test::failures == 0) std::cout << "grid validation consistent across entry points\n";
-    return kumo_test::exit_code();
+        if (kumo_test::failures == 0)
+            std::cout << "grid validation consistent across entry points\n";
+    });
 }

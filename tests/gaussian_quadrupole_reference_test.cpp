@@ -1,6 +1,7 @@
 #include "chem/kumo/basis_evaluator.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"
+#include "test_support.hpp"
 #include <Eigen/Core>
 #include <array>
 #include <algorithm>
@@ -62,10 +63,8 @@ int check(const std::string& path) {
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "usage: kumo-gaussian-quadrupole-reference-test file.fchk[.gz] ...\n";
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "file.fchk[.gz] ..."))
         return 2;
-    }
     try {
         for (int i = 1; i < argc; ++i)
             check(argv[i]);

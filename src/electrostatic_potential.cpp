@@ -12,60 +12,26 @@
 
 namespace chem::kumo::detail {
 namespace {
-// One block of AOs with a single angular momentum, laid out exactly as in
-// BasisEvaluator: SP shells become an s block followed by a p block.
-struct Block {
-    Eigen::Vector3d origin;
-    int angular_momentum = 0;
-    std::vector<double> exponents;
-    std::vector<CartesianPower> powers;
-    Eigen::MatrixXd weights;   ///< Cartesian component x primitive, normalized
-    Eigen::MatrixXd transform; ///< pure x Cartesian, or empty for Cartesian
-    Eigen::Index offset = 0;
-    Eigen::Index count = 0;
-};
+// Number of (t, u, v) with t + u + v <= s: C(s + 3, 3).
+constexpr std::size_t hermite_count(int s) {
+    return static_cast<std::size_t>((s + 1) * (s + 2) * (s + 3) / 6);
+}
 
-std::vector<Block> blocks_of(const BasisSet& basis) {
-    std::vector<Block> blocks;
-    Eigen::Index offset = 0;
-    const auto add = [&](const Shell& shell, int l, const std::vector<double>& coefficients,
-                         ShellRepresentation representation) {
-        // Expansions of a pair need Boys orders up to la + lb + local_order.
-        constexpr int largest = (boys_max_order - ElectrostaticPotential::local_order) / 2;
-        if (l > largest)
+// Factor from a Hermite coefficient c_k (with its 2 pi / p) to the weight
+// e_k = c_k sqrt(pi / p) / 2 of the point multipole d^alpha (1 / R).
+double multipole_factor(double exponent) {
+    return 0.5 * std::sqrt(std::numbers::pi / exponent);
+}
+
+// The normalized AO blocks of the basis, checking the angular momentum:
+// expansions of a pair need Boys orders up to la + lb + local_order.
+std::vector<NormalizedBlock> blocks_of(const BasisSet& basis) {
+    constexpr int largest = (boys_max_order - ElectrostaticPotential::local_order) / 2;
+    auto blocks = normalized_blocks(basis);
+    for (const auto& block : blocks)
+        if (block.angular_momentum > largest)
             throw std::invalid_argument("the electrostatic potential supports shells up to l = " +
                                         std::to_string(largest));
-        Block block;
-        block.origin = shell.origin;
-        block.angular_momentum = l;
-        block.exponents = shell.exponents;
-        block.powers = gaussian_cartesian_order(l);
-        const auto ncart = static_cast<Eigen::Index>(block.powers.size());
-        const auto nprim = static_cast<Eigen::Index>(block.exponents.size());
-        block.weights.resize(ncart, nprim);
-        for (Eigen::Index k = 0; k < ncart; ++k)
-            for (Eigen::Index p = 0; p < nprim; ++p)
-                block.weights(k, p) =
-                    coefficients[static_cast<std::size_t>(p)] *
-                    cartesian_primitive_normalization(block.exponents[static_cast<std::size_t>(p)],
-                                                      block.powers[static_cast<std::size_t>(k)]);
-        if (representation == ShellRepresentation::Pure && l >= 2)
-            block.transform = gaussian_cartesian_to_pure(l);
-        block.offset = offset;
-        block.count = block.transform.size() ? block.transform.rows() : ncart;
-        offset += block.count;
-        blocks.push_back(std::move(block));
-    };
-    for (const auto& shell : basis.shells()) {
-        if (shell.is_sp) {
-            add(shell, 0, shell.coefficients, ShellRepresentation::Cartesian);
-            add(shell, 1, shell.p_coefficients, ShellRepresentation::Cartesian);
-        } else {
-            add(shell, shell.angular_momentum, shell.coefficients, shell.representation);
-        }
-    }
-    if (static_cast<std::size_t>(offset) != basis.function_count())
-        throw std::logic_error("electrostatic potential blocks do not match the basis size");
     return blocks;
 }
 
@@ -152,21 +118,20 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
     for (const auto& block : blocks)
         max_order_ = std::max(max_order_, 2 * block.angular_momentum);
     side_ = max_order_ + multipole_order + 1;
-    const int side = side_;
     hermite_indices_.resize(static_cast<std::size_t>(max_order_ + 1));
     std::vector<std::vector<HermiteIndex>> triples(static_cast<std::size_t>(max_order_ + 1));
     for (int L = 0; L <= max_order_; ++L) {
         triples[static_cast<std::size_t>(L)] = hermite_triples(L);
         for (const auto& h : triples[static_cast<std::size_t>(L)])
-            hermite_indices_[static_cast<std::size_t>(L)].push_back((h.t * side + h.u) * side +
-                                                                    h.v);
+            hermite_indices_[static_cast<std::size_t>(L)].push_back(
+                static_cast<int>(hermite_offset(h.t, h.u, h.v)));
     }
 
     // Local expansion terms beta, |beta| <= multipole_order (pairs use the
     // first ones, |beta| <= local_order): their offsets in the Hermite table
     // (added to those of alpha), (-1)^|beta| / beta!, and the powers of h.
     for (const auto& h : hermite_triples(multipole_order)) {
-        local_offsets_.push_back((h.t * side + h.u) * side + h.v);
+        local_offsets_.push_back(static_cast<int>(hermite_offset(h.t, h.u, h.v)));
         double factor = ((h.t + h.u + h.v) % 2 == 0) ? 1.0 : -1.0;
         for (int j = 2; j <= h.t; ++j)
             factor /= j;
@@ -180,18 +145,21 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
 
     // Offsets of the moment indices nu, |nu| <= max_order_ + multipole_order.
     for (const auto& h : hermite_triples(max_order_ + multipole_order))
-        moment_offsets_.push_back((h.t * side + h.u) * side + h.v);
+        moment_offsets_.push_back(static_cast<int>(hermite_offset(h.t, h.u, h.v)));
 
     std::vector<double> pair_coefficients;
     for (std::size_t a = 0; a < blocks.size(); ++a) {
-        const Block& A = blocks[a];
+        const NormalizedBlock& A = blocks[a];
         for (std::size_t b = a; b < blocks.size(); ++b) {
-            const Block& B = blocks[b];
+            const NormalizedBlock& B = blocks[b];
             // Cartesian density block; the (b, a) block is its transpose and
             // gives the same contribution, hence the factor 2.
-            Eigen::MatrixXd cartesian = density_matrix.block(A.offset, B.offset, A.count, B.count);
-            if (A.transform.size()) cartesian = (A.transform.transpose() * cartesian).eval();
-            if (B.transform.size()) cartesian = (cartesian * B.transform).eval();
+            Eigen::MatrixXd cartesian = density_matrix.block(
+                static_cast<Eigen::Index>(A.offset), static_cast<Eigen::Index>(B.offset),
+                static_cast<Eigen::Index>(A.count), static_cast<Eigen::Index>(B.count));
+            if (A.pure_transform.size())
+                cartesian = (A.pure_transform.transpose() * cartesian).eval();
+            if (B.pure_transform.size()) cartesian = (cartesian * B.pure_transform).eval();
             if (a != b) cartesian *= 2.0;
             if ((cartesian.array() == 0.0).all()) continue;
 
@@ -311,14 +279,9 @@ void ElectrostaticPotential::coulomb_derivatives(const Eigen::Vector3d& x, int L
 // u and v, from n = L down to 0, starting from R^n_000 = scratch.boys[n].
 void ElectrostaticPotential::hermite_recursion(const Eigen::Vector3d& pc, int L,
                                                Scratch& scratch) const {
-    const int side = side_;
-    const auto offset = [side](const HermiteIndex& h) {
-        return static_cast<std::size_t>((h.t * side + h.u) * side + h.v);
-    };
+    const auto offset = [this](const HermiteIndex& h) { return hermite_offset(h.t, h.u, h.v); };
     // Triples with t + u + v <= s are the first C(s + 3, 3) entries.
-    const auto count = [](int s) {
-        return static_cast<std::size_t>((s + 1) * (s + 2) * (s + 3) / 6);
-    };
+    const auto count = hermite_count;
     // Level n holds R^n for t + u + v <= L - n.
     for (int n = L; n >= 0; --n) {
         std::swap(scratch.previous, scratch.current);
@@ -472,9 +435,7 @@ double taylor_remainder_bound(int L, int K, double rho, double d) {
     }
     return std::numeric_limits<double>::infinity();
 }
-} // namespace
 
-namespace {
 // Smallest d on [low, high] with bound(d) <= allowed, for a bound that
 // decreases with d; infinity if bound(high) > allowed.
 template <typename Bound>
@@ -498,6 +459,18 @@ float upward_float(double value) {
 }
 } // namespace
 
+void ElectrostaticPotential::multipole_weights(const PrimitivePair& pair,
+                                               std::vector<double>& weights) const {
+    const int L = pair.order;
+    weights.assign(static_cast<std::size_t>(L + 1), 0.0);
+    const double* c = coefficients_.data() + pair.first_coefficient;
+    const double to_multipole = multipole_factor(pair.exponent);
+    std::size_t k = 0;
+    for (int order = 0; order <= L; ++order)
+        for (int j = 0; j < (order + 1) * (order + 2) / 2; ++j, ++k)
+            weights[static_cast<std::size_t>(order)] += std::abs(c[k]) * to_multipole;
+}
+
 ElectrostaticPotential::FarFieldPlan
 ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
     if (!std::isfinite(radius) || radius < 0.0)
@@ -516,23 +489,18 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
     plan.pair_tolerance = 0.5 * tolerance;
     for (int j = 0; j < levels; ++j)
         plan.levels[static_cast<std::size_t>(j)] = plan.pair_tolerance * std::pow(10.0, -0.5 * j);
+    plan_pair_levels(plan);
+    plan_source_clusters(plan);
+    return plan;
+}
 
-    // Multipole weights W_L of each pair: sum of |e_k| over terms of order L.
-    const auto pair_weights = [&](const PrimitivePair& pair, std::vector<double>& weights) {
-        const int L = pair.order;
-        weights.assign(static_cast<std::size_t>(L + 1), 0.0);
-        const double* c = coefficients_.data() + pair.first_coefficient;
-        const double to_multipole = 0.5 * std::sqrt(std::numbers::pi / pair.exponent);
-        std::size_t k = 0;
-        for (int order = 0; order <= L; ++order)
-            for (int j = 0; j < (order + 1) * (order + 2) / 2; ++j, ++k)
-                weights[static_cast<std::size_t>(order)] += std::abs(c[k]) * to_multipole;
-    };
-
-    // Individual pairs: the bound on a geometric grid of distances, then the
-    // smallest grid distance at which it is below each level.
+// Individual pairs: the bound on a geometric grid of distances, then the
+// smallest grid distance at which it is below each level.
+void ElectrostaticPotential::plan_pair_levels(FarFieldPlan& plan) const {
+    constexpr int levels = FarFieldPlan::level_count;
     constexpr int K = local_order;
     constexpr int grid_points = 64;
+    const double radius = plan.radius;
     const double first = std::max(1.25 * radius, 0.05);
     const double ratio = std::pow(400.0 / first, 1.0 / (grid_points - 1));
     std::vector<double> distances(grid_points), bounds(grid_points);
@@ -542,7 +510,7 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
     for (std::size_t i = 0; i < pairs_.size(); ++i) {
         const auto& pair = pairs_[i];
         const int L = pair.order;
-        pair_weights(pair, weights);
+        multipole_weights(pair, weights);
         near_bounds.assign(static_cast<std::size_t>(L + 1), 0.0);
         far_bounds.assign(static_cast<std::size_t>(L + K + 1), 0.0);
         for (int g = 0; g < grid_points; ++g) {
@@ -576,19 +544,21 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
             plan.level_distance2[i * levels + static_cast<std::size_t>(j)] = upward_float(d * d);
         }
     }
+}
 
-    // Source clusters: pairs grouped by cell of their centre and by exponent
-    // (a factor of 4 per class), in order of first appearance.
-    //
-    // For a cluster with centre c and a target cluster with centre b, write
-    // P - C = X0 + z with X0 = c - b and z = (P - c) - (C - b), |z| <= a + rho
-    // (a: cluster radius). Each 1/R term d^alpha (1/|P - C|) is expanded in z
-    // about X0 to total order N; expanding z^gamma binomially in u = P - c
-    // and h = C - b is exact, so the error is the Taylor remainder in z,
-    // bounded by T_L(N, a + rho, |X0|) as for single pairs. The erfc terms
-    // are left out; every pair centre is at least |X0| - a - rho from the
-    // points, where they are bounded by G_L for the smallest exponent of the
-    // cluster (G decreases with the exponent and the distance).
+// Source clusters: pairs grouped by cell of their centre and by exponent
+// (a factor of 4 per class), in order of first appearance.
+//
+// For a cluster with centre c and a target cluster with centre b, write
+// P - C = X0 + z with X0 = c - b and z = (P - c) - (C - b), |z| <= a + rho
+// (a: cluster radius). Each 1/R term d^alpha (1/|P - C|) is expanded in z
+// about X0 to total order N; expanding z^gamma binomially in u = P - c and
+// h = C - b is exact, so the error is the Taylor remainder in z, bounded by
+// T_L(N, a + rho, |X0|) as for single pairs. The erfc terms are left out;
+// every pair centre is at least |X0| - a - rho from the points, where they
+// are bounded by G_L for the smallest exponent of the cluster (G decreases
+// with the exponent and the distance).
+void ElectrostaticPotential::plan_source_clusters(FarFieldPlan& plan) const {
     std::map<std::array<long, 4>, std::size_t> index;
     for (std::size_t i = 0; i < pairs_.size(); ++i) {
         const auto& pair = pairs_[i];
@@ -601,18 +571,19 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
         if (inserted) plan.clusters.emplace_back();
         plan.clusters[it->second].pairs.push_back(i);
     }
-    const double share = 0.25 * tolerance / static_cast<double>(plan.clusters.size());
+    const double share = 0.25 * plan.tolerance / static_cast<double>(plan.clusters.size());
     const int N = multipole_order;
-    const int moment_order = max_order_ + N;
-    const auto moments = hermite_triples(moment_order);
+    const auto moments = hermite_triples(max_order_ + N);
     plan.moment_count = moments.size();
-    // Compact index of each (t, u, v) with t + u + v <= moment_order.
+    // Compact index of each (t, u, v) with t + u + v <= max_order_ + N.
     std::vector<int> compact(static_cast<std::size_t>(side_ * side_ * side_), -1);
     for (std::size_t m = 0; m < moments.size(); ++m)
-        compact[static_cast<std::size_t>((moments[m].t * side_ + moments[m].u) * side_ +
-                                         moments[m].v)] = static_cast<int>(m);
+        compact[hermite_offset(moments[m].t, moments[m].u, moments[m].v)] = static_cast<int>(m);
     const auto delta = hermite_triples(N);
-    std::vector<double> cluster_weights;
+    std::vector<std::vector<HermiteIndex>> alpha_triples;
+    for (int L = 0; L <= max_order_; ++L)
+        alpha_triples.push_back(hermite_triples(L));
+    std::vector<double> weights, cluster_weights;
     for (auto& cluster : plan.clusters) {
         Eigen::Vector3d low = pairs_[cluster.pairs.front()].center, high = low;
         double smallest_exponent = std::numeric_limits<double>::infinity();
@@ -634,17 +605,16 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
             const auto& pair = pairs_[i];
             const Eigen::Vector3d u = pair.center - cluster.center;
             cluster.radius = std::max(cluster.radius, u.norm());
-            pair_weights(pair, weights);
+            multipole_weights(pair, weights);
             for (std::size_t o = 0; o < weights.size(); ++o)
                 cluster_weights[o] += weights[o];
-            const double to_multipole = 0.5 * std::sqrt(std::numbers::pi / pair.exponent);
+            const double to_multipole = multipole_factor(pair.exponent);
             const double* c = coefficients_.data() + pair.first_coefficient;
-            const auto& alphas = hermite_indices_[static_cast<std::size_t>(pair.order)];
-            const auto alpha_triples = hermite_triples(pair.order);
+            const auto& alphas = alpha_triples[static_cast<std::size_t>(pair.order)];
             for (std::size_t k = 0; k < alphas.size(); ++k) {
                 const double e = c[k] * to_multipole;
                 if (e == 0.0) continue;
-                const auto& a = alpha_triples[k];
+                const auto& a = alphas[k];
                 for (const auto& d : delta) {
                     double term = e;
                     for (int j = 1; j <= d.t; ++j)
@@ -653,8 +623,7 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
                         term *= u.y() / j;
                     for (int j = 1; j <= d.v; ++j)
                         term *= u.z() / j;
-                    const int nu = compact[static_cast<std::size_t>(
-                        ((a.t + d.t) * side_ + a.u + d.u) * side_ + a.v + d.v)];
+                    const int nu = compact[hermite_offset(a.t + d.t, a.u + d.u, a.v + d.v)];
                     by_order[static_cast<std::size_t>(d.t + d.u + d.v) * moments.size() +
                              static_cast<std::size_t>(nu)] += term;
                 }
@@ -669,7 +638,7 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
         // Truncation: sum_L W_L T_L(N, a + rho, D) <= share; erfc terms:
         // sum_L W_L G_L(p_min, r) <= share for r >= erfc_radius (G decreases
         // with p and r).
-        const double reach = cluster.radius + radius;
+        const double reach = cluster.radius + plan.radius;
         const auto truncation = [&](double D) {
             double total = 0.0;
             for (std::size_t o = 0; o < cluster_weights.size(); ++o)
@@ -692,17 +661,15 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
             smallest_distance(erfc_terms, 0.0, 1.0 / std::sqrt(smallest_exponent), share);
         cluster.min_distance = std::max(truncation_distance, reach + erfc_radius);
     }
-    return plan;
 }
 
 void ElectrostaticPotential::evaluate_cluster(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     const Eigen::Vector3d& center, const FarFieldPlan& plan, std::span<double> output) const {
-    constexpr int levels = FarFieldPlan::level_count;
     if (output.size() != static_cast<std::size_t>(points.cols()))
         throw std::invalid_argument(
             "electrostatic potential output size does not match the points");
-    if (plan.level_distance2.size() != pairs_.size() * levels)
+    if (plan.level_distance2.size() != pairs_.size() * FarFieldPlan::level_count)
         throw std::invalid_argument("far-field plan does not match the potential");
     if (!center.allFinite()) throw std::invalid_argument("cluster centre must be finite");
     for (Eigen::Index j = 0; j < points.cols(); ++j) {
@@ -714,14 +681,27 @@ void ElectrostaticPotential::evaluate_cluster(
     }
     Scratch scratch;
     prepare(scratch);
+    const auto near = expand_far_field(center, plan, scratch);
+    for (Eigen::Index j = 0; j < points.cols(); ++j) {
+        const Eigen::Vector3d point = points.col(j);
+        double sum = local_polynomial(point - center, scratch);
+        for (const std::size_t i : near)
+            sum += pair_potential(pairs_[i], point, scratch);
+        output[static_cast<std::size_t>(j)] = nuclear(point) - sum;
+    }
+}
+
+// Fills scratch.local with the coefficients (factors (-1)^|beta| / beta!
+// included) of the local expansion about `center` of the far source
+// clusters and the expanded pairs, and returns the pairs to evaluate exactly.
+std::vector<std::size_t> ElectrostaticPotential::expand_far_field(const Eigen::Vector3d& center,
+                                                                  const FarFieldPlan& plan,
+                                                                  Scratch& scratch) const {
+    constexpr int levels = FarFieldPlan::level_count;
     std::fill(scratch.local.begin(), scratch.local.end(), 0.0);
-    const auto count = [](int s) {
-        return static_cast<std::size_t>((s + 1) * (s + 2) * (s + 3) / 6);
-    };
 
     // Source clusters far enough away: one multipole-to-local translation each,
-    //   local_beta += sum_nu Q^(N - |beta|)_nu d^(nu+beta) (1/|X|) at X = c_S - b
-    // (the factors (-1)^|beta| / beta! are applied below with the others).
+    //   local_beta += sum_nu Q^(N - |beta|)_nu d^(nu+beta) (1/|X|) at X = c_S - b.
     std::vector<char> handled(pairs_.size(), 0);
     const int N = multipole_order;
     for (const auto& cluster : plan.clusters) {
@@ -733,7 +713,7 @@ void ElectrostaticPotential::evaluate_cluster(
             const int m = N - (beta[0] + beta[1] + beta[2]);
             const double* q =
                 cluster.moments.data() + static_cast<std::size_t>(m) * plan.moment_count;
-            const std::size_t terms = count(max_order_ + m);
+            const std::size_t terms = hermite_count(max_order_ + m);
             double sum = 0.0;
             for (std::size_t nu = 0; nu < terms; ++nu)
                 sum += q[nu] * scratch.current[static_cast<std::size_t>(moment_offsets_[nu]) +
@@ -791,7 +771,7 @@ void ElectrostaticPotential::evaluate_cluster(
         hermite_integrals(pair.exponent, pair.center - center, pair.order + local_order, scratch);
         const auto& indices = hermite_indices_[static_cast<std::size_t>(pair.order)];
         const double* c = coefficients_.data() + pair.first_coefficient;
-        const std::size_t terms = count(local_order);
+        const std::size_t terms = hermite_count(local_order);
         for (std::size_t k = 0; k < indices.size(); ++k) {
             const double* r = scratch.current.data() + indices[k];
             for (std::size_t b = 0; b < terms; ++b)
@@ -800,29 +780,30 @@ void ElectrostaticPotential::evaluate_cluster(
     }
     for (std::size_t b = 0; b < local_offsets_.size(); ++b)
         scratch.local[b] *= local_factors_[b];
+    return near;
+}
 
-    for (Eigen::Index j = 0; j < points.cols(); ++j) {
-        const Eigen::Vector3d point = points.col(j);
-        const Eigen::Vector3d h = point - center;
-        // Powers of the components of h, then the polynomial.
-        std::array<std::array<double, multipole_order + 1>, 3> powers{};
-        for (int a = 0; a < 3; ++a) {
-            powers[static_cast<std::size_t>(a)][0] = 1.0;
-            for (int e = 1; e <= multipole_order; ++e)
-                powers[static_cast<std::size_t>(a)][static_cast<std::size_t>(e)] =
-                    powers[static_cast<std::size_t>(a)][static_cast<std::size_t>(e - 1)] * h[a];
-        }
-        double polynomial = 0.0;
-        for (std::size_t b = 0; b < local_powers_.size(); ++b) {
-            const auto& power = local_powers_[b];
-            polynomial += scratch.local[b] * powers[0][static_cast<std::size_t>(power[0])] *
-                          powers[1][static_cast<std::size_t>(power[1])] *
-                          powers[2][static_cast<std::size_t>(power[2])];
-        }
-        double sum = polynomial;
-        for (const std::size_t i : near)
-            sum += pair_potential(pairs_[i], point, scratch);
-        output[static_cast<std::size_t>(j)] = nuclear(point) - sum;
+// The local expansion in scratch.local at displacement h from its centre.
+double ElectrostaticPotential::local_polynomial(const Eigen::Vector3d& h,
+                                                const Scratch& scratch) const {
+    std::array<std::array<double, multipole_order + 1>, 3> powers{};
+    for (int a = 0; a < 3; ++a) {
+        powers[static_cast<std::size_t>(a)][0] = 1.0;
+        for (int e = 1; e <= multipole_order; ++e)
+            powers[static_cast<std::size_t>(a)][static_cast<std::size_t>(e)] =
+                powers[static_cast<std::size_t>(a)][static_cast<std::size_t>(e - 1)] * h[a];
     }
+    double polynomial = 0.0;
+    for (std::size_t b = 0; b < local_powers_.size(); ++b) {
+        const auto& power = local_powers_[b];
+        polynomial += scratch.local[b] * powers[0][static_cast<std::size_t>(power[0])] *
+                      powers[1][static_cast<std::size_t>(power[1])] *
+                      powers[2][static_cast<std::size_t>(power[2])];
+    }
+    return polynomial;
+}
+
+std::size_t ElectrostaticPotential::hermite_offset(int t, int u, int v) const {
+    return static_cast<std::size_t>((t * side_ + u) * side_ + v);
 }
 } // namespace chem::kumo::detail

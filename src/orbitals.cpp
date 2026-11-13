@@ -22,10 +22,14 @@ void check_channel(Spin s) {
 }
 } // namespace
 
-std::size_t Molecule::orbital_count(Spin channel) const {
+// Restricted calculations have one set of MOs for both channels.
+const Eigen::MatrixXd& Molecule::mo_coefficients(Spin channel) const {
     check_channel(channel);
-    const auto& matrix = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
-    return static_cast<std::size_t>(matrix.cols());
+    return (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+}
+
+std::size_t Molecule::orbital_count(Spin channel) const {
+    return static_cast<std::size_t>(mo_coefficients(channel).cols());
 }
 
 int Molecule::occupied_count(Spin channel) const {
@@ -40,9 +44,8 @@ const std::vector<double>& Molecule::orbital_energies(Spin channel) const {
 
 OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, std::size_t index,
                                                  Spin channel) const {
-    check_channel(channel);
+    const auto& coeff = mo_coefficients(channel);
     if (!point.allFinite()) throw std::invalid_argument("MO evaluation point must be finite");
-    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
     if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
         throw std::out_of_range("MO index outside available coefficient range");
     const auto ao = evaluator_.evaluate_derivatives(point);
@@ -63,8 +66,7 @@ OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, s
 std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, std::size_t index,
     Spin channel, std::size_t block_size) const {
-    check_channel(channel);
-    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+    const auto& coeff = mo_coefficients(channel);
     if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
         throw std::out_of_range("MO index outside available coefficient range");
     if (block_size == 0)
@@ -122,8 +124,7 @@ Field Molecule::orbital(const Grid& grid, std::size_t index, Spin channel) const
 
 std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::size_t>& indices,
                                       Spin channel, const ProgressCallback& progress) const {
-    check_channel(channel);
-    const auto& coeff = (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+    const auto& coeff = mo_coefficients(channel);
     if (coeff.cols() == 0) throw std::runtime_error("FCHK has no MO coefficients");
     for (auto i : indices)
         if (i == 0 || i > static_cast<std::size_t>(coeff.cols()))
@@ -138,32 +139,21 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
     constexpr std::size_t block_size = 128;
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many orbital blocks for parallel evaluation");
-    detail::FirstException worker_errors;
     detail::Progress report(progress, count);
-#ifdef _OPENMP
-#pragma omp parallel for schedule(static) if (nblocks > 1)
-#endif
-    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-        try {
-            const std::size_t start = static_cast<std::size_t>(block) * block_size;
-            const auto size = std::min(block_size, count - start);
-            const auto b = static_cast<Eigen::Index>(size);
-            Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, b);
+    detail::for_each_block<detail::Schedule::Static>(nblocks, [&](std::size_t block) {
+        const std::size_t start = static_cast<std::size_t>(block) * block_size;
+        const auto size = std::min(block_size, count - start);
+        const auto b = static_cast<Eigen::Index>(size);
+        const auto points = detail::grid_points(grid, start, size);
+        Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
+        evaluator_.evaluate_batch(points, phi);
+        const Eigen::MatrixXd psi = selected.transpose() * phi;
+        for (std::size_t mo = 0; mo < indices.size(); ++mo)
             for (Eigen::Index t = 0; t < b; ++t)
-                points.col(t) = detail::grid_point(grid, start + static_cast<std::size_t>(t));
-            Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
-            evaluator_.evaluate_batch(points, phi);
-            const Eigen::MatrixXd psi = selected.transpose() * phi;
-            for (std::size_t mo = 0; mo < indices.size(); ++mo)
-                for (Eigen::Index t = 0; t < b; ++t)
-                    buffers[mo][start + static_cast<std::size_t>(t)] =
-                        psi(static_cast<Eigen::Index>(mo), t);
-            report.advance(size);
-        } catch (...) {
-            worker_errors.capture();
-        }
-    }
-    worker_errors.rethrow_if_any();
+                buffers[mo][start + static_cast<std::size_t>(t)] =
+                    psi(static_cast<Eigen::Index>(mo), t);
+        report.advance(size);
+    });
     std::vector<Field> result;
     result.reserve(indices.size());
     for (auto& buffer : buffers)

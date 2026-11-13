@@ -183,8 +183,8 @@ struct EvaluationOptions {
 /// Values of one property at all grid points, as one array per component
 /// (structure of arrays): component(c)[point], points in Field order.
 struct PropertyField {
-    std::size_t points = 0;
-    std::vector<std::vector<double>> components;
+    std::size_t points = 0;                      ///< grid points
+    std::vector<std::vector<double>> components; ///< components x points
 
     /// Values of component `index`; throws std::out_of_range if it does not exist.
     std::span<const double> component(std::size_t index = 0) const { return components.at(index); }
@@ -196,6 +196,7 @@ public:
     /// Result for a requested property; throws std::out_of_range otherwise.
     const PropertyField& get(Property key) const { return fields_.at(key); }
 
+    /// Whether the property was requested.
     bool contains(Property key) const noexcept { return fields_.contains(key); }
 
     /// Density-contraction backend actually used for this evaluation. For

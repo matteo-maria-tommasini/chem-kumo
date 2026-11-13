@@ -7,10 +7,7 @@
 #include <string>
 
 int main(int argc, char** argv) {
-    if (argc != 3) {
-        std::cerr << "usage: " << argv[0] << " FILE1.fchk FILE2.fchk\n";
-        return 2;
-    }
+    if (!kumo_test::require_args(argc, argv, 2, 2, "FILE1.fchk FILE2.fchk")) return 2;
     try {
         for (int f = 1; f < 3; ++f) {
             const std::string file = argv[f];

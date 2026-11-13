@@ -11,6 +11,8 @@
 
 namespace chem::kumo {
 
+/// Result of FieldSampler::sample(): the interpolated value, and whether
+/// the point lies within the grid (value is 0 otherwise).
 struct FieldSample {
     double value = 0.0;
     bool inside = false;

@@ -1,38 +1,43 @@
 #include "chem/kumo/basis_evaluator.hpp"
+#include "test_support.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
-
-namespace {
-void check(bool condition, const char* message) {
-    if (!condition) throw std::runtime_error(message);
-}
-
-double error(const Eigen::MatrixXd& a, const Eigen::MatrixXd& b) {
-    return (a - b).cwiseAbs().maxCoeff();
-}
-} // namespace
+#include <string>
 
 int main(int argc, char** argv) {
-    if (argc != 2) return 2;
-    try {
+    if (!kumo_test::require_args(argc, argv, 1, 1, "FILE.fchk")) return 2;
+    using kumo_test::check;
+    using kumo_test::max_abs_diff;
+    using kumo_test::num;
+    return kumo_test::run([&] {
         chem::kumo::FormattedCheckpoint fchk(argv[1]);
         chem::kumo::BasisEvaluator ao{chem::kumo::BasisSet(fchk)};
         const auto m = ao.cartesian_moments();
-        check(error(m.overlap, ao.overlap_matrix()) < 2e-12,
-              "moment overlap differs from established overlap implementation");
+        const double overlap_error = max_abs_diff(m.overlap, ao.overlap_matrix(), "overlap");
+        check(overlap_error < 2e-12,
+              "moment overlap matches the established overlap implementation within 2e-12 "
+              "(max_abs=" +
+                  num(overlap_error) + ")");
         const auto n = static_cast<Eigen::Index>(ao.basis_size());
         std::array<const Eigen::MatrixXd*, 10> matrices = {
             &m.overlap,   &m.first[0],  &m.first[1],  &m.first[2],  &m.second[0],
             &m.second[1], &m.second[2], &m.second[3], &m.second[4], &m.second[5]};
-        for (const auto* matrix : matrices) {
-            check(matrix->rows() == n && matrix->cols() == n,
-                  "unexpected moment matrix dimensions");
-            check(matrix->allFinite(), "nonfinite moment matrix");
-            check(error(*matrix, matrix->transpose()) < 2e-12, "AO moment matrix is not symmetric");
+        for (std::size_t k = 0; k < matrices.size(); ++k) {
+            const auto* matrix = matrices[k];
+            const std::string label = "moment matrix " + std::to_string(k);
+            if (!check(matrix->rows() == n && matrix->cols() == n,
+                       label + " is " + std::to_string(n) + "x" + std::to_string(n) + " (got " +
+                           std::to_string(matrix->rows()) + "x" + std::to_string(matrix->cols()) +
+                           ")"))
+                continue;
+            check(matrix->allFinite(), label + " is finite");
+            const double asymmetry = max_abs_diff(*matrix, matrix->transpose(), label);
+            check(asymmetry < 2e-12,
+                  label + " is symmetric within 2e-12 (max_abs=" + num(asymmetry) + ")");
         }
 
         // Every normalized Cartesian or pure AO centered at R has an even
@@ -44,12 +49,17 @@ int main(int argc, char** argv) {
                 for (int d = 0; d < 3; ++d) {
                     const double lhs = m.first[static_cast<std::size_t>(d)](i, i);
                     const double rhs = shell.origin[d] * m.overlap(i, i);
-                    check(std::abs(lhs - rhs) < 5e-10, "incorrect first moment of centered AO");
+                    check(std::abs(lhs - rhs) < 5e-10,
+                          "AO " + std::to_string(i) + " axis " + std::to_string(d) +
+                              ": first moment of a centered AO equals its center within 5e-10 "
+                              "(expected " +
+                              num(rhs, 17) + ", got " + num(lhs, 17) + ")");
                 }
             }
             offset += count;
         }
-        check(offset == n, "shell AO count mismatch");
+        check(offset == n,
+              "shells hold " + std::to_string(n) + " AOs (got " + std::to_string(offset) + ")");
         // For every AO, <(x-Rx)^2> must be nonnegative.
         offset = 0;
         for (const auto& shell : ao.basis().shells()) {
@@ -61,15 +71,14 @@ int main(int argc, char** argv) {
                         m.second[static_cast<std::size_t>(d)](i, i) -
                         2 * center * m.first[static_cast<std::size_t>(d)](i, i) +
                         center * center * m.overlap(i, i);
-                    check(variance > 0, "nonpositive AO spatial variance");
+                    check(variance > 0, "AO " + std::to_string(i) + " axis " + std::to_string(d) +
+                                            ": spatial variance is positive (got " + num(variance) +
+                                            ")");
                 }
             }
             offset += count;
         }
-        std::cout << "AO Cartesian moments validated for " << n << " functions\n";
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
-        return 1;
-    }
+        if (kumo_test::failures == 0)
+            std::cout << "AO Cartesian moments validated for " << n << " functions\n";
+    });
 }

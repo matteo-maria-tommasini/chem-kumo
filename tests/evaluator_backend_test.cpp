@@ -1,9 +1,11 @@
 #include "chem/kumo.hpp"
+#include "test_support.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace chem::kumo::detail {
@@ -19,13 +21,13 @@ struct AoMoTestAccess {
 using namespace chem::kumo;
 
 namespace {
-void close(double a, double b) {
-    if (!std::isfinite(a) || !std::isfinite(b) ||
-        std::abs(a - b) > 2e-11 * std::max({1.0, std::abs(a), std::abs(b)}))
-        throw std::runtime_error("AO_MO Evaluator disagrees with direct MO kernel");
+// AO_MO Evaluator vs the direct MO kernel: both finite and within
+// 2e-11 * max(1, |a|, |b|).
+void close(double a, double b, const std::string& label) {
+    kumo_test::check_close(a, b, 2e-11, 2e-11, label);
 }
 
-void run(const Molecule& m) {
+void run(const Molecule& m, const std::string& name) {
     Grid grid;
     grid.origin = Eigen::Vector3d(0.21, -0.16, 0.34);
     grid.steps << 0.23, 0.01, 0.0, -0.02, 0.19, 0.03, 0.01, 0.0, 0.17;
@@ -50,68 +52,69 @@ void run(const Molecule& m) {
                 if (order >= 1) req.add(d.gradient()).add(d.tau());
                 if (order >= 2) req.add(d.hessian()).add(d.laplacian());
             }
+            const std::string where =
+                name + " block " + std::to_string(block) + " order " + std::to_string(order);
             const auto result = mo.evaluate(grid, req);
             const auto default_result = default_evaluator.evaluate(grid, req);
-            if (default_result.backend_used() != Backend::AO_MO)
-                throw std::runtime_error("default backend did not select eligible AO_MO");
-            if (result.backend_used() != Backend::AO_MO)
-                throw std::runtime_error("explicit AO_MO backend metadata mismatch");
+            kumo_test::check(default_result.backend_used() == Backend::AO_MO,
+                             where +
+                                 ": the default backend selects AO_MO for an eligible molecule");
+            kumo_test::check(result.backend_used() == Backend::AO_MO,
+                             where + ": explicit AO_MO is reported as the backend used");
             const auto automatic =
                 Evaluator(m, {.threads = 1, .block_size = block, .backend = Backend::AUTO})
                     .evaluate(grid, req);
-            if (automatic.backend_used() != Backend::AO_MO)
-                throw std::runtime_error("AUTO did not select eligible AO_MO");
+            kumo_test::check(automatic.backend_used() == Backend::AO_MO,
+                             where + ": AUTO selects AO_MO for an eligible molecule");
             const auto reference =
                 detail::AoMoTestAccess::run(m, points, {spins.begin(), spins.end()}, block, order);
             for (std::size_t c = 0; c < 4; ++c) {
                 const auto& ref = reference.at(spins[c]);
+                const std::string label = where + " component " + std::to_string(c) +
+                                          ": AO_MO Evaluator matches the direct MO kernel, ";
                 for (std::size_t p = 0; p < 18; ++p) {
-                    close(result.get(ds[c].value()).component()[p], ref[p].value);
+                    close(result.get(ds[c].value()).component()[p], ref[p].value,
+                          label + "density");
                     if (order >= 1) {
                         for (int a = 0; a < 3; ++a)
-                            close(result.get(ds[c].gradient()).component(a)[p], ref[p].gradient[a]);
-                        close(result.get(ds[c].tau()).component()[p], ref[p].tau);
+                            close(result.get(ds[c].gradient()).component(a)[p], ref[p].gradient[a],
+                                  label + "gradient");
+                        close(result.get(ds[c].tau()).component()[p], ref[p].tau, label + "tau");
                     }
                     if (order >= 2) {
                         constexpr int rows[6] = {0, 0, 0, 1, 1, 2};
                         constexpr int cols[6] = {0, 1, 2, 1, 2, 2};
                         for (int a = 0; a < 6; ++a)
                             close(result.get(ds[c].hessian()).component(a)[p],
-                                  ref[p].hessian(rows[a], cols[a]));
-                        close(result.get(ds[c].laplacian()).component()[p], ref[p].laplacian);
+                                  ref[p].hessian(rows[a], cols[a]), label + "Hessian");
+                        close(result.get(ds[c].laplacian()).component()[p], ref[p].laplacian,
+                              label + "Laplacian");
                     }
                 }
             }
             if (order == 2) {
                 const auto ao_result = ao.evaluate(grid, req);
-                if (ao_result.backend_used() != Backend::AO_P)
-                    throw std::runtime_error("explicit AO_P backend metadata mismatch");
-                if (!ao_result.contains(density::total.hessian()))
-                    throw std::runtime_error("AO_P backend regression");
+                kumo_test::check(ao_result.backend_used() == Backend::AO_P,
+                                 where + ": explicit AO_P is reported as the backend used");
+                kumo_test::check(ao_result.contains(density::total.hessian()),
+                                 where + ": the AO_P result contains the total-density Hessian");
             }
         }
     }
-    bool rejected = false;
-    try {
-        Evaluator invalid(m, {.threads = 1, .backend = static_cast<Backend>(99)});
-    } catch (const std::invalid_argument&) {
-        rejected = true;
-    }
-    if (!rejected) throw std::runtime_error("invalid backend accepted");
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { Evaluator invalid(m, {.threads = 1, .backend = static_cast<Backend>(99)}); },
+        name + ": Evaluator rejects an invalid backend value");
 }
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) return 2;
-    try {
+    if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
+    return kumo_test::run([&] {
         for (int i = 1; i < argc; ++i) {
             auto m = Molecule::from_fchk(argv[i]);
-            if (!m.electronic_structure_info().ao_mo_eligible())
-                throw std::runtime_error("fixture not AO_MO eligible");
-            run(m);
+            if (kumo_test::check(m.electronic_structure_info().ao_mo_eligible(),
+                                 std::string(argv[i]) + ": the fixture is AO_MO eligible"))
+                run(m, argv[i]);
         }
-    } catch (const std::exception& e) {
-        std::cerr << e.what() << '\n';
-        return 1;
-    }
+    });
 }
