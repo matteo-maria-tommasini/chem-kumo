@@ -330,6 +330,78 @@ smallest bounds are expanded while the sum fits in the budget; the others
 are evaluated exactly. The error at every point is therefore at most
 $\varepsilon$ (default $10^{-8}$ hartree/e; $\varepsilon=0$ is exact).
 
+\section{Electrostatic potential on a molecular surface}\label{sec:surface}
+The molecular surface is the isosurface $\rho(\mathbf r)=\rho_0$ of the
+total density (default $\rho_0=10^{-3}$\,e/bohr$^3$), the region
+$\rho\ge\rho_0$ inside.
+
+\subsection{Isosurface}
+The density is sampled on an axis-aligned grid of spacing $h$ (default
+$0.25$\,bohr) whose boundary lies outside the isosurface. Each cell, with
+corners $\mathbf g+\mathbf b$, $\mathbf b\in\{0,1\}^3$ in grid units, is
+split into the six tetrahedra
+$\{\mathbf 0,\mathbf e_a,\mathbf e_a+\mathbf e_b,\mathbf 1\}$ for the
+permutations $(a,b,c)$ of the axes (the Kuhn triangulation). Their edges
+join $\mathbf u$ to $\mathbf u+\mathbf m$ with
+$\mathbf m\in\{0,1\}^3\setminus\{\mathbf 0\}$, the same in every cell, so
+the tetrahedra tile space conformingly. An edge whose ends lie on either
+side of $\rho_0$ carries one vertex, shared by all tetrahedra around it;
+a tetrahedron with one corner on one side contributes a triangle, one with
+two corners on each side a quadrilateral, split along its shorter
+diagonal. Each polygon is oriented by its edge midpoints so that its normal
+points from the inside corners to the outside ones; the orientation is
+therefore combinatorial and consistent between neighbours, and the mesh is
+a closed oriented surface. Its enclosed volume follows from the divergence
+theorem, $V=\frac16\sum_T(\mathbf x_0-\mathbf c)\cdot
+[(\mathbf x_1-\mathbf c)\times(\mathbf x_2-\mathbf c)]$ for any point
+$\mathbf c$.
+
+The vertex on the edge from an inside point $\mathbf a$ to an outside point
+$\mathbf b$ is the root of
+$f(t)=\rho(\mathbf a+t(\mathbf b-\mathbf a))-\rho_0$ in $[0,1]$, started at
+the linear interpolation of the samples. Newton steps
+$t\leftarrow t-f(t)/f'(t)$, with $f'(t)=\nabla\rho\cdot(\mathbf b-\mathbf a)$
+from the analytic gradient, are kept inside the bracket $[t_-,t_+]$ with
+$f(t_-)\ge0>f(t_+)$, and replaced by bisection when they leave it, until
+the step or the bracket is below $10^{-10}$\,bohr. The vertices therefore
+lie on the isosurface of the analytic density (with the default AO
+screening, which changes $\rho$ by about $10^{-13}$\,e/bohr$^3$, or
+$10^{-10}$\,bohr in position at $\rho_0=10^{-3}$); the remaining
+discretization error is that of the flat triangles, of order $h^2$.
+
+\subsection{Statistics}
+With $V$ the potential at the vertices, the statistics use its
+piecewise-linear interpolation, integrated exactly. On a triangle of area
+$A$ with corner values $w_i$,
+\begin{equation}
+ \int V\,dA=\frac A3\sum_iw_i,\qquad
+ \int (V-s)^2\,dA=\frac A6\Big[\sum_i(w_i-s)^2+\sum_{i<j}(w_i-s)(w_j-s)\Big].
+\end{equation}
+A region $V\ge c$ or $V<c$ is clipped from each triangle along the line
+$V=c$ of the interpolation (a triangle or a quadrilateral, split into
+triangles). With $A_\pm$ the areas where $V\ge0$ and $V<0$,
+$\overline V_\pm=A_\pm^{-1}\int_\pm V\,dA$ and
+$\overline V=A^{-1}\int V\,dA$, the descriptors of Politzer and Murray are
+\begin{gather}
+ \sigma_\pm^2=\frac1{A_\pm}\int_\pm(V-\overline V_\pm)^2\,dA,\qquad
+ \sigma_{\mathrm{tot}}^2=\sigma_+^2+\sigma_-^2,\qquad
+ \nu=\frac{\sigma_+^2\sigma_-^2}{(\sigma_{\mathrm{tot}}^2)^2},\\
+ \Pi=\frac1A\int|V-\overline V|\,dA,\qquad
+ \mathrm{MPI}=\frac1A\int|V|\,dA,
+\end{gather}
+and the nonpolar area is that where $|V|\le10$\,kcal/mol. Surface extrema
+are vertices whose value is below (above) that of their neighbours and
+of the neighbours of those, as in Multiwfn. The potential at the vertices
+uses the far-field approximations of the previous section, with clusters of
+the vertices on the edges of blocks of $8\times8\times8$ cells.
+
+Multiwfn's quantitative surface analysis (Lu and Chen, J.\ Mol.\ Graph.\
+Model.\ 38, 314 (2012)) also triangulates by marching tetrahedra, but
+places vertices by three bisections and linear interpolation, merges
+vertices closer than $h/2$, and assigns each triangle the mean of its
+vertex values; both discretizations converge to the same limit, and at
+$h=0.05$\,bohr they agree to about $3\times10^{-5}$ relative on water.
+
 \section{Validation and benchmark methodology}
 AO, MO, and density spatial derivatives are checked against centered finite
 differences of independent value/gradient evaluations. Finite differences
@@ -343,7 +415,10 @@ $\operatorname{sign}(\lambda_2)\rho$ and the electrostatic potential. The
 electrostatic potential is also checked against the erf closed form for
 s-function densities, against the multipole expansion of the analytic AO
 moments far from the molecule, and against the Poisson equation
-$\nabla^2V_{\mathrm{el}}=4\pi\rho$ by finite differences.
+$\nabla^2V_{\mathrm{el}}=4\pi\rho$ by finite differences. The surface
+construction and statistics are checked on a sphere and an octahedron with
+closed-form answers, and the surface statistics of three molecules against
+Multiwfn.
 These tests establish agreement on the tested FCHK cases, not universal
 support for every Gaussian basis or method.
 

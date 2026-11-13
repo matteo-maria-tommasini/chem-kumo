@@ -113,6 +113,37 @@ if "$KUMO" "$FCHK" --spacing 1 --property esp --esp-tolerance -1 --output "$TMP/
     > "$TMP/error.log" 2>&1; then
     fail 'Negative --esp-tolerance unexpectedly accepted'
 fi
+# --esp-surface prints the potential statistics on the rho = 0.001 isosurface
+# (O2: maximum about 5.63 kcal/mol); --isovalue, --spacing and --esp-tolerance
+# change the surface and the potential.
+run_kumo "$FCHK" --esp-surface > "$TMP/surface.log"
+grep -Fqx 'Electrostatic potential on the total-density isosurface rho = 0.001 e/bohr^3' \
+    "$TMP/surface.log" || fail '--esp-surface: no isosurface line'
+grep -Eqx 'Surface: [0-9]+ vertices, [0-9]+ triangles, grid spacing 0.25 bohr' "$TMP/surface.log" ||
+    fail '--esp-surface: no surface summary with the default spacing 0.25'
+grep -Fq 'error <= 1e-08 hartree/e' "$TMP/surface.log" ||
+    fail '--esp-surface: no potential error bound'
+awk '$1 == "Maximum" && $3 > 5.6 && $3 < 5.7 {found = 1} END {exit !found}' "$TMP/surface.log" ||
+    fail '--esp-surface: maximum of O2 not near 5.63 kcal/mol'
+grep -Eq '^Surface maxima: [0-9]+$' "$TMP/surface.log" || fail '--esp-surface: no maxima list'
+run_kumo "$FCHK" --esp-surface --isovalue 0.002 --spacing 0.3 --esp-tolerance 0 \
+    > "$TMP/surface2.log"
+grep -Fq 'rho = 0.002 e/bohr^3' "$TMP/surface2.log" && grep -Fq 'grid spacing 0.3 bohr' "$TMP/surface2.log" &&
+    grep -Fq 'density matrix, exact' "$TMP/surface2.log" ||
+    fail '--esp-surface: --isovalue, --spacing or --esp-tolerance 0 not applied'
+area() { awk '$1 == "Area" {print $2}' "$1"; }
+awk -v a="$(area "$TMP/surface.log")" -v b="$(area "$TMP/surface2.log")" 'BEGIN {exit !(b < a)}' ||
+    fail '--esp-surface: the rho = 0.002 surface is not smaller than the rho = 0.001 one'
+for options in '--property esp' '--output x' '--margin 2' '--spin total' '--mo homo' \
+    '--isovalue 1e-9' '--isovalue 0.001 --isovalue 0.002'; do
+    # shellcheck disable=SC2086 # options are split on purpose
+    if "$KUMO" "$FCHK" --esp-surface $options > "$TMP/error.log" 2>&1; then
+        fail "--esp-surface $options unexpectedly accepted"
+    fi
+done
+if "$KUMO" "$FCHK" --spacing 1 --isovalue 0.002 --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+    fail '--isovalue without --esp-surface unexpectedly accepted'
+fi
 # Density backends: the Cube comment names the contraction used, and the AO-MO
 # and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
 # selects AO-MO).

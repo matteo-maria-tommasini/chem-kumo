@@ -1,0 +1,37 @@
+ Global surface minimum: -0.058085 a.u. at  -0.004663   0.007245  -1.877003 Ang
+ Global surface maximum:  0.067981 a.u. at   1.656408   0.003909   1.374183 Ang
+
+ The number of surface minima:     1
+   #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)
+*    1 -0.05808489   -1.580570  -36.448849      -0.004663   0.007245  -1.877003
+
+ The number of surface maxima:     2
+   #       a.u.         eV      kcal/mol           X/Y/Z coordinate(Angstrom)
+     1  0.06797729    1.849756   42.656431      -1.642425   0.011596   1.389484
+*    2  0.06798120    1.849862   42.658880       1.656408   0.003909   1.374183
+
+       ================= Summary of surface analysis =================
+
+ Volume:   193.38642 Bohr^3  (  28.65691 Angstrom^3)
+ Estimated density according to mass and volume (M/V):    1.0439 g/cm^3
+ Minimal value:    -36.44885 kcal/mol   Maximal value:     42.65888 kcal/mol
+ Overall surface area:         163.13858 Bohr^2  (  45.68346 Angstrom^2)
+ Positive surface area:         81.41665 Bohr^2  (  22.79898 Angstrom^2)
+ Negative surface area:         81.72194 Bohr^2  (  22.88447 Angstrom^2)
+ Overall average value:    0.00196931 a.u. (      1.23576 kcal/mol)
+ Positive average value:   0.03817397 a.u. (     23.95455 kcal/mol)
+ Negative average value:  -0.03410009 a.u. (    -21.39815 kcal/mol)
+ Overall variance (sigma^2_tot):  0.00065493 a.u.^2 (   257.89006 (kcal/mol)^2)
+ Positive variance:        0.00037340 a.u.^2 (    147.03263 (kcal/mol)^2)
+ Negative variance:        0.00028153 a.u.^2 (    110.85744 (kcal/mol)^2)
+ Balance of charges (nu):   0.24508082
+ Product of sigma^2_tot and nu:   0.00016051 a.u.^2 (   63.20391 (kcal/mol)^2)
+ Internal charge separation (Pi):   0.03615875 a.u. (     22.68998 kcal/mol)
+ Molecular polarity index (MPI):   0.98323490 eV (     22.67396 kcal/mol)
+ Nonpolar surface area (|ESP| <= 10 kcal/mol):      8.41 Angstrom^2  ( 18.41 %)
+ Polar surface area (|ESP| > 10 kcal/mol):         37.27 Angstrom^2  ( 81.59 %)
+ Overall skewness:         0.2893736263
+ Positive skewness:       -0.3244920616
+ Negative skewness:        0.3643417393
+
+ Surface analysis finished!

@@ -39,6 +39,11 @@ struct Options {
     double margin = 5.0;
     double esp_tolerance = 1e-8; // Evaluator default
     bool esp_tolerance_set = false;
+    double isovalue = 1e-3; // --esp-surface density isosurface
+    bool isovalue_set = false;
+    bool spacing_set = false;
+    bool margin_set = false;
+    bool esp_surface = false;
     bool mo_mode = false;
     bool list = false;
     bool verbose = false;
@@ -57,8 +62,12 @@ void usage() {
               << "                             alpha or beta; rdg, sign-lambda2-rho and esp,\n"
               << "                             the electrostatic potential, for the total\n"
               << "                             density only)\n"
-              << "  --esp-tolerance HARTREE    Error bound of --property esp at each point\n"
-              << "                             (default 1e-8; 0 is exact and slowest)\n"
+              << "  --esp-tolerance HARTREE    Error bound of the electrostatic potential at\n"
+              << "                             each point (default 1e-8; 0 is exact and slowest)\n"
+              << "  --esp-surface              Print the electrostatic potential statistics on\n"
+              << "                             a density isosurface (no Cube files; grid\n"
+              << "                             spacing default 0.25 bohr)\n"
+              << "  --isovalue RHO             Isosurface of --esp-surface (default 0.001)\n"
               << "  --backend auto|ao-p|ao-mo  Density contraction (default auto: occupied MOs\n"
               << "                             when they reproduce the FCHK density matrices)\n"
               << "  --mo N[,M:K,...]           Write 1-based molecular orbitals\n"
@@ -216,11 +225,19 @@ Options parse(int argc, char** argv) {
             if (o.esp_tolerance_set) throw std::invalid_argument("--esp-tolerance specified twice");
             o.esp_tolerance = real(value());
             o.esp_tolerance_set = true;
-        } else if (a == "--spacing")
+        } else if (a == "--esp-surface")
+            o.esp_surface = true;
+        else if (a == "--isovalue") {
+            if (o.isovalue_set) throw std::invalid_argument("--isovalue specified twice");
+            o.isovalue = real(value());
+            o.isovalue_set = true;
+        } else if (a == "--spacing") {
             o.spacing = real(value());
-        else if (a == "--margin")
+            o.spacing_set = true;
+        } else if (a == "--margin") {
             o.margin = real(value());
-        else if (a == "--output") {
+            o.margin_set = true;
+        } else if (a == "--output") {
             o.prefix = value();
             o.output_set = true;
         } else if (a == "--list-mo")
@@ -242,6 +259,14 @@ Options parse(int argc, char** argv) {
     if (!o.backend.empty() && (o.mo_mode || o.list))
         throw std::invalid_argument(
             "--backend applies only to densities, not to --mo or --list-mo");
+    if (o.esp_surface) {
+        if (o.mo_mode || o.list || !o.properties.empty() || !o.spin.empty() || !o.backend.empty() ||
+            o.margin_set || o.output_set)
+            throw std::invalid_argument("--esp-surface does not combine with --mo, --list-mo, "
+                                        "--property, --spin, --backend, --margin or --output");
+        if (!o.spacing_set) o.spacing = 0.25;
+    } else if (o.isovalue_set)
+        throw std::invalid_argument("--isovalue applies only to --esp-surface");
     if (!(o.spacing > 0) || o.margin < 0)
         throw std::invalid_argument("invalid grid spacing or margin");
     if (!std::isfinite(o.esp_tolerance) || o.esp_tolerance < 0)
@@ -585,6 +610,95 @@ std::string molecule_summary(const Molecule& mol) {
 }
 
 // "Grid: 170 x 178 x 51 = 1,543,260 points, spacing 0.200 bohr, margin 5.000 bohr".
+// --esp-surface: statistics of the electrostatic potential on the density
+// isosurface, as a report on standard output.
+void report_esp_surface(const Molecule& mol, const Options& o, Console& console) {
+    chem::kumo::SurfaceOptions options;
+    options.isovalue = o.isovalue;
+    options.spacing = o.spacing;
+    options.potential_tolerance = o.esp_tolerance;
+    console.begin("Computing the electrostatic potential on the density isosurface");
+    const auto surface = chem::kumo::electrostatic_potential_surface(mol, options);
+    console.end("Computed in");
+
+    const auto& s = surface.statistics;
+    constexpr double kcal = chem::kumo::hartree_in_kcal_per_mol;
+    constexpr double angstrom = 0.529177210903; // bohr in Angstrom (CODATA 2018)
+    // Fixed-point column, or "n/a" for an undefined value (NaN).
+    const auto cell = [](double value, int precision, int width = 14) {
+        std::ostringstream out;
+        if (std::isnan(value))
+            out << std::setw(width) << "n/a";
+        else
+            out << std::fixed << std::setprecision(precision) << std::setw(width) << value;
+        return out.str();
+    };
+    const auto row = [](const std::string& name) {
+        std::ostringstream out;
+        out << std::left << std::setw(36) << name;
+        return out.str();
+    };
+    auto& out = std::cout;
+    out << "Electrostatic potential on the total-density isosurface rho = " << o.isovalue
+        << " e/bohr^3\n"
+        << "Surface: " << surface.mesh.vertices.size() << " vertices, "
+        << surface.mesh.triangles.size() << " triangles, grid spacing " << o.spacing << " bohr\n"
+        << "Potential: Coulomb integrals over the AO density matrix, ";
+    if (o.esp_tolerance > 0)
+        out << "error <= " << o.esp_tolerance << " hartree/e\n\n";
+    else
+        out << "exact\n\n";
+    out << row("") << std::setw(14) << "hartree/e" << std::setw(14) << "kcal/mol" << '\n';
+    const auto potential = [&](const std::string& name, double value) {
+        out << row(name) << cell(value, 8) << cell(value * kcal, 5) << '\n';
+    };
+    potential("Minimum", s.minimum);
+    potential("Maximum", s.maximum);
+    potential("Average", s.average);
+    potential("Positive average", s.positive_average);
+    potential("Negative average", s.negative_average);
+    potential("Internal charge separation Pi", s.charge_separation);
+    potential("Molecular polarity index MPI", s.polarity_index);
+    out << '\n'
+        << row("") << std::setw(14) << "hartree^2" << std::setw(14) << "(kcal/mol)^2" << '\n';
+    const auto variance = [&](const std::string& name, double value) {
+        out << row(name) << cell(value, 10) << cell(value * kcal * kcal, 5) << '\n';
+    };
+    variance("Total variance sigma^2_tot", s.total_variance);
+    variance("Positive variance sigma^2_+", s.positive_variance);
+    variance("Negative variance sigma^2_-", s.negative_variance);
+    variance("nu sigma^2_tot", s.balance * s.total_variance);
+    out << row("Balance of charges nu") << cell(s.balance, 8) << "\n\n";
+    out << row("") << std::setw(14) << "bohr^2" << std::setw(14) << "Angstrom^2" << std::setw(10)
+        << "%" << '\n';
+    const auto area = [&](const std::string& name, double value) {
+        out << row(name) << cell(value, 5) << cell(value * angstrom * angstrom, 5)
+            << cell(100 * value / s.area, 2, 10) << '\n';
+    };
+    area("Area", s.area);
+    area("Positive area", s.positive_area);
+    area("Negative area", s.negative_area);
+    area("Nonpolar area (|V| <= 10 kcal/mol)", s.nonpolar_area);
+    const double volume = surface.mesh.volume();
+    out << row("Volume (bohr^3, Angstrom^3)") << cell(volume, 5)
+        << cell(volume * angstrom * angstrom * angstrom, 5) << "\n";
+    const auto list = [&](const std::string& name, const std::vector<std::size_t>& vertices) {
+        out << '\n'
+            << name << ": " << vertices.size() << "\n"
+            << "     #" << std::setw(14) << "hartree/e" << std::setw(14) << "kcal/mol"
+            << std::setw(33) << "x, y, z (Angstrom)\n";
+        for (std::size_t i = 0; i < vertices.size(); ++i) {
+            const double value = surface.potential[vertices[i]];
+            const auto& x = surface.mesh.vertices[vertices[i]];
+            out << std::setw(6) << i + 1 << cell(value, 8) << cell(value * kcal, 5)
+                << cell(x.x() * angstrom, 5, 11) << cell(x.y() * angstrom, 5, 11)
+                << cell(x.z() * angstrom, 5, 11) << '\n';
+        }
+    };
+    list("Surface minima", s.local_minima);
+    list("Surface maxima", s.local_maxima);
+}
+
 std::string grid_summary(const chem::kumo::Grid& grid, const Options& o) {
     std::ostringstream out;
     out << "Grid: " << grid.counts[0] << " x " << grid.counts[1] << " x " << grid.counts[2] << " = "
@@ -635,6 +749,11 @@ int main(int argc, char** argv) {
             if (o.spin == "beta" || o.spin == "both") list_mos(mol, Spin::Beta);
             if (!(o.spin.empty() || o.spin == "alpha" || o.spin == "beta" || o.spin == "both"))
                 throw std::invalid_argument("--list-mo accepts alpha, beta, or both");
+            return 0;
+        }
+        if (o.esp_surface) {
+            report_esp_surface(mol, o, console);
+            console.finish();
             return 0;
         }
         const auto grid = chem::kumo::Grid::around(mol.atoms(), o.margin, o.spacing);
