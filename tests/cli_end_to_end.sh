@@ -85,6 +85,35 @@ values "${PREFIX}_density_rdg.cube" | awk '$1 < 0 || $1 > 100 {exit 1}' ||
     fail 'Reduced gradient outside [0, 100]'
 values "${PREFIX}_density_sign-lambda2-rho.cube" | awk '$1 < 0 {found = 1} END {exit !found}' ||
     fail 'sign(lambda2) rho has no negative values'
+# Density fields of 1.12.0: LOL and DORI in [0, 1], IRI in [0, 100], the
+# kinetic and energy densities with H = -K, and the spin polarization of the
+# open-shell O2 in [-1, 1] with positive values.
+run_kumo "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --spin total \
+    --property lol,iri,dori,kinetic-k,potential-energy,energy-density,shannon,fisher \
+    > "$TMP/fields.log"
+run_kumo "$FCHK" --spacing 0.5 --margin 1.0 --output "$PREFIX" --spin difference \
+    --property spin-polarization >> "$TMP/fields.log"
+for file in density_lol density_iri density_dori density_kinetic-k density_potential-energy \
+    density_energy-density density_shannon density_fisher spin_spin-polarization; do
+    grep -Fqx "${PREFIX}_${file}.cube" "$TMP/fields.log" ||
+        fail "Not reported: ${PREFIX}_${file}.cube"
+done
+grep -Fq 'Localized orbital locator LOL' "${PREFIX}_density_lol.cube" ||
+    fail 'LOL Cube comment does not name the field'
+for file in density_lol density_dori; do
+    values "${PREFIX}_${file}.cube" | awk '$1 < 0 || $1 > 1 {exit 1}' ||
+        fail "$file outside [0, 1]"
+done
+values "${PREFIX}_density_iri.cube" | awk '$1 < 0 || $1 > 100 {exit 1}' ||
+    fail 'IRI outside [0, 100]'
+values "${PREFIX}_density_kinetic-k.cube" > "$TMP/k.txt"
+values "${PREFIX}_density_energy-density.cube" > "$TMP/h.txt"
+paste "$TMP/k.txt" "$TMP/h.txt" |
+    awk '{d = $1 + $2; if (d < 0) d = -d; s = $1 < 0 ? -$1 : $1; if (d > 1e-5 * s + 1e-12) exit 1}' ||
+    fail 'The energy density is not -K'
+values "${PREFIX}_spin_spin-polarization.cube" |
+    awk '$1 < -1 || $1 > 1 {exit 1} $1 > 0.1 {found = 1} END {exit !found}' ||
+    fail 'Spin polarization of O2 outside [-1, 1] or without positive values'
 # Electrostatic potential: this grid passes through both O2 nuclei, where the
 # value is the potential at the nucleus (finite). The Cube comment names the
 # method, whatever the density backend.
@@ -246,10 +275,18 @@ if "$KUMO" "$FCHK" --spacing 1 --spin difference --property elf --output "$TMP/b
     > "$TMP/error.log" 2>&1; then
     fail 'ELF of the spin difference unexpectedly accepted'
 fi
-for property in rdg sign-lambda2-rho esp; do
+for property in rdg sign-lambda2-rho esp iri dori potential-energy energy-density shannon \
+    fisher spin-polarization; do
     if "$KUMO" "$FCHK" --spacing 1 --spin alpha --property "$property" --output "$TMP/bad" \
         > "$TMP/error.log" 2>&1; then
         fail "--property $property with --spin alpha unexpectedly accepted"
+    fi
+done
+for options in '--spin difference --property lol' '--spin total --property spin-polarization' \
+    '--property foo'; do
+    # shellcheck disable=SC2086 # options are split on purpose
+    if "$KUMO" "$FCHK" --spacing 1 $options --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
+        fail "$options unexpectedly accepted"
     fi
 done
 if "$KUMO" "$FCHK" --spacing 1 --property tau, --output "$TMP/bad" > "$TMP/error.log" 2>&1; then

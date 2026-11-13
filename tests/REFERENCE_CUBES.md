@@ -108,6 +108,56 @@ The O2 file confirms that both programs use the spin-polarized form of the
 total ELF for open shells. There are no sign differences in sign(lambda2)
 rho.
 
+### Density fields of 1.12.0
+
+Cube files of the fields added in 1.12.0 were computed on 2026-11-13 with
+the same Multiwfn build, grids (extension 3 bohr, spacing 0.3 bohr) and
+input sequence, from a scratch copy of the same `settings.ini` with these
+further settings, so that Multiwfn computes the plain definitions:
+
+- `IRI_rhocut= 0`. The default 5e-5 sets IRI to 5 where rho <= 5e-5.
+- `ipolarpara= 1` for the spin polarization: function 5 then returns
+  (rho_alpha - rho_beta) / (rho_alpha + rho_beta) instead of the spin
+  density.
+- `iuserfunc` selects Multiwfn's user-defined function 100.
+
+| File | FCHK | Multiwfn function |
+|------|------|-------------------|
+| `h2o_lol.cube.gz` | water | 10, LOL |
+| `o2_lol.cube.gz` | O2 | 10, LOL (open shell) |
+| `h2o_iri.cube.gz` | water | 24, IRI |
+| `h2o_dori.cube.gz` | water | 100 with `iuserfunc= 20`, DORI |
+| `h2o_kinetic_k.cube.gz` | water | 6, K(r) |
+| `o2_kinetic_k.cube.gz` | O2 | 6, K(r) |
+| `h2o_potential_energy.cube.gz` | water | 100 with `iuserfunc= 10`, V(r) |
+| `h2o_energy_density.cube.gz` | water | 100 with `iuserfunc= 11`, H(r) |
+| `o2_spin_polarization.cube.gz` | O2 | 5 with `ipolarpara= 1` |
+| `h2o_shannon.cube.gz` | water | 100 with `iuserfunc= 50`, -rho ln rho |
+| `h2o_fisher.cube.gz` | water | 100 with `iuserfunc= 51`, \|grad rho\|^2 / rho |
+
+Multiwfn computes K as -(1/2) sum_i psi_i lap psi_i, V as -K - G and H as
+-K (`function.f90`), the same quantities as kumo's
+`tau - lap rho / 4` forms.
+
+**Test.** `multiwfn-reference` compares these files like the others. Some
+fields are small differences of large terms, or small where a ratio
+vanishes, so a relative tolerance on the value alone would test rounding
+in the cancellation rather than the field. The tolerances, about three
+times the largest observed differences, are:
+
+| Field | Tolerance | Largest difference |
+|-------|-----------|--------------------|
+| LOL (water, O2) | 2e-5 relative | 5.2e-6 relative |
+| IRI | 5e-5 relative | 1.5e-5, near the O-H bond critical point (as RDG) |
+| DORI | 2e-5 relative + 1e-5 | 6.5e-6 absolute, where theta is about 0.4 |
+| K, V, H (water, O2) | 5e-5 of \|tau\| + \|lap rho\| / 4 | 1.6e-5 of that scale |
+| Spin polarization (O2) | 2e-5 relative + 1e-6 | 5.8e-7 absolute (Cube rounding at 0.12) |
+| Shannon density | 2e-5 of rho (1 + \|ln rho\|) | 5.9e-6 of that scale, near rho = 1 |
+| Fisher density | 1e-4 relative | 3.4e-5, near the O-H bond critical point |
+
+The test reports each largest difference as a fraction of its tolerance; it
+is at most 0.41.
+
 ## Multiwfn references for the ESP surface analysis
 
 `tests/data/multiwfn/` also contains the output of Multiwfn's quantitative

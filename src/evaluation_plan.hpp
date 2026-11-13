@@ -3,6 +3,7 @@
 #include <array>
 #include <algorithm>
 #include <stdexcept>
+#include <string>
 
 namespace chem::kumo::detail {
 /// Per-component requirements of a Request: which properties are needed and,
@@ -12,7 +13,11 @@ namespace chem::kumo::detail {
 /// ELF of a spin channel from its value, gradient and tau; the total ELF
 /// from both channels (so it marks Alpha and Beta with `elf_input` and needs
 /// no Total derivatives itself); the reduced gradient from the total value
-/// and gradient; sign(lambda2) rho from the total value and Hessian.
+/// and gradient; sign(lambda2) rho from the total value and Hessian. LOL
+/// follows ELF (value and tau per channel, `lol_input`). IRI, the Shannon
+/// and Fisher densities need the total value and gradient, DORI also the
+/// Hessian, and K, V and H the Laplacian and tau of their component. The
+/// spin polarization needs the Total and Spin values (`value_input`).
 struct ComponentPlan {
     bool density = false;
     bool gradient = false;
@@ -23,6 +28,12 @@ struct ComponentPlan {
     bool elf_input = false;        ///< value, gradient and tau feed an ELF
     bool reduced_gradient = false; ///< Total only
     bool sign_lambda2 = false;     ///< Total only
+    bool lol = false;              ///< LOL of this component is requested
+    bool lol_input = false;        ///< value and tau feed a LOL
+    bool gradient_input = false;   ///< value and gradient feed IRI, Shannon, Fisher
+    bool hessian_input = false;    ///< value, gradient and Hessian feed DORI
+    bool energy_input = false;     ///< Laplacian and tau feed K, V or H
+    bool value_input = false;      ///< the value feeds the spin polarization
     /// Total only; computed from the density matrix by its own pass, so it
     /// needs no AO values or derivatives.
     bool electrostatic_potential = false;
@@ -31,12 +42,17 @@ struct ComponentPlan {
     /// A total ELF alone does not need them (it uses Alpha and Beta).
     [[nodiscard]] bool derivatives() const noexcept {
         return gradient || hessian || laplacian || tau || elf_input || reduced_gradient ||
-               sign_lambda2;
+               sign_lambda2 || lol_input || gradient_input || hessian_input || energy_input ||
+               value_input;
     }
 
     [[nodiscard]] int ao_order() const noexcept {
-        if (hessian || laplacian || sign_lambda2) return 2;
-        if (gradient || tau || elf_input || reduced_gradient) return 1;
+        if (hessian || laplacian || sign_lambda2 || hessian_input || energy_input) return 2;
+        // value_input needs only values, but the AO-P point kernel starts at
+        // first derivatives.
+        if (gradient || tau || elf_input || reduced_gradient || lol_input || gradient_input ||
+            value_input)
+            return 1;
         return density ? 0 : -1;
     }
 };
@@ -57,6 +73,12 @@ struct EvaluationPlan {
 
     [[nodiscard]] static constexpr std::size_t index(DensityComponent component) noexcept {
         return static_cast<std::size_t>(component);
+    }
+
+    static void require_total(const Property& property, const char* what) {
+        if (property.component != DensityComponent::Total)
+            throw std::invalid_argument(std::string(what) +
+                                        " is defined only for the total density");
     }
 
     [[nodiscard]] static EvaluationPlan from(const Request& request) {
@@ -105,6 +127,50 @@ struct EvaluationPlan {
                     throw std::invalid_argument(
                         "the electrostatic potential is defined only for the total density");
                 c.electrostatic_potential = true;
+                break;
+            case PropertyKind::Lol:
+                c.lol = true;
+                if (property.component == DensityComponent::Spin)
+                    throw std::invalid_argument(
+                        "LOL is not defined for the spin-difference density");
+                if (property.component == DensityComponent::Total) {
+                    plan.components[index(DensityComponent::Alpha)].lol_input = true;
+                    plan.components[index(DensityComponent::Beta)].lol_input = true;
+                } else {
+                    c.lol_input = true;
+                }
+                break;
+            case PropertyKind::InteractionRegionIndicator:
+                require_total(property, "the interaction region indicator");
+                c.gradient_input = true;
+                break;
+            case PropertyKind::ShannonEntropyDensity:
+                require_total(property, "the Shannon entropy density");
+                c.gradient_input = true;
+                break;
+            case PropertyKind::FisherInformationDensity:
+                require_total(property, "the Fisher information density");
+                c.gradient_input = true;
+                break;
+            case PropertyKind::DensityOverlapRegionsIndicator:
+                require_total(property, "the density overlap regions indicator");
+                c.hessian_input = true;
+                break;
+            case PropertyKind::HamiltonianKineticEnergy: c.energy_input = true; break;
+            case PropertyKind::PotentialEnergyDensity:
+                require_total(property, "the potential energy density");
+                c.energy_input = true;
+                break;
+            case PropertyKind::EnergyDensity:
+                require_total(property, "the energy density");
+                c.energy_input = true;
+                break;
+            case PropertyKind::SpinPolarization:
+                if (property.component != DensityComponent::Spin)
+                    throw std::invalid_argument(
+                        "the spin polarization is defined only for the spin component");
+                plan.components[index(DensityComponent::Total)].value_input = true;
+                c.value_input = true;
                 break;
             case PropertyKind::Orbital: break;
             default: throw std::invalid_argument("unknown property kind");

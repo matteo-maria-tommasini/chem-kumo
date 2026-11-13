@@ -111,6 +111,50 @@ double sign_lambda2_density(const DensityDerivatives& d) {
     return solver.eigenvalues()[1] < 0.0 ? -d.value : d.value;
 }
 
+// Localized orbital locator (Schmider and Becke 2000), LOL = t / (1 + t)
+// with t = D0 / tau: tau summed over the channels given, D0 the Thomas-Fermi
+// reference of ELF summed over the channels with positive density. As in
+// Multiwfn, 0 with no density; where tau = 0 and D0 > 0 (t infinite) it is
+// 1, the limit (Multiwfn returns 0 there).
+double lol(std::initializer_list<const DensityDerivatives*> channels) {
+    constexpr double pi = std::numbers::pi;
+    static const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
+    double tau = 0.0, uniform = 0.0;
+    for (const DensityDerivatives* d : channels) {
+        tau += d->tau;
+        if (d->value > 0.0) uniform += fermi * std::pow(d->value, 5.0 / 3.0);
+    }
+    if (!(uniform > 0.0)) return 0.0;
+    if (!(tau > 0.0)) return 1.0;
+    return uniform / (tau + uniform);
+}
+
+// Interaction region indicator (Lu and Chen 2021), |grad rho| / rho^1.1,
+// capped at interaction_region_indicator_cap (also where rho <= 0).
+double interaction_region_indicator(const DensityDerivatives& d) {
+    if (!(d.value > 0.0)) return interaction_region_indicator_cap;
+    const double value = d.gradient.norm() / std::pow(d.value, 1.1);
+    return value < interaction_region_indicator_cap ? value : interaction_region_indicator_cap;
+}
+
+// Density overlap regions indicator (de Silva and Corminboeuf 2014),
+// DORI = theta / (1 + theta) with
+//   theta = |grad (|grad rho|^2 / rho^2)|^2 / (|grad rho|^2 / rho^2)^3,
+// computed with q = grad rho / rho, independent of the scale of rho:
+//   theta = 4 |(H / rho) q - |q|^2 q|^2 / |q|^6.
+// At a critical point (q = 0) theta is infinite and DORI is 1, its limit;
+// where rho <= 0 it is 0, its limit far from the molecule.
+double density_overlap_regions_indicator(const DensityDerivatives& d) {
+    if (!(d.value > 0.0)) return 0.0;
+    const Eigen::Vector3d q = d.gradient / d.value;
+    const double q2 = q.squaredNorm();
+    if (!(q2 > 0.0)) return 1.0;
+    const Eigen::Vector3d w = d.hessian * q / d.value - q2 * q;
+    const double theta = 4.0 * w.squaredNorm() / (q2 * q2 * q2);
+    if (!std::isfinite(theta)) return 1.0;
+    return theta / (1.0 + theta);
+}
+
 using BlockDerivatives = std::map<Spin, std::vector<DensityDerivatives>>;
 
 // Copy (or derive) one property of block results, starting at grid point
@@ -118,11 +162,22 @@ using BlockDerivatives = std::map<Spin, std::vector<DensityDerivatives>>;
 // yy, yz, zz.
 void store_block(PropertyField& output, const Property& key, const BlockDerivatives& block,
                  std::size_t count, std::size_t start) {
-    if (key.kind == PropertyKind::Elf && key.component == DensityComponent::Total) {
+    if ((key.kind == PropertyKind::Elf || key.kind == PropertyKind::Lol) &&
+        key.component == DensityComponent::Total) {
         const auto& alpha = block.at(Spin::Alpha);
         const auto& beta = block.at(Spin::Beta);
         for (std::size_t local = 0; local < count; ++local)
-            output.components[0][start + local] = elf({&alpha[local], &beta[local]});
+            output.components[0][start + local] = key.kind == PropertyKind::Elf
+                                                      ? elf({&alpha[local], &beta[local]})
+                                                      : lol({&alpha[local], &beta[local]});
+        return;
+    }
+    if (key.kind == PropertyKind::SpinPolarization) {
+        const auto& total = block.at(Spin::Total);
+        const auto& spin = block.at(Spin::Difference);
+        for (std::size_t local = 0; local < count; ++local)
+            output.components[0][start + local] =
+                total[local].value > 0.0 ? spin[local].value / total[local].value : 0.0;
         return;
     }
     const auto& derivatives = block.at(spin_of(key.component));
@@ -149,6 +204,28 @@ void store_block(PropertyField& output, const Property& key, const BlockDerivati
         case PropertyKind::ReducedGradient: output.components[0][p] = reduced_gradient(d); break;
         case PropertyKind::SignLambda2Density:
             output.components[0][p] = sign_lambda2_density(d);
+            break;
+        case PropertyKind::Lol: output.components[0][p] = lol({&d}); break;
+        case PropertyKind::InteractionRegionIndicator:
+            output.components[0][p] = interaction_region_indicator(d);
+            break;
+        case PropertyKind::DensityOverlapRegionsIndicator:
+            output.components[0][p] = density_overlap_regions_indicator(d);
+            break;
+        case PropertyKind::HamiltonianKineticEnergy:
+            output.components[0][p] = d.tau - 0.25 * d.laplacian;
+            break;
+        case PropertyKind::PotentialEnergyDensity:
+            output.components[0][p] = 0.25 * d.laplacian - 2.0 * d.tau;
+            break;
+        case PropertyKind::EnergyDensity:
+            output.components[0][p] = 0.25 * d.laplacian - d.tau;
+            break;
+        case PropertyKind::ShannonEntropyDensity:
+            output.components[0][p] = d.value > 0.0 ? -d.value * std::log(d.value) : 0.0;
+            break;
+        case PropertyKind::FisherInformationDensity:
+            output.components[0][p] = d.value > 0.0 ? d.gradient.squaredNorm() / d.value : 0.0;
             break;
         default: throw std::logic_error("invalid derivative property");
         }

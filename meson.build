@@ -337,6 +337,24 @@ test(
     timeout: 300,
 )
 
+# Density fields added in 1.12.0 (LOL, IRI, DORI, K, V, H, spin polarization,
+# Shannon and Fisher densities) against their formulas, the orbital form of
+# K and finite differences for DORI.
+test(
+    'density-fields',
+    executable(
+        'kumo-density-fields-test',
+        'tests/density_fields_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+    ],
+    timeout: 300,
+)
+
 # Derived density properties against Multiwfn reference Cube files.
 test(
     'multiwfn-reference',

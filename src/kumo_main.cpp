@@ -57,12 +57,15 @@ void usage() {
               << "Usage: kumo FILE.fchk[.gz] [options]\n\n"
               << "  (default)                  Write total electron density\n"
               << "  --spin total|alpha|beta|difference|all   Density component(s)\n"
-              << "  --property density,gradient,laplacian,tau,elf,rdg,sign-lambda2-rho,esp\n"
-              << "                             Density properties to write (default density;\n"
-              << "                             gradient is the norm |grad rho|; elf for total,\n"
-              << "                             alpha or beta; rdg, sign-lambda2-rho and esp,\n"
-              << "                             the electrostatic potential, for the total\n"
-              << "                             density only)\n"
+              << "  --property LIST            Density properties to write, comma-separated\n"
+              << "                             (default density):\n"
+              << "                             density, gradient (the norm |grad rho|),\n"
+              << "                             laplacian, tau, kinetic-k (any --spin);\n"
+              << "                             elf, lol (total, alpha or beta);\n"
+              << "                             rdg, sign-lambda2-rho, iri, dori,\n"
+              << "                             potential-energy, energy-density, shannon,\n"
+              << "                             fisher, esp (the electrostatic potential)\n"
+              << "                             (total only); spin-polarization (difference)\n"
               << "  --esp-tolerance HARTREE    Error bound of the electrostatic potential at\n"
               << "                             each point (default 1e-8; 0 is exact and slowest)\n"
               << "  --esp-surface              Print the electrostatic potential statistics on\n"
@@ -410,23 +413,48 @@ struct DensityProperty {
     PropertyKind kind;
     std::string name;
     std::string description; // Cube comment line, with units
+    std::string summary;     // in "Evaluating the <summary> of the total electron density"
 };
 
 // Parse --property: a comma-separated list, duplicates ignored, user order kept.
 std::vector<DensityProperty> select_properties(const std::string& list) {
     const DensityProperty known[] = {
-        {PropertyKind::Density, "density", "Electron density (e/bohr^3)"},
-        {PropertyKind::Gradient, "gradient",
-         "Electron density gradient norm |grad rho| (e/bohr^4)"},
-        {PropertyKind::Laplacian, "laplacian", "Electron density Laplacian (e/bohr^5)"},
-        {PropertyKind::Tau, "tau", "Positive kinetic energy density tau (hartree/bohr^3)"},
-        {PropertyKind::Elf, "elf", "Electron localization function ELF (dimensionless)"},
+        {PropertyKind::Density, "density", "Electron density (e/bohr^3)", "value"},
+        {PropertyKind::Gradient, "gradient", "Electron density gradient norm |grad rho| (e/bohr^4)",
+         "gradient norm"},
+        {PropertyKind::Laplacian, "laplacian", "Electron density Laplacian (e/bohr^5)",
+         "Laplacian"},
+        {PropertyKind::Tau, "tau", "Positive kinetic energy density tau (hartree/bohr^3)",
+         "kinetic energy density tau"},
+        {PropertyKind::Elf, "elf", "Electron localization function ELF (dimensionless)", "ELF"},
+        {PropertyKind::Lol, "lol", "Localized orbital locator LOL (dimensionless)", "LOL"},
         {PropertyKind::ReducedGradient, "rdg",
-         "Reduced density gradient s (dimensionless, capped at 100)"},
+         "Reduced density gradient s (dimensionless, capped at 100)", "reduced density gradient"},
         {PropertyKind::SignLambda2Density, "sign-lambda2-rho",
-         "sign(lambda2) * electron density (e/bohr^3)"},
+         "sign(lambda2) * electron density (e/bohr^3)", "sign(lambda2) rho"},
+        {PropertyKind::InteractionRegionIndicator, "iri",
+         "Interaction region indicator |grad rho| / rho^1.1 (capped at 100)",
+         "interaction region indicator"},
+        {PropertyKind::DensityOverlapRegionsIndicator, "dori",
+         "Density overlap regions indicator DORI (dimensionless)",
+         "density overlap regions indicator"},
+        {PropertyKind::HamiltonianKineticEnergy, "kinetic-k",
+         "Hamiltonian kinetic energy density K = tau - lap rho / 4 (hartree/bohr^3)",
+         "kinetic energy density K"},
+        {PropertyKind::PotentialEnergyDensity, "potential-energy",
+         "Potential energy density V = lap rho / 4 - 2 tau (hartree/bohr^3)",
+         "potential energy density"},
+        {PropertyKind::EnergyDensity, "energy-density",
+         "Electronic energy density H = lap rho / 4 - tau (hartree/bohr^3)", "energy density"},
+        {PropertyKind::SpinPolarization, "spin-polarization",
+         "Spin polarization (rho_alpha - rho_beta) / rho (dimensionless)", "spin polarization"},
+        {PropertyKind::ShannonEntropyDensity, "shannon",
+         "Shannon entropy density -rho ln rho (e/bohr^3)", "Shannon entropy density"},
+        {PropertyKind::FisherInformationDensity, "fisher",
+         "Fisher information density |grad rho|^2 / rho (e/bohr^5)", "Fisher information density"},
         {PropertyKind::ElectrostaticPotential, "esp",
-         "Molecular electrostatic potential, nuclear + electronic (hartree/e)"}};
+         "Molecular electrostatic potential, nuclear + electronic (hartree/e)",
+         "electrostatic potential"}};
     std::vector<DensityProperty> result;
     std::size_t start = 0;
     while (true) {
@@ -435,10 +463,13 @@ std::vector<DensityProperty> select_properties(const std::string& list) {
             list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
         const auto* match = std::find_if(std::begin(known), std::end(known),
                                          [&](const DensityProperty& p) { return p.name == token; });
-        if (match == std::end(known))
-            throw std::invalid_argument(
-                "unknown --property '" + token +
-                "' (use density, gradient, laplacian, tau, elf, rdg, sign-lambda2-rho or esp)");
+        if (match == std::end(known)) {
+            std::string names;
+            for (const auto& p : known)
+                names += (names.empty() ? "" : ", ") + p.name;
+            throw std::invalid_argument("unknown --property '" + token + "' (use one of " + names +
+                                        ")");
+        }
         if (std::none_of(result.begin(), result.end(),
                          [&](const DensityProperty& p) { return p.kind == match->kind; }))
             result.push_back(*match);
@@ -476,6 +507,15 @@ chem::kumo::Property density_property(Spin component, PropertyKind kind) {
     case PropertyKind::ReducedGradient: return d.reduced_gradient();
     case PropertyKind::SignLambda2Density: return d.sign_lambda2_density();
     case PropertyKind::ElectrostaticPotential: return d.electrostatic_potential();
+    case PropertyKind::Lol: return d.lol();
+    case PropertyKind::InteractionRegionIndicator: return d.interaction_region_indicator();
+    case PropertyKind::DensityOverlapRegionsIndicator: return d.density_overlap_regions_indicator();
+    case PropertyKind::HamiltonianKineticEnergy: return d.hamiltonian_kinetic_energy();
+    case PropertyKind::PotentialEnergyDensity: return d.potential_energy_density();
+    case PropertyKind::EnergyDensity: return d.energy_density();
+    case PropertyKind::SpinPolarization: return d.spin_polarization();
+    case PropertyKind::ShannonEntropyDensity: return d.shannon_entropy_density();
+    case PropertyKind::FisherInformationDensity: return d.fisher_information_density();
     default: return d.value();
     }
 }
@@ -488,14 +528,24 @@ void check_components(const std::vector<std::pair<Spin, std::string>>& component
     for (const auto& property : properties)
         for (const auto& component : components) {
             const Spin spin = component.first;
-            if (property.kind == PropertyKind::Elf && spin == Spin::Difference)
+            if ((property.kind == PropertyKind::Elf || property.kind == PropertyKind::Lol) &&
+                spin == Spin::Difference)
+                throw std::invalid_argument("--property " + property.name +
+                                            " is not defined for --spin difference (or all); "
+                                            "use total, alpha or beta");
+            if (property.kind == PropertyKind::SpinPolarization && spin != Spin::Difference)
                 throw std::invalid_argument(
-                    "--property elf is not defined for --spin difference (or all); "
-                    "use total, alpha or beta");
-            if ((property.kind == PropertyKind::ReducedGradient ||
-                 property.kind == PropertyKind::SignLambda2Density ||
-                 property.kind == PropertyKind::ElectrostaticPotential) &&
-                spin != Spin::Total)
+                    "--property spin-polarization is defined only for --spin difference");
+            const bool total_only = property.kind == PropertyKind::ReducedGradient ||
+                                    property.kind == PropertyKind::SignLambda2Density ||
+                                    property.kind == PropertyKind::ElectrostaticPotential ||
+                                    property.kind == PropertyKind::InteractionRegionIndicator ||
+                                    property.kind == PropertyKind::DensityOverlapRegionsIndicator ||
+                                    property.kind == PropertyKind::PotentialEnergyDensity ||
+                                    property.kind == PropertyKind::EnergyDensity ||
+                                    property.kind == PropertyKind::ShannonEntropyDensity ||
+                                    property.kind == PropertyKind::FisherInformationDensity;
+            if (total_only && spin != Spin::Total)
                 throw std::invalid_argument("--property " + property.name +
                                             " is defined only for --spin total");
         }
@@ -525,15 +575,7 @@ std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& 
                                const std::vector<DensityProperty>& properties) {
     std::vector<std::string> what, which;
     for (const auto& property : properties)
-        what.push_back(property.kind == PropertyKind::Density     ? "value"
-                       : property.kind == PropertyKind::Gradient  ? "gradient norm"
-                       : property.kind == PropertyKind::Laplacian ? "Laplacian"
-                       : property.kind == PropertyKind::Tau       ? "kinetic energy density tau"
-                       : property.kind == PropertyKind::Elf       ? "ELF"
-                       : property.kind == PropertyKind::ReducedGradient ? "reduced density gradient"
-                       : property.kind == PropertyKind::SignLambda2Density
-                           ? "sign(lambda2) rho"
-                           : "electrostatic potential");
+        what.push_back(property.summary);
     for (const auto& component : components)
         which.push_back(component_label(component.first));
     const auto densities = join(which) + " electron densit" + (which.size() > 1 ? "ies" : "y");
