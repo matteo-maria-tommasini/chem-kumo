@@ -1,4 +1,4 @@
-# chem-kumo 1.12.0
+# chem-kumo 1.13.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -393,7 +393,7 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 1.12.0 release registers **81 Meson tests**, all passing in the
+The 1.13.0 release registers **83 Meson tests**, all passing in the
 serial and OpenMP builds reported on macOS ARM64 on 2026-11-13, with both
 Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
 AddressSanitizer and UndefinedBehaviorSanitizer (except the three HBC cases
@@ -502,10 +502,13 @@ version 1.9.1 (a code and documentation audit), version 1.10.0 (the
 electrostatic potential on a molecular surface, validated against
 Multiwfn), version 1.11.0 (the average local ionization energy on a
 molecular surface, also validated against Multiwfn, and dynamic OpenMP
-scheduling of the blocked grid loops) and version 1.12.0 (LOL, IRI, DORI,
+scheduling of the blocked grid loops), version 1.12.0 (LOL, IRI, DORI,
 the kinetic, potential and total energy densities, the spin polarization
 and the Shannon and Fisher information densities, validated against
-Multiwfn).
+Multiwfn) and version 1.13.0 (evaluation at points, along lines and on
+planes; the local electron affinity, local electron attachment energy,
+local electronegativity and hardness; any property mapped on the molecular
+surface, with PLY output; all validated against Multiwfn).
 
 ## License
 
