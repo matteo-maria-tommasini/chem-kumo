@@ -358,7 +358,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
         Eigen::MatrixXd product_storage(n, 4 * capacity);
         Eigen::MatrixXd ao_kept, p_kept;
 #ifdef _OPENMP
-#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic)
 #endif
         for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
             try {
@@ -433,7 +433,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
         if (spin_needed) spin_storage.resize(n, 4 * capacity);
         Eigen::MatrixXd ao_kept, total_kept, spin_kept;
 #ifdef _OPENMP
-#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic)
 #endif
         for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
             try {
@@ -575,7 +575,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
             return d;
         };
 #ifdef _OPENMP
-#pragma omp for schedule(static)
+#pragma omp for schedule(dynamic)
 #endif
         for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
             try {
@@ -699,7 +699,7 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     const std::size_t nblocks = detail::parallel_block_count(
         count, block_size, "too many grid blocks for parallel evaluation");
     detail::Progress report(progress, count);
-    detail::for_each_block<detail::Schedule::Static>(nblocks, [&](std::size_t block) {
+    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t block) {
         const std::size_t start = static_cast<std::size_t>(block) * block_size;
         const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
         const auto points = detail::grid_points(grid, start, static_cast<std::size_t>(b));

@@ -3,8 +3,12 @@
 ## Scope and design
 
 OpenMP is opt-in (`-Dopenmp=true`; default `false`). Independent spatial
-blocks are assigned with `schedule(static)` in the blocked density,
+blocks are assigned with `schedule(dynamic)` in the blocked density,
 density-derivative, orbital amplitude and blocked orbital-derivative paths.
+With AO screening, blocks in the empty outer region of a grid cost much
+less than blocks near the molecule, so a static assignment of contiguous
+block ranges leaves threads idle; each block is still computed on its own,
+so results do not depend on the schedule or the thread count.
 Input basis data, density matrices and MO coefficients are shared read-only;
 per-block Eigen temporaries are private. Each block writes disjoint output
 indices. Exceptions are captured inside worker loops and rethrown after the
