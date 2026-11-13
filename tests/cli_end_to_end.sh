@@ -197,6 +197,38 @@ for options in '--esp-surface' '--esp-tolerance 0' '--property esp' '--output x'
         fail "--alie-surface $options unexpectedly accepted"
     fi
 done
+# --surface-map: statistics of each --property on the isosurface, and with
+# --ply the surface file, whose vertex count matches the report.
+run_kumo "$FCHK" --surface-map --property leae,alie --isovalue 0.004 --ply --output "$TMP/o2" \
+    > "$TMP/map.log"
+grep -Fqx 'Density properties on the total-density isosurface rho = 0.004 e/bohr^3' \
+    "$TMP/map.log" || fail '--surface-map: no isosurface line'
+grep -Fq 'leae_total: Local electron attachment energy (hartree), total' "$TMP/map.log" &&
+    grep -Fq 'alie_total: Average local ionization energy (hartree), total' "$TMP/map.log" ||
+    fail '--surface-map: a property section is missing'
+[ "$(tail -1 "$TMP/map.log")" = "$TMP/o2_surface.ply" ] || fail '--surface-map --ply: no file name'
+VERTICES=$(awk '$1 == "Surface:" {print $2}' "$TMP/map.log")
+awk -v n="$VERTICES" '
+    NR == 1 && $0 != "ply" { bad = 1 }
+    $1 == "element" && $2 == "vertex" && $3 != n { bad = 1 }
+    $1 == "property" && $2 == "double" { names = names " " $3 }
+    $0 == "end_header" { header = NR }
+    header && NR > header && NR <= header + n && (NF != 5 || $4 > 0 || $5 <= 0) { bad = 1 }
+    END { exit bad || names != " x y z leae_total alie_total" }' \
+    "$TMP/o2_surface.ply" || fail '--surface-map --ply: unexpected PLY header or values'
+run_kumo "$FCHK" --alie-surface --ply --output "$TMP/alie" > "$TMP/alie_ply.log"
+grep -Fqx 'property double alie' "$TMP/alie_surface.ply" ||
+    fail '--alie-surface --ply: no alie property in the PLY file'
+for options in '--surface-map' '--surface-map --property gradient' \
+    '--surface-map --property leae --margin 2' '--surface-map --property leae --output x' \
+    '--surface-map --property leae --point @1' '--surface-map --esp-surface --property esp' \
+    '--surface-map --property alie --spin alpha' '--ply' '--property density --ply' \
+    '--point @1 --ply'; do
+    # shellcheck disable=SC2086 # options are split on purpose
+    if "$KUMO" "$FCHK" $options > "$TMP/error.log" 2>&1; then
+        fail "$options unexpectedly accepted"
+    fi
+done
 # Density backends: the Cube comment names the contraction used, and the AO-MO
 # and density-matrix contractions agree (O2 is AO-MO eligible, so AUTO
 # selects AO-MO).

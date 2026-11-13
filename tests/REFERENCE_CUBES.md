@@ -331,6 +331,45 @@ tips, and at 0.25 bohr kumo finds 9 maxima for acrolein where Multiwfn
 finds 8 at 0.05 bohr. As for the ESP, the local extrema of O2 lie on rings
 and are not compared.
 
+### LEAE and LEA mapped on the surface (1.13.0)
+
+The same analysis with the local electron attachment energy (mapped
+function -4) and the local electron affinity (mapped function 4), on
+2026-11-13, with the input sequence of the ALIE (`12`, `2`, then `-4` or
+`4`, `3`, `0.05`, `0`, `-1`, `-1`, `q`):
+
+| File | FCHK | Function | Isosurface |
+|------|------|----------|------------|
+| `acrolein_leae_surface.txt` | `acrolein.fchk.gz` | -4, LEAE | 0.004 |
+| `o2_leae_surface.txt` | `o2.fchk.gz` | -4, LEAE | 0.004 |
+| `acrolein_lea_surface.txt` | `acrolein.fchk.gz` | 4, LEA | 0.001 |
+
+Choosing LEAE makes Multiwfn change the isovalue to 0.004 ("Isovalue has
+been changed to 0.004 a.u."), the surface of the original work, so the test
+maps LEAE on rho = 0.004. The files are trimmed as above. The LEAE maxima
+(368 for acrolein) are the zeros on the nodal plane of the pi* orbital and
+are not compared; the extrema of O2 lie on rings.
+
+The test `multiwfn-surface-reference` maps them with
+`map_on_density_isosurface()` at 0.25 bohr:
+
+| Quantity | Largest difference | Tolerance |
+|----------|--------------------|-----------|
+| Volume and area | 6.3e-4 relative (O2) | 5e-3 relative |
+| LEAE average | 3.0e-4 relative (acrolein) | 1e-3 relative |
+| LEAE variance | 7.6e-3 relative (O2) | 2.5e-2 relative |
+| LEAE global minimum | 4.6e-7 hartree | 1.5e-6 hartree |
+| LEAE local minima (acrolein) | 1.8e-5 hartree, 0.07 bohr | 6e-5 hartree, 0.4 bohr |
+| LEA average | 5.1e-5 relative | 1.5e-4 relative |
+| LEA variance | 1.7e-3 relative | 5e-3 relative |
+| LEA global extrema | 1.2e-5 hartree | 4e-5 hartree |
+| LEA local minima | 1.9e-3 hartree, 0.15 bohr | 6e-3 hartree, 0.4 bohr |
+
+At 0.05 bohr kumo's LEAE variances agree with Multiwfn's to 1e-3 and its
+LEA minima to 3e-5 hartree, so the differences at 0.25 bohr are
+discretization errors; the LEA minima lie on ridges near the hydrogens, as
+the ALIE maxima. The largest difference is 0.36 of its tolerance.
+
 **Citation.** Multiwfn asks that work using it cite T. Lu and F. Chen,
 J. Comput. Chem. 33, 580 (2012) and T. Lu, J. Chem. Phys. 161, 082503
 (2024).

@@ -9,11 +9,15 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -583,6 +587,91 @@ PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
     result.statistics = surface_statistics(mesh, result.potential);
     result.mesh = std::move(surface.mesh);
     return result;
+}
+
+MappedSurface map_on_density_isosurface(const Molecule& molecule,
+                                        const std::vector<Property>& properties, double isovalue,
+                                        double spacing, const EvaluationOptions& options) {
+    if (properties.empty()) throw std::invalid_argument("no property to map on the surface");
+    MappedSurface result;
+    Request request;
+    for (const Property& property : properties) {
+        if (property.kind == PropertyKind::Gradient || property.kind == PropertyKind::Hessian)
+            throw std::invalid_argument(
+                "only one-component properties can be mapped on a surface (not the gradient "
+                "or the Hessian)");
+        if (std::find(result.properties.begin(), result.properties.end(), property) ==
+            result.properties.end()) {
+            result.properties.push_back(property);
+            request.add(property);
+        }
+    }
+    // Check the request (components, orbitals) before building the surface.
+    const Evaluator evaluator(molecule, options);
+    (void)evaluator.evaluate(Eigen::Matrix<double, 3, Eigen::Dynamic>(3, 0), request);
+    result.mesh = detail::density_surface(molecule, isovalue, spacing).surface.mesh;
+    const auto& vertices = result.mesh.vertices;
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(vertices.size()));
+    for (std::size_t v = 0; v < vertices.size(); ++v)
+        points.col(static_cast<Eigen::Index>(v)) = vertices[v];
+    const Results results = evaluator.evaluate(points, request);
+    result.backend_used = results.backend_used();
+    for (const Property& property : result.properties) {
+        const auto values = results.get(property).component();
+        result.values.emplace_back(values.begin(), values.end());
+        result.statistics.push_back(surface_statistics(result.mesh, result.values.back(), 0.0));
+    }
+    return result;
+}
+
+void write_ply(const std::filesystem::path& path, const TriangleMesh& mesh,
+               const std::vector<std::pair<std::string, std::vector<double>>>& fields,
+               const std::vector<std::string>& comments) {
+    std::vector<std::string> names{"x", "y", "z"};
+    for (const auto& [name, values] : fields) {
+        if (name.empty() || !std::all_of(name.begin(), name.end(), [](unsigned char c) {
+                return std::isalnum(c) || c == '_';
+            }))
+            throw std::invalid_argument("invalid PLY property name '" + name + "'");
+        if (std::find(names.begin(), names.end(), name) != names.end())
+            throw std::invalid_argument("duplicate PLY property name '" + name + "'");
+        names.push_back(name);
+        if (values.size() != mesh.vertices.size())
+            throw std::invalid_argument("PLY property '" + name + "' needs one value per vertex");
+        if (!std::all_of(values.begin(), values.end(), [](double v) { return std::isfinite(v); }))
+            throw std::invalid_argument("nonfinite value in PLY property '" + name + "'");
+    }
+    for (const auto& comment : comments)
+        if (comment.find_first_of("\r\n") != std::string::npos)
+            throw std::invalid_argument("PLY comments must not contain line breaks");
+    for (const auto& v : mesh.vertices)
+        if (!v.allFinite()) throw std::invalid_argument("nonfinite PLY vertex");
+    for (const auto& t : mesh.triangles)
+        for (const std::size_t v : t)
+            if (v >= mesh.vertices.size())
+                throw std::invalid_argument("PLY triangle refers to a missing vertex");
+
+    std::ofstream out(path);
+    if (!out) throw std::runtime_error("cannot open PLY output " + path.string());
+    out << "ply\nformat ascii 1.0\n";
+    for (const auto& comment : comments)
+        out << "comment " << comment << '\n';
+    out << "element vertex " << mesh.vertices.size() << '\n';
+    for (const auto& name : names)
+        out << "property double " << name << '\n';
+    out << "element face " << mesh.triangles.size() << '\n'
+        << "property list uchar int vertex_indices\nend_header\n";
+    out << std::scientific << std::setprecision(9);
+    for (std::size_t v = 0; v < mesh.vertices.size(); ++v) {
+        out << mesh.vertices[v].x() << ' ' << mesh.vertices[v].y() << ' ' << mesh.vertices[v].z();
+        for (const auto& field : fields)
+            out << ' ' << field.second[v];
+        out << '\n';
+    }
+    for (const auto& t : mesh.triangles)
+        out << "3 " << t[0] << ' ' << t[1] << ' ' << t[2] << '\n';
+    out.flush();
+    if (!out) throw std::runtime_error("PLY write failed: " + path.string());
 }
 
 } // namespace chem::kumo

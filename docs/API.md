@@ -699,6 +699,51 @@ Validation (tests `molecular-surface` and `multiwfn-surface-reference`):
   [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)); the largest
   difference is 35% of its tolerance.
 
+## Any property on a molecular surface (1.13.0)
+
+`map_on_density_isosurface(molecule, properties, isovalue, spacing,
+options)` (in `<chem/kumo/surface.hpp>`) evaluates Evaluator properties at
+the vertices of `density_isosurface()` with `Evaluator::evaluate(points)`
+and returns a `MappedSurface`: the mesh, the requested properties (a
+duplicate is mapped once), one value per vertex for each, and the
+`SurfaceStatistics` of each (extrema, local extrema, averages, variances,
+areas; the polar threshold is 0, so `nonpolar_area` carries no
+information). Only one-component properties can be mapped (not `gradient()`
+or `hessian()`); errors are those of `density_isosurface()` and
+`Evaluator::evaluate()`, checked before the surface is built.
+
+```cpp
+using chem::kumo::density::total;
+const auto surface = chem::kumo::map_on_density_isosurface(
+    mol, {total.local_electron_attachment_energy()}, 0.004);
+const auto& s = surface.statistics.front();  // LEAE minima: nucleophilic attack
+```
+
+The ALIE mapped this way equals `local_ionization_energy_surface()`
+exactly; the electrostatic potential is evaluated as at any points and
+agrees with `electrostatic_potential_surface()` within its tolerance (the
+test `molecular-surface` finds at most 2e-8). Results do not depend on the
+number of OpenMP threads.
+
+`write_ply(path, mesh, fields, comments)` writes a mesh as an ASCII PLY
+file: vertices (x, y, z in bohr) with one `double` property per field
+(name, one value per vertex), then the triangles as vertex index lists.
+Names must be letters, digits and `_`, distinct and different from x, y, z;
+values must be finite; comments must not contain line breaks
+(`std::invalid_argument` otherwise, before anything is written).
+
+Validation (`multiwfn-surface-reference`): Multiwfn 2026.9.1's surface
+analysis at 0.05 bohr, with kumo at its default 0.25 bohr, for the LEAE of
+acrolein and O2 on rho = 0.004 (average within 3.0e-4 relative, variance
+within 7.6e-3, global minimum within 4.6e-7 hartree, the six local minima of
+acrolein within 1.8e-5 hartree and 0.07 bohr) and the LEA of acrolein on
+rho = 0.001 (average 5.1e-5, variance 1.7e-3, local minima 1.9e-3 hartree,
+which converge to Multiwfn's within 3e-5 at 0.05 bohr). The tolerances are
+about three times these differences (see
+[tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)). The two deepest
+LEAE minima of acrolein lie on the beta carbon, above and below the
+molecular plane, the site of nucleophilic (Michael) addition.
+
 ## Cube files (1.4.0)
 
 `Field::write_cube(path, comment)` writes a scalar Gaussian Cube file in

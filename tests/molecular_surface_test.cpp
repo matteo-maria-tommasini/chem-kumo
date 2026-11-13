@@ -613,6 +613,129 @@ void test_ionization_energy_inputs(const char* path) {
                    "reproduce the FCHK density matrices");
 }
 
+// map_on_density_isosurface(): the ALIE equals local_ionization_energy_surface()
+// exactly, the electrostatic potential electrostatic_potential_surface()
+// within the tolerance, duplicates are mapped once, results do not depend on
+// the number of threads, and invalid requests are rejected.
+void test_mapped_surface(const char* path) {
+    const std::string name = path;
+    const auto mol = chem::kumo::Molecule::from_fchk(path);
+    using chem::kumo::density::total;
+    const auto alie = total.average_local_ionization_energy();
+    const auto esp = total.electrostatic_potential();
+    const auto mapped =
+        chem::kumo::map_on_density_isosurface(mol, {alie, esp, total.lol(), alie}, 1e-3, 0.3);
+    kumo_test::check(mapped.properties.size() == 3 && mapped.values.size() == 3 &&
+                         mapped.statistics.size() == 3,
+                     name + ": a duplicate property is mapped once");
+    const auto reference = chem::kumo::local_ionization_energy_surface(mol, 1e-3, 0.3);
+    kumo_test::check(mapped.mesh.vertices == reference.mesh.vertices &&
+                         mapped.mesh.triangles == reference.mesh.triangles,
+                     name + ": the mapped surface is density_isosurface()");
+    kumo_test::check(mapped.values[0] == reference.ionization_energy,
+                     name + ": the mapped ALIE equals local_ionization_energy_surface()");
+    const auto& a = mapped.statistics[0];
+    const auto& b = reference.statistics;
+    kumo_test::check(a.average == b.average && a.total_variance == b.total_variance &&
+                         a.local_minima == b.local_minima && a.local_maxima == b.local_maxima,
+                     name + ": the mapped ALIE has the statistics of the ALIE surface");
+    chem::kumo::SurfaceOptions options;
+    options.spacing = 0.3;
+    const auto potential = chem::kumo::electrostatic_potential_surface(mol, options);
+    double worst = 0;
+    for (std::size_t v = 0; v < potential.potential.size(); ++v)
+        worst = std::max(worst, std::abs(mapped.values[1][v] - potential.potential[v]));
+    kumo_test::check(potential.potential.size() == mapped.values[1].size() && worst <= 2e-8,
+                     name +
+                         ": the mapped potential agrees with electrostatic_potential_surface() "
+                         "within 2e-8 (max " +
+                         kumo_test::num(worst) + ")");
+    for (int threads : {2, 4}) {
+        kumo_test::set_threads(threads);
+        const auto again =
+            chem::kumo::map_on_density_isosurface(mol, {alie, esp, total.lol()}, 1e-3, 0.3);
+        kumo_test::check(
+            again.mesh.vertices == mapped.mesh.vertices && again.values == mapped.values,
+            name + ": identical mapped surface with " + std::to_string(threads) + " threads");
+    }
+    kumo_test::set_threads(1);
+
+    const auto rejected = [&](const std::string& what, const std::vector<chem::kumo::Property>& p) {
+        kumo_test::check_throws<std::invalid_argument>(
+            [&] { (void)chem::kumo::map_on_density_isosurface(mol, p); },
+            name + ": mapping " + what + " is rejected");
+    };
+    rejected("no property", {});
+    rejected("the gradient", {total.gradient()});
+    rejected("the Hessian", {total.hessian()});
+    rejected("the ALIE of the alpha density",
+             {chem::kumo::density::alpha.average_local_ionization_energy()});
+}
+
+// write_ply(): the header, vertices, values and faces read back, and invalid
+// input is rejected.
+void test_ply() {
+    chem::kumo::TriangleMesh mesh;
+    mesh.vertices = {Eigen::Vector3d(0, 0, 0), Eigen::Vector3d(1, 0, 0), Eigen::Vector3d(0, 1, 0),
+                     Eigen::Vector3d(0, 0, 1.5)};
+    mesh.triangles = {{0, 2, 1}, {0, 1, 3}, {0, 3, 2}, {1, 2, 3}};
+    const std::vector<double> a{1.0, -2.5, 3.25e-7, 4.0}, b{0.5, 0.25, -0.125, 1e3};
+    const auto path =
+        std::filesystem::temp_directory_path() /
+        ("kumo-ply-test-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".ply");
+    chem::kumo::write_ply(path, mesh, {{"leae_total", a}, {"b", b}}, {"first comment", "second"});
+    std::ifstream in(path);
+    std::vector<std::string> lines;
+    for (std::string line; std::getline(in, line);)
+        lines.push_back(line);
+    std::filesystem::remove(path);
+    const std::vector<std::string> header{"ply",
+                                          "format ascii 1.0",
+                                          "comment first comment",
+                                          "comment second",
+                                          "element vertex 4",
+                                          "property double x",
+                                          "property double y",
+                                          "property double z",
+                                          "property double leae_total",
+                                          "property double b",
+                                          "element face 4",
+                                          "property list uchar int vertex_indices",
+                                          "end_header"};
+    if (!kumo_test::check(lines.size() == header.size() + 8, "PLY: header, 4 vertices, 4 faces"))
+        return;
+    kumo_test::check(std::equal(header.begin(), header.end(), lines.begin()),
+                     "PLY: the expected header");
+    bool vertices = true;
+    for (std::size_t v = 0; v < 4; ++v) {
+        std::istringstream row(lines[header.size() + v]);
+        double x, y, z, p, q;
+        row >> x >> y >> z >> p >> q;
+        vertices = vertices && row && Eigen::Vector3d(x, y, z) == mesh.vertices[v] &&
+                   std::abs(p - a[v]) <= 1e-9 * std::abs(a[v]) &&
+                   std::abs(q - b[v]) <= 1e-9 * std::abs(b[v]);
+    }
+    kumo_test::check(vertices, "PLY: vertex coordinates and values to 10 digits");
+    kumo_test::check(lines[header.size() + 4] == "3 0 2 1" && lines.back() == "3 1 2 3",
+                     "PLY: faces as vertex index lists");
+
+    const auto rejected = [&](const std::string& what,
+                              const std::vector<std::pair<std::string, std::vector<double>>>& f,
+                              const std::vector<std::string>& c = {}) {
+        kumo_test::check_throws<std::invalid_argument>(
+            [&] { chem::kumo::write_ply(path, mesh, f, c); }, "PLY: " + what + " is rejected");
+    };
+    rejected("an empty name", {{"", a}});
+    rejected("a name with a space", {{"a b", a}});
+    rejected("a name with a hyphen", {{"a-b", a}});
+    rejected("the name x", {{"x", a}});
+    rejected("a duplicate name", {{"a", a}, {"a", b}});
+    rejected("a wrong number of values", {{"a", {1.0, 2.0}}});
+    rejected("a NaN value", {{"a", {1.0, 2.0, std::numeric_limits<double>::quiet_NaN(), 3.0}}});
+    rejected("a comment with a line break", {}, {"two\nlines"});
+    kumo_test::check(!std::filesystem::exists(path), "PLY: rejected input writes no file");
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -626,6 +749,8 @@ int main(int argc, char** argv) {
             test_ionization_energy(argv[file]);
         }
         test_ionization_energy_inputs(argv[1]);
+        test_mapped_surface(argv[1]);
+        test_ply();
         if (kumo_test::failures == 0) std::cout << "molecular surfaces OK\n";
     });
 }
