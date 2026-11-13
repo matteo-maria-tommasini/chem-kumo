@@ -1,3 +1,92 @@
+# chem-kumo 1.13.0 — release notes
+
+The library and the `kumo` CLI evaluate density properties outside Cube
+grids: at chosen points, along lines and on planes, and at the vertices of
+the molecular surface. Four fields built from the virtual orbitals and
+their energies join the average local ionization energy: the local electron
+affinity, the local electron attachment energy, and the local
+electronegativity and hardness. Any one-component property can be mapped on
+the density isosurface, with its statistics and a PLY file of the colored
+surface. The public API is extended in a source-compatible way; existing
+outputs are unchanged.
+
+Library changes:
+
+- `Grid::line(start, end, margin, spacing)` and `Grid::plane(a, b, c,
+  margin, spacing)` (in `<chem/kumo/density.hpp>`) build one- and
+  two-dimensional grids, which every Evaluator property accepts.
+- `Evaluator::evaluate(points, request)` evaluates any request at the
+  columns of a 3 x N matrix (bohr), in column order. Values equal grid
+  evaluation at the same points to rounding; the electrostatic potential
+  groups the points by cubes of `potential_cluster_edge` (1.6 bohr) fixed
+  in space, within `potential_tolerance`.
+- New Total-only properties weighting the SCF orbitals by their energies,
+  with Multiwfn's definitions: `average_local_ionization_energy()`,
+  `local_electron_affinity()` (all virtual orbitals),
+  `local_electron_attachment_energy()` (virtual orbitals with negative
+  energy only; 0 everywhere if there are none),
+  `local_electronegativity()` and `local_hardness()`. They are 0 where
+  their denominator vanishes and need orbitals that reproduce the FCHK
+  density matrices, with orbital energies (and virtual orbitals).
+- `map_on_density_isosurface(molecule, properties, isovalue, spacing,
+  options)` (in `<chem/kumo/surface.hpp>`) evaluates one-component
+  properties at the vertices of the density isosurface and returns their
+  values and `SurfaceStatistics`; `write_ply(path, mesh, fields,
+  comments)` writes a mesh with vertex values as an ASCII PLY file.
+- The surface ALIE (`average_local_ionization_energy(molecule, points)`)
+  now shares the implementation of the new fields; its values are
+  unchanged.
+
+CLI changes:
+
+- `--point X,Y,Z|@N` (repeatable) prints the `--property` and `--spin`
+  selection at points, in bohr or at atom N; `--line A:B` writes
+  `PREFIX_line.dat` (default spacing 0.01 bohr, margin 0) and `--plane
+  A:B:C` writes `PREFIX_plane.dat` (default spacing 0.10 bohr, margin 5
+  bohr, rows of constant u separated by blank lines for gnuplot). Tables
+  start with `#` lines describing the geometry and every column.
+- `--property` accepts `alie`, `lea`, `leae`, `local-electronegativity` and
+  `local-hardness` (total density only).
+- `--surface-map` prints the statistics of each `--property` on the density
+  isosurface (extrema, averages, variances, areas, local extrema); `--ply`
+  writes `PREFIX_surface.ply`, also with `--esp-surface` and
+  `--alie-surface`, whose reports are unchanged. For the local electron
+  attachment energy use `--isovalue 0.004`, the surface of the original
+  work, which Multiwfn selects for it automatically.
+
+Validation:
+
+- New test `line-plane`: geometry and input checks, agreement with
+  point-by-point evaluation, and LOL and ELF on a line and a plane through
+  the points of the Multiwfn water Cube files (largest difference 0.24 of
+  the tolerance).
+- New test `point-evaluation`: every property at points against grid
+  evaluation (water, O2, acrolein; both backends; at most 5e-15 relative,
+  2e-10 for the electrostatic potential), the new fields against their
+  orbital formulas (1e-12), identical results with 1, 2 and 4 threads.
+- `multiwfn-reference`: eight new Multiwfn 2026.9.1 Cube files (acrolein:
+  all five fields; O2: ALIE, LEA, LEAE) agree within 2e-5 relative; LEAE
+  must meet that tolerance alone on more than 10000 points per molecule
+  where |LEAE| >= 1e-3 hartree.
+- `multiwfn-surface-reference`: LEAE on rho = 0.004 (acrolein, O2) and LEA
+  of acrolein against Multiwfn's surface analysis, with kumo at 0.25 bohr
+  and Multiwfn at 0.05 bohr; the six LEAE minima of acrolein (the deepest
+  on the beta carbon) agree within 1.8e-5 hartree. Largest difference 0.36
+  of its tolerance.
+- `molecular-surface`: the mapped ALIE equals the ALIE surface analysis
+  exactly; PLY files are read back; invalid input is rejected.
+- 83/83 Meson tests passed on macOS ARM64 on 2026-11-13 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings. CI builds and tests on ubuntu-latest
+  and macos-latest, and runs the suite under AddressSanitizer and
+  UndefinedBehaviorSanitizer without the `slow` suite.
+
+Documentation: the README, `docs/API.md`, the mathematics document and
+`tests/REFERENCE_CUBES.md` describe the new features, their definitions,
+edge values and validation.
+
+---
+
 # chem-kumo 1.12.0 — release notes
 
 The library and the `kumo` CLI compute nine more real-space fields derived
