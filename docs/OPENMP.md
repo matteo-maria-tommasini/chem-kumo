@@ -70,18 +70,21 @@ The Apple M3 (4P+4E) achieved up to 5.05x on density; dual Xeon E5640
 (2 sockets, 8 physical cores / 16 SMT threads) achieved up to 6.89x on
 density and 6.77x on density derivatives.
 
-`Evaluator` point path (1.6.0 plus the parallel point path), HBC with
-97,280 grid points (margin 3 bohr, spacing 0.4 bohr), debugoptimized build
-on the Apple M3 (4P+4E), best of two runs, seconds:
+`Evaluator` point path, 1.10.0 release build (MacPorts Clang 22, `-O3`) on
+the Apple M3 (4P+4E), HBC with 97,280 grid points (margin 3 bohr, spacing
+0.4 bohr), best of three runs, seconds:
 
-| Basis | Request | 1 thread | 4 threads | 8 threads | Speedup (8) |
-|---|---|---:|---:|---:|---:|
-| def2-SVP | gradient | 1.18 | 0.32 | 0.25 | 4.8x |
-| def2-SVP | Hessian | 2.76 | 0.86 | 0.62 | 4.5x |
-| def2-SVP | AO_MO density | 0.42 | 0.11 | 0.083 | 5.1x |
-| def2-TZVP | gradient | 2.45 | 0.72 | 0.57 | 4.3x |
-| def2-TZVP | Hessian | 5.83 | 1.74 | 1.41 | 4.1x |
-| def2-TZVP | AO_MO density | 0.84 | 0.23 | 0.19 | 4.5x |
+| Basis | Request | 1 thread | 4 threads | 8 threads | Speedup (4) | Speedup (8) |
+|---|---|---:|---:|---:|---:|---:|
+| def2-SVP | gradient | 1.164 | 0.320 | 0.250 | 3.6x | 4.7x |
+| def2-SVP | Hessian | 2.688 | 0.819 | 0.632 | 3.3x | 4.3x |
+| def2-SVP | AO_MO density | 0.416 | 0.111 | 0.088 | 3.7x | 4.7x |
+| def2-TZVP | gradient | 2.430 | 0.724 | 0.575 | 3.4x | 4.2x |
+| def2-TZVP | Hessian | 5.779 | 1.770 | 1.386 | 3.3x | 4.2x |
+| def2-TZVP | AO_MO density | 0.837 | 0.232 | 0.188 | 3.6x | 4.5x |
+
+Going from 4 to 8 threads adds the four efficiency cores, so the gain is
+smaller than from 1 to 4.
 
 These are observed speedups, not performance guarantees. In particular, an OpenMP-enabled library does not
 imply that every CLI operation or every pointwise API is parallel.
