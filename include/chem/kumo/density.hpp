@@ -58,6 +58,25 @@ struct Grid {
     /// axis). Throws std::invalid_argument for no atoms, a negative or
     /// nonfinite margin, or a nonpositive spacing.
     static Grid around(const std::vector<Atom>& atoms, double margin_bohr, double spacing_bohr);
+    /// Points along the line through `start` and `end`, from `margin_bohr`
+    /// before `start` to `margin_bohr` after `end`, evenly spaced with both
+    /// ends included: the fewest points (at least 2) whose spacing does not
+    /// exceed `spacing_bohr`. Counts are (points, 1, 1); the first axis runs
+    /// from start to end and the other two are unit vectors orthogonal to it.
+    /// Throws std::invalid_argument for nonfinite or coincident ends, a
+    /// negative or nonfinite margin, or a nonpositive spacing.
+    static Grid line(const Eigen::Vector3d& start, const Eigen::Vector3d& end, double margin_bohr,
+                     double spacing_bohr);
+    /// Rectangle in the plane of `a`, `b` and `c`: the first axis runs along
+    /// b - a, the second perpendicular to it towards c, and the third is the
+    /// unit normal (u x v), with one point. The rectangle covers the three
+    /// points enlarged by `margin_bohr` on every side, with both edges of each
+    /// axis included and the fewest points whose spacing does not exceed
+    /// `spacing_bohr`. Counts are (points along u, points along v, 1).
+    /// Throws std::invalid_argument for nonfinite or (nearly) collinear
+    /// points, a negative or nonfinite margin, or a nonpositive spacing.
+    static Grid plane(const Eigen::Vector3d& a, const Eigen::Vector3d& b, const Eigen::Vector3d& c,
+                      double margin_bohr, double spacing_bohr);
 };
 
 /// Scalar samples on a grid, with atom positions for Cube output.

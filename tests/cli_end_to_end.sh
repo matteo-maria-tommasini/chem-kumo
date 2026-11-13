@@ -293,6 +293,68 @@ if "$KUMO" "$FCHK" --spacing 1 --property tau, --output "$TMP/bad" > "$TMP/error
     fail 'Trailing comma in --property unexpectedly accepted'
 fi
 
+# --point, --line and --plane write tables: '#' comment lines, then rows of
+# coordinates (bohr) and values. data() prints the rows without comments.
+data() { grep -v '^#' "$1"; }
+run_kumo "$FCHK" --point @1 --point 0,0,0 --spin all --property density,kinetic-k \
+    > "$TMP/points.txt"
+grep -Fxq '# x y z density_total kinetic-k_total density_alpha kinetic-k_alpha density_beta kinetic-k_beta density_spin kinetic-k_spin' \
+    "$TMP/points.txt" || fail '--point table lacks the expected column names'
+[ "$(data "$TMP/points.txt" | wc -l | tr -d ' ')" -eq 2 ] || fail '--point table has not 2 rows'
+data "$TMP/points.txt" | awk '
+    function abs(x) { return x < 0 ? -x : x }
+    # Values have 10 significant digits: compare on the scale |alpha| + |beta|.
+    function differ(a, b, alpha, beta) { return abs(a - b) > 1e-9 * (abs(alpha) + abs(beta)) }
+    NF != 11 { bad = 1 }
+    differ($4, $6 + $8, $6, $8) || differ($10, $6 - $8, $6, $8) { bad = 1 }
+    differ($5, $7 + $9, $7, $9) || differ($11, $7 - $9, $7, $9) { bad = 1 }
+    END { exit bad }' || fail '--point: total and spin difference are not alpha + beta and alpha - beta'
+data "$TMP/points.txt" | awk 'NR == 2 && ($1 != 0 || $2 != 0 || $3 != 0) { exit 1 }' ||
+    fail '--point 0,0,0 is not printed at the origin'
+
+LINE_OUTPUT=$(run_kumo "$FCHK" --line @1:@2 --margin 0.5 --spacing 0.05 --property density,lol \
+    --output "$TMP/o2")
+[ "$LINE_OUTPUT" = "$TMP/o2_line.dat" ] || fail "--line reported '$LINE_OUTPUT'"
+grep -Fxq '# t x y z density_total lol_total' "$TMP/o2_line.dat" ||
+    fail '--line table lacks the expected column names'
+# O2 lies on the z axis, 2.28657 bohr long: t runs from -0.5 to 2.78657 in
+# increasing steps of at most 0.05, x = y = 0, and the profile is symmetric.
+data "$TMP/o2_line.dat" | awk '
+    { t[NR] = $1; rho[NR] = $5; if ($2 != 0 || $3 != 0) bad = 1 }
+    NR > 1 && ($1 <= t[NR - 1] || $1 - t[NR - 1] > 0.05 + 1e-9) { bad = 1 }
+    $6 < 0 || $6 > 1 { bad = 1 }
+    END {
+        if (t[1] != -0.5 || t[NR] < 2.786568 || t[NR] > 2.786569) bad = 1
+        for (i = 1; i <= NR; ++i) { d = rho[i] - rho[NR + 1 - i]; if (d < 0) d = -d
+            if (d > 1e-8 * rho[i]) bad = 1 }
+        exit bad }' || fail '--line: unexpected coordinates, LOL range or asymmetric density'
+# The first row at A equals --point at A.
+run_kumo "$FCHK" --line @1:@2 --property density,lol --output "$TMP/o2a" > /dev/null
+run_kumo "$FCHK" --point @1 --property density,lol > "$TMP/point.txt"
+[ "$(data "$TMP/o2a_line.dat" | head -1 | awk '{print $5, $6}')" = \
+    "$(data "$TMP/point.txt" | awk '{print $4, $5}')" ] ||
+    fail '--line at A differs from --point at A'
+
+run_kumo "$FCHK" --plane @1:@2:1,0,0 --margin 1 --spacing 0.25 --spin difference \
+    --property density,spin-polarization --output "$TMP/o2" > /dev/null
+grep -Fxq '# u v x y z density_spin spin-polarization_spin' "$TMP/o2_plane.dat" ||
+    fail '--plane table lacks the expected column names'
+# The plane is y = 0; rows of constant u are separated by blank lines.
+awk '/^#/ { next } NF == 0 { ++blank; next }
+     { ++rows; if ($4 != 0 || $7 < -1 || $7 > 1) bad = 1; if ($1 != u) ++groups; u = $1 }
+     END { exit bad || rows < 4 || blank != groups - 1 }' "$TMP/o2_plane.dat" ||
+    fail '--plane: points outside y = 0, zeta outside [-1, 1] or rows not separated'
+
+for options in '--line @1:@1' '--line @1' '--plane @1:@2:0,0,0' '--point @3' '--point 1,2' \
+    '--point @1 --output x' '--point @1 --spacing 1' '--line @1:@2 --mo homo' \
+    '--line @1:@2 --plane @1:@2:1,0,0' '--line @1:@2 --esp-surface' '--line @1:@2 --list-mo' \
+    '--point @0' '--line @1:@2 --spin alpha --property iri'; do
+    # shellcheck disable=SC2086 # options are split on purpose
+    if "$KUMO" "$FCHK" $options > "$TMP/error.log" 2>&1; then
+        fail "$options unexpectedly accepted"
+    fi
+done
+
 if "$KUMO" "$FCHK" --spacing -1 --output "$TMP/bad" > "$TMP/error.log" 2>&1; then
     fail 'Invalid spacing unexpectedly accepted'
 fi

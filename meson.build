@@ -355,6 +355,23 @@ test(
     timeout: 300,
 )
 
+# Grid::line and Grid::plane: geometry, validation, point-by-point evaluation
+# and a line and a plane through Multiwfn reference Cube points.
+test(
+    'line-plane',
+    executable(
+        'kumo-line-plane-test',
+        'tests/line_plane_test.cpp',
+        dependencies: kumo_dep,
+    ),
+    args: [
+        meson.current_source_dir() / 'tests/data/hybrids/h2o_b3lyp_def2tzvp.fchk.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/h2o_lol.cube.gz',
+        meson.current_source_dir() / 'tests/data/multiwfn/h2o_elf.cube.gz',
+    ],
+    timeout: 120,
+)
+
 # Derived density properties against Multiwfn reference Cube files.
 test(
     'multiwfn-reference',

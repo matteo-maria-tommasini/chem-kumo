@@ -75,6 +75,9 @@ kumo molecule.fchk --property density,esp        # electrostatic potential
 kumo molecule.fchk --property esp --esp-tolerance 1e-6  # faster, error <= 1e-6
 kumo molecule.fchk --esp-surface                 # ESP statistics on rho = 0.001
 kumo molecule.fchk --alie-surface                # ionization energy statistics
+kumo molecule.fchk --point @1 --point 0,0,1.5 --property density,laplacian
+kumo molecule.fchk --line @1:@2 --property density,lol   # profile -> PREFIX_line.dat
+kumo molecule.fchk --plane @1:@2:@3 --property elf      # map -> PREFIX_plane.dat
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -164,6 +167,26 @@ electrophilic attack), average, variance and average deviation, area and
 volume. It needs the orbitals and orbital energies of an SCF calculation
 whose occupied orbitals reproduce the FCHK density. Acrolein takes about
 0.3 s.
+
+`--point`, `--line` and `--plane` evaluate the `--property` and `--spin`
+selection at chosen points instead of a Cube grid. Locations are `X,Y,Z` in
+bohr or `@N`, the position of atom N (1-based). `--point` (repeatable)
+prints a table on standard output. `--line A:B` writes `PREFIX_line.dat`,
+evenly spaced points from A to B with both ends included (default spacing
+0.01 bohr), extended by `--margin` beyond each end (default 0); its rows
+give t, the distance from A towards B. `--plane A:B:C` writes
+`PREFIX_plane.dat`, a rectangle in the plane of the three points covering
+them with `--margin` on every side (defaults 0.10 bohr and 5.0 bohr); u
+runs along A->B and v perpendicular to it towards C, and rows of constant u
+are separated by blank lines, the layout gnuplot's `splot` expects. Each
+table starts with `#` comment lines describing the geometry and every
+column (quantity, units, component, contraction) and a `#` line with the
+column names; the values have ten significant digits and the gradient is
+written as its norm, as in Cube files. A plane map with gnuplot:
+
+```gnuplot
+set view map; splot 'molecule_plane.dat' using 1:2:6 with pm3d
+```
 
 `--backend` (density mode only) selects the density contraction: `auto`
 (default) uses the occupied molecular orbitals (AO-MO) when they reproduce

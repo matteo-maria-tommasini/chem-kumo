@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -49,6 +50,9 @@ struct Options {
     bool list = false;
     bool verbose = false;
     bool output_set = false;
+    std::vector<std::string> points; // --point, repeatable
+    std::string line;                // --line A:B
+    std::string plane;               // --plane A:B:C
 };
 
 void usage() {
@@ -76,6 +80,15 @@ void usage() {
               << "                             --esp-surface)\n"
               << "  --isovalue RHO             Isosurface of --esp-surface or --alie-surface\n"
               << "                             (default 0.001)\n"
+              << "  --point X,Y,Z|@N           Print the density properties at a point, in bohr\n"
+              << "                             or at atom N (1-based); repeatable\n"
+              << "  --line A:B                 Write the properties along the line through A\n"
+              << "                             and B (X,Y,Z or @N) to PREFIX_line.dat; spacing\n"
+              << "                             default 0.01 bohr, margin (extension beyond A\n"
+              << "                             and B) default 0\n"
+              << "  --plane A:B:C              Write the properties on the plane of A, B and C\n"
+              << "                             to PREFIX_plane.dat; spacing default 0.10 bohr,\n"
+              << "                             margin around the three points default 5.0 bohr\n"
               << "  --backend auto|ao-p|ao-mo  Density contraction (default auto: occupied MOs\n"
               << "                             when they reproduce the FCHK density matrices)\n"
               << "  --mo N[,M:K,...]           Write 1-based molecular orbitals\n"
@@ -250,6 +263,16 @@ Options parse(int argc, char** argv) {
         } else if (a == "--output") {
             o.prefix = value();
             o.output_set = true;
+        } else if (a == "--point")
+            o.points.push_back(value());
+        else if (a == "--line") {
+            if (!o.line.empty()) throw std::invalid_argument("--line specified twice");
+            o.line = value();
+            if (o.line.empty()) throw std::invalid_argument("empty --line");
+        } else if (a == "--plane") {
+            if (!o.plane.empty()) throw std::invalid_argument("--plane specified twice");
+            o.plane = value();
+            if (o.plane.empty()) throw std::invalid_argument("empty --plane");
         } else if (a == "--list-mo")
             o.list = true;
         else if (a == "-v" || a == "--verbose")
@@ -269,6 +292,24 @@ Options parse(int argc, char** argv) {
     if (!o.backend.empty() && (o.mo_mode || o.list))
         throw std::invalid_argument(
             "--backend applies only to densities, not to --mo or --list-mo");
+    const int samplings =
+        (o.points.empty() ? 0 : 1) + (o.line.empty() ? 0 : 1) + (o.plane.empty() ? 0 : 1);
+    if (samplings > 1) throw std::invalid_argument("choose one of --point, --line or --plane");
+    if (samplings == 1) {
+        if (o.mo_mode || o.list || o.esp_surface || o.alie_surface)
+            throw std::invalid_argument("--point, --line and --plane apply only to density "
+                                        "properties, not to --mo, --list-mo, --esp-surface or "
+                                        "--alie-surface");
+        if (!o.points.empty() && (o.spacing_set || o.margin_set || o.output_set))
+            throw std::invalid_argument(
+                "--point prints to standard output and does not use --spacing, --margin or "
+                "--output");
+        if (!o.line.empty()) {
+            if (!o.spacing_set) o.spacing = 0.01;
+            if (!o.margin_set) o.margin = 0.0;
+        }
+        if (!o.plane.empty() && !o.spacing_set) o.spacing = 0.10;
+    }
     if (o.esp_surface && o.alie_surface)
         throw std::invalid_argument("choose --esp-surface or --alie-surface");
     if (o.esp_surface || o.alie_surface) {
@@ -583,6 +624,32 @@ std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& 
     return "Evaluating the " + join(what) + " of the " + densities;
 }
 
+// Values of a property at every point, as written to Cube files and tables:
+// the gradient as its norm, the other properties as they are.
+std::vector<double> scalar_values(const chem::kumo::PropertyField& field, PropertyKind kind) {
+    std::vector<double> values(field.points);
+    if (kind == PropertyKind::Gradient) {
+        for (std::size_t q = 0; q < field.points; ++q)
+            values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
+                                  field.component(1)[q] * field.component(1)[q] +
+                                  field.component(2)[q] * field.component(2)[q]);
+    } else {
+        const auto source = field.component();
+        std::copy(source.begin(), source.end(), values.begin());
+    }
+    return values;
+}
+
+// How a property was computed, for Cube comments and table headers. The
+// electrostatic potential always uses the AO density matrix.
+std::string method_label(PropertyKind kind, chem::kumo::Backend used, double esp_tolerance) {
+    if (kind != PropertyKind::ElectrostaticPotential) return backend_label(used);
+    if (esp_tolerance == 0.0) return "exact Coulomb integrals over the AO density matrix";
+    std::ostringstream bound;
+    bound << "error <= " << esp_tolerance << " hartree/e";
+    return "Coulomb integrals over the AO density matrix, " + bound.str();
+}
+
 // Evaluate every requested property of every density component in one
 // Evaluator request and write one Cube file each: first the densities
 // (PREFIX_<component>.cube), then the derivatives
@@ -607,30 +674,14 @@ void write_density_properties(const Molecule& mol, const chem::kumo::Grid& grid,
     console.end("Evaluated in");
     const auto files = components.size() * properties.size();
     console.begin("Writing " + std::to_string(files) + " Cube file" + (files > 1 ? "s" : ""));
-    const auto used = backend_label(results.backend_used());
     const auto write = [&](Spin component, const std::string& suffix,
                            const DensityProperty& property) {
-        const auto& field = results.get(density_property(component, property.kind));
-        std::vector<double> values(field.points);
-        if (property.kind == PropertyKind::Gradient) {
-            for (std::size_t q = 0; q < field.points; ++q)
-                values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
-                                      field.component(1)[q] * field.component(1)[q] +
-                                      field.component(2)[q] * field.component(2)[q]);
-        } else {
-            const auto source = field.component();
-            std::copy(source.begin(), source.end(), values.begin());
-        }
+        auto values =
+            scalar_values(results.get(density_property(component, property.kind)), property.kind);
         const auto filename = prefix + "_" + suffix +
                               (property.kind == PropertyKind::Density ? "" : "_" + property.name) +
                               ".cube";
-        // The electrostatic potential always uses the AO density matrix.
-        std::ostringstream bound;
-        bound << "error <= " << esp_tolerance << " hartree/e";
-        const auto method = property.kind != PropertyKind::ElectrostaticPotential ? used
-                            : esp_tolerance == 0.0
-                                ? std::string("exact Coulomb integrals over the AO density matrix")
-                                : "Coulomb integrals over the AO density matrix, " + bound.str();
+        const auto method = method_label(property.kind, results.backend_used(), esp_tolerance);
         chem::kumo::Field(grid, mol.atoms(), std::move(values))
             .write_cube(filename,
                         property.description + ", " + component_label(component) + ", " + method);
@@ -847,6 +898,291 @@ std::string backend_summary(chem::kumo::Backend backend, const Molecule& mol) {
                           "orbitals do not reproduce the FCHK density matrices";
     }
 }
+
+// Density components and properties selected with --spin and --property, and
+// the contraction selected with --backend.
+struct DensitySelection {
+    std::vector<std::pair<Spin, std::string>> components; // with Cube filename suffix
+    std::vector<DensityProperty> properties;
+    chem::kumo::Backend backend = chem::kumo::Backend::AUTO;
+};
+
+DensitySelection select_density(const Options& o, const Molecule& mol, Console& console) {
+    DensitySelection selection;
+    auto& components = selection.components;
+    const auto spin = o.spin.empty() ? "total" : o.spin;
+    if (spin == "total" || spin == "all") components.emplace_back(Spin::Total, "density");
+    if (spin == "alpha" || spin == "all") components.emplace_back(Spin::Alpha, "alpha");
+    if (spin == "beta" || spin == "all") components.emplace_back(Spin::Beta, "beta");
+    if (spin == "difference" || spin == "all") components.emplace_back(Spin::Difference, "spin");
+    if (components.empty())
+        throw std::invalid_argument(
+            "density --spin must be total, alpha, beta, difference, or all");
+    selection.properties = select_properties(o.properties.empty() ? "density" : o.properties);
+    check_components(components, selection.properties);
+    if (o.esp_tolerance_set &&
+        std::none_of(selection.properties.begin(), selection.properties.end(),
+                     [](const DensityProperty& p) {
+                         return p.kind == PropertyKind::ElectrostaticPotential;
+                     }))
+        throw std::invalid_argument("--esp-tolerance applies only to --property esp");
+    selection.backend = select_backend(o.backend, mol);
+    console.say(backend_summary(selection.backend, mol));
+    return selection;
+}
+
+std::vector<std::string> split(const std::string& text, char separator) {
+    std::vector<std::string> parts;
+    std::size_t start = 0;
+    while (true) {
+        const auto end = text.find(separator, start);
+        parts.push_back(
+            text.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        if (end == std::string::npos) return parts;
+        start = end + 1;
+    }
+}
+
+// A location given as X,Y,Z in bohr or as @N, the position of atom N (1-based).
+Eigen::Vector3d location(const std::string& spec, const Molecule& mol) {
+    const auto& atoms = mol.atoms();
+    if (!spec.empty() && spec[0] == '@') {
+        const auto digits = spec.substr(1);
+        if (digits.empty() || digits.size() > 9 ||
+            !std::all_of(digits.begin(), digits.end(),
+                         [](unsigned char c) { return std::isdigit(c); }))
+            throw std::invalid_argument("invalid atom reference '" + spec + "' (use @N)");
+        const auto n = std::stoul(digits);
+        if (n == 0 || n > atoms.size())
+            throw std::invalid_argument("atom " + spec + " does not exist (atoms are @1 to @" +
+                                        std::to_string(atoms.size()) + ")");
+        return atoms[n - 1].position;
+    }
+    const auto parts = split(spec, ',');
+    Eigen::Vector3d point;
+    try {
+        if (parts.size() != 3) throw std::invalid_argument("three coordinates");
+        for (int k = 0; k < 3; ++k)
+            point[k] = real(parts[static_cast<std::size_t>(k)]);
+    } catch (const std::exception&) {
+        throw std::invalid_argument("invalid location '" + spec +
+                                    "' (use X,Y,Z in bohr or @N for atom N)");
+    }
+    return point;
+}
+
+// The locations of --line A:B or --plane A:B:C.
+std::vector<Eigen::Vector3d> locations(const std::string& option, const std::string& spec,
+                                       std::size_t count, const Molecule& mol) {
+    const auto parts = split(spec, ':');
+    if (parts.size() != count)
+        throw std::invalid_argument(option + " needs " + std::to_string(count) +
+                                    " locations separated by ':', for example " +
+                                    (count == 2 ? "@1:@2" : "@1:@2:@3"));
+    std::vector<Eigen::Vector3d> points;
+    for (const auto& part : parts)
+        points.push_back(location(part, mol));
+    return points;
+}
+
+std::string coordinates(const Eigen::Vector3d& p) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(6) << "(" << p.x() + 0.0 << ", " << p.y() + 0.0 << ", "
+        << p.z() + 0.0 << ")";
+    return out.str();
+}
+
+// A table of density properties: '#' comment lines describing the sampling
+// and each column, a '#' line with the column names, then one row per point
+// with the coordinates (bohr, fixed) and the values (scientific, 10 digits).
+class Table {
+public:
+    Table(const DensitySelection& selection, std::vector<std::string> coordinate_columns)
+        : selection_(selection), coordinate_columns_(std::move(coordinate_columns)) {
+        for (const auto& [component, suffix] : selection.components)
+            for (const auto& property : selection.properties)
+                request_.add(density_property(component, property.kind));
+    }
+
+    const chem::kumo::Request& request() const noexcept { return request_; }
+
+    void header(std::ostream& out, const std::vector<std::string>& description,
+                chem::kumo::Backend used, double esp_tolerance) const {
+        for (const auto& line : description)
+            out << "# " << line << "\n";
+        std::string names;
+        for (const auto& name : coordinate_columns_)
+            names += (names.empty() ? "" : " ") + name;
+        for (const auto& [component, suffix] : selection_.components)
+            for (const auto& property : selection_.properties) {
+                const auto name = column(component, property);
+                out << "# " << name << ": " << property.description << ", "
+                    << component_label(component) << ", "
+                    << method_label(property.kind, used, esp_tolerance) << "\n";
+                names += " " + name;
+            }
+        out << "# " << names << "\n";
+    }
+
+    // The value columns of `results`, one vector per column.
+    std::vector<std::vector<double>> columns(const chem::kumo::Results& results) const {
+        std::vector<std::vector<double>> values;
+        for (const auto& [component, suffix] : selection_.components)
+            for (const auto& property : selection_.properties)
+                values.push_back(scalar_values(
+                    results.get(density_property(component, property.kind)), property.kind));
+        return values;
+    }
+
+    // Row `q` of `columns`.
+    static std::vector<double> at(const std::vector<std::vector<double>>& columns, std::size_t q) {
+        std::vector<double> row;
+        for (const auto& column : columns)
+            row.push_back(column[q]);
+        return row;
+    }
+
+    static void row(std::ostream& out, const std::vector<double>& coordinates,
+                    const std::vector<double>& values) {
+        std::ostringstream line;
+        line << std::fixed << std::setprecision(8);
+        // + 0.0 prints -0 as 0.
+        for (std::size_t c = 0; c < coordinates.size(); ++c)
+            line << (c > 0 ? " " : "") << std::setw(13) << coordinates[c] + 0.0;
+        line << std::scientific << std::setprecision(10);
+        for (const double value : values)
+            line << " " << std::setw(17) << value;
+        out << line.str() << "\n";
+    }
+
+private:
+    static std::string column(Spin component, const DensityProperty& property) {
+        const char* names[] = {"total", "alpha", "beta", "spin"};
+        const auto index = component == Spin::Total   ? 0
+                           : component == Spin::Alpha ? 1
+                           : component == Spin::Beta  ? 2
+                                                      : 3;
+        return property.name + "_" + names[index];
+    }
+
+    const DensitySelection& selection_;
+    std::vector<std::string> coordinate_columns_;
+    chem::kumo::Request request_;
+};
+
+chem::kumo::EvaluationOptions evaluation_options(const DensitySelection& selection,
+                                                 const Options& o, Console& console) {
+    chem::kumo::EvaluationOptions options;
+    options.backend = selection.backend;
+    options.potential_tolerance = o.esp_tolerance;
+    options.progress = console.progress();
+    return options;
+}
+
+std::string sampling_summary(const DensitySelection& selection, std::size_t points) {
+    return evaluation_summary(selection.components, selection.properties) + " at " +
+           Console::grouped(points) + " point" + (points > 1 ? "s" : "");
+}
+
+// --point: one table on standard output, one row per point in the order given.
+void print_points(const Molecule& mol, const Options& o, const DensitySelection& selection,
+                  Console& console) {
+    std::vector<Eigen::Vector3d> points;
+    for (const auto& spec : o.points)
+        points.push_back(location(spec, mol));
+    const Table table(selection, {"x", "y", "z"});
+    console.begin(sampling_summary(selection, points.size()));
+    const chem::kumo::Evaluator evaluator(mol, evaluation_options(selection, o, console));
+    std::vector<chem::kumo::Results> results;
+    for (const auto& point : points) {
+        chem::kumo::Grid grid;
+        grid.origin = point;
+        results.push_back(evaluator.evaluate(grid, table.request()));
+    }
+    console.end("Evaluated in");
+    table.header(std::cout,
+                 {"kumo " CHEM_KUMO_VERSION ", " + o.input.filename().string() + ": " +
+                      std::to_string(points.size()) + " point" + (points.size() > 1 ? "s" : ""),
+                  "x y z: position (bohr)"},
+                 results.front().backend_used(), o.esp_tolerance);
+    for (std::size_t p = 0; p < points.size(); ++p)
+        Table::row(std::cout, {points[p].x(), points[p].y(), points[p].z()},
+                   Table::at(table.columns(results[p]), 0));
+}
+
+// --line and --plane: evaluate on the grid and write PREFIX_line.dat or
+// PREFIX_plane.dat. Line rows give t, the signed distance from A along A->B;
+// plane rows give u and v, the coordinates in the plane from A along the
+// grid axes (u along A->B), with a blank line after each row of constant u,
+// as gnuplot expects for surfaces.
+void write_profile(const Molecule& mol, const Options& o, const DensitySelection& selection,
+                   Console& console) {
+    const bool is_line = !o.line.empty();
+    const auto ends =
+        is_line ? locations("--line", o.line, 2, mol) : locations("--plane", o.plane, 3, mol);
+    const auto grid = is_line
+                          ? chem::kumo::Grid::line(ends[0], ends[1], o.margin, o.spacing)
+                          : chem::kumo::Grid::plane(ends[0], ends[1], ends[2], o.margin, o.spacing);
+    const auto nu = static_cast<std::size_t>(grid.counts[0]);
+    const auto nv = static_cast<std::size_t>(grid.counts[1]);
+    const Eigen::Vector3d u = grid.steps.col(0).normalized(), v = grid.steps.col(1).normalized();
+
+    std::vector<std::string> description;
+    std::ostringstream geometry;
+    geometry << std::setprecision(6);
+    if (is_line)
+        geometry << "Line from A " << coordinates(ends[0]) << " to B " << coordinates(ends[1])
+                 << " bohr, extended by " << o.margin << " bohr: " << nu << " points "
+                 << grid.steps.col(0).norm() << " bohr apart";
+    else
+        geometry << "Plane of A " << coordinates(ends[0]) << ", B " << coordinates(ends[1])
+                 << " and C " << coordinates(ends[2]) << " bohr, margin " << o.margin
+                 << " bohr: " << nu << " x " << nv << " points " << grid.steps.col(0).norm()
+                 << " x " << grid.steps.col(1).norm() << " bohr apart";
+    console.say(geometry.str());
+    description.push_back("kumo " CHEM_KUMO_VERSION ", " + o.input.filename().string());
+    description.push_back(geometry.str());
+    if (is_line)
+        description.push_back("t: distance from A towards B (bohr); x y z: position (bohr)");
+    else {
+        std::ostringstream axes;
+        axes << std::setprecision(6) << "u, v: in-plane coordinates from A (bohr), u along A->B; "
+             << "B at (" << (ends[1] - ends[0]).dot(u) << ", 0), C at ("
+             << (ends[2] - ends[0]).dot(u) << ", " << (ends[2] - ends[0]).dot(v)
+             << "); unit normal " << coordinates(grid.steps.col(2)) << "; x y z: position (bohr)";
+        description.push_back(axes.str());
+    }
+
+    const Table table(selection, is_line ? std::vector<std::string>{"t", "x", "y", "z"}
+                                         : std::vector<std::string>{"u", "v", "x", "y", "z"});
+    console.begin(sampling_summary(selection, nu * nv));
+    const auto results = chem::kumo::Evaluator(mol, evaluation_options(selection, o, console))
+                             .evaluate(grid, table.request());
+    console.end("Evaluated in");
+
+    const auto filename = o.prefix + (is_line ? "_line.dat" : "_plane.dat");
+    std::ofstream out(filename);
+    if (!out) throw std::runtime_error("cannot write " + filename);
+    table.header(out, description, results.backend_used(), o.esp_tolerance);
+    const auto values = table.columns(results);
+    for (std::size_t i = 0; i < nu; ++i) {
+        if (i > 0 && !is_line) out << "\n";
+        for (std::size_t j = 0; j < nv; ++j) {
+            const Eigen::Vector3d r = grid.origin + grid.steps.col(0) * static_cast<double>(i) +
+                                      grid.steps.col(1) * static_cast<double>(j);
+            const Eigen::Vector3d d = r - ends[0];
+            std::vector<double> coordinates_row;
+            if (is_line)
+                coordinates_row = {d.dot(u), r.x(), r.y(), r.z()};
+            else
+                coordinates_row = {d.dot(u), d.dot(v), r.x(), r.y(), r.z()};
+            Table::row(out, coordinates_row, Table::at(values, i * nv + j));
+        }
+    }
+    out.flush();
+    if (!out) throw std::runtime_error("write failed: " + filename);
+    std::cout << filename << "\n";
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -882,6 +1218,15 @@ int main(int argc, char** argv) {
             console.finish();
             return 0;
         }
+        if (!o.points.empty() || !o.line.empty() || !o.plane.empty()) {
+            const auto selection = select_density(o, mol, console);
+            if (!o.points.empty())
+                print_points(mol, o, selection, console);
+            else
+                write_profile(mol, o, selection, console);
+            console.finish();
+            return 0;
+        }
         const auto grid = chem::kumo::Grid::around(mol.atoms(), o.margin, o.spacing);
         console.say(grid_summary(grid, o));
         if (o.mo_mode) {
@@ -892,28 +1237,9 @@ int main(int argc, char** argv) {
             if (o.spin == "beta" || o.spin == "both")
                 write_orbitals(mol, grid, o, Spin::Beta, console);
         } else {
-            const auto spin = o.spin.empty() ? "total" : o.spin;
-            std::vector<std::pair<Spin, std::string>> components;
-            if (spin == "total" || spin == "all") components.emplace_back(Spin::Total, "density");
-            if (spin == "alpha" || spin == "all") components.emplace_back(Spin::Alpha, "alpha");
-            if (spin == "beta" || spin == "all") components.emplace_back(Spin::Beta, "beta");
-            if (spin == "difference" || spin == "all")
-                components.emplace_back(Spin::Difference, "spin");
-            if (components.empty())
-                throw std::invalid_argument(
-                    "density --spin must be total, alpha, beta, difference, or all");
-            const auto properties =
-                select_properties(o.properties.empty() ? "density" : o.properties);
-            check_components(components, properties);
-            if (o.esp_tolerance_set &&
-                std::none_of(properties.begin(), properties.end(), [](const DensityProperty& p) {
-                    return p.kind == PropertyKind::ElectrostaticPotential;
-                }))
-                throw std::invalid_argument("--esp-tolerance applies only to --property esp");
-            const auto backend = select_backend(o.backend, mol);
-            console.say(backend_summary(backend, mol));
-            write_density_properties(mol, grid, components, properties, backend, o.esp_tolerance,
-                                     o.prefix, console);
+            const auto selection = select_density(o, mol, console);
+            write_density_properties(mol, grid, selection.components, selection.properties,
+                                     selection.backend, o.esp_tolerance, o.prefix, console);
         }
         console.finish();
         return 0;
