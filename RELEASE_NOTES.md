@@ -1,3 +1,59 @@
+# chem-kumo 1.9.1 — release notes
+
+A maintenance release after a code and documentation audit. There are no
+API or CLI changes, and results are identical to 1.9.0: every Cube file of
+a 90-file regression set (densities, derivatives, orbitals, derived
+properties and the electrostatic potential, serial and OpenMP) is
+byte-identical. Public headers changed only in comments and a private
+member, so rebuild code that links against libkumo.
+
+Fixes:
+
+- `Field::write_cube`, which the CLI uses, now throws
+  `std::invalid_argument` for NaN or infinite samples instead of writing a
+  Cube file that `read_cube()` and other readers reject, as
+  `write_cube(CubeData)` already did.
+
+Documentation:
+
+- `docs/API.md` has new sections on the Evaluator (requests, results,
+  options, lifetime, errors, determinism), Cube input and output and the
+  auxiliary numerical APIs, and an updated list of errors and limitations.
+- `docs/OPENMP.md` describes the derived properties and the electrostatic
+  potential pass.
+- The mathematics document (`docs/mathematics/`) covers AO screening and
+  the shell cutoff bound, ELF, the reduced gradient, sign(lambda2) rho and
+  the electrostatic potential (Hermite expansion, Boys function, far-field
+  bounds and error budget).
+- Public headers document the types, members and functions that had no
+  comment.
+
+Internal changes:
+
+- Shared helpers replace duplicated code: one parallel loop over blocks,
+  the normalized AO blocks of a basis, the density-derivative contraction
+  kernel, grid point indexing, and smaller pieces of the orbital, backend
+  choice and Cube I/O code. The electrostatic potential far-field code is
+  split into planning and evaluation helpers.
+
+Validation:
+
+- Every test failure now reports what was expected, through
+  `tests/test_support.hpp`.
+- The parallel density, derivative and orbital tests require results
+  identical to the single-thread run, bit for bit, at 2 and 4 threads with
+  the same block size.
+- CI compiles the benchmarks (`-Dbenchmarks=true`), so an API change cannot
+  leave them broken, and the HBC electrostatic potential test has a 300 s
+  timeout for slower hosted runners.
+- 78/78 Meson tests passed on macOS ARM64 on 2026-11-13 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings. CI builds and tests on ubuntu-latest
+  and macos-latest, and runs the suite under AddressSanitizer and
+  UndefinedBehaviorSanitizer without the `slow` suite.
+
+---
+
 # chem-kumo 1.9.0 — release notes
 
 The Evaluator and the `kumo` CLI compute the molecular electrostatic
