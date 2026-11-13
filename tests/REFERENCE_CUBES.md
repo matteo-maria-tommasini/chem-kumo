@@ -158,6 +158,17 @@ times the largest observed differences, are:
 The test reports each largest difference as a fraction of its tolerance; it
 is at most 0.41.
 
+### Lines and planes (test `line-plane`)
+
+The test `line-plane` reuses `h2o_lol.cube.gz` and `h2o_elf.cube.gz`, with
+no new files. `Grid::line` and `Grid::plane` are built from corner points of
+the Cube grid, with margin 0 and the Cube spacing (0.3 bohr), so that they
+pass through its points: the line is the row j = 10, k = 10 (30 points
+along x) and the plane the slice j = 10 (y = 0, the molecular plane; 30 x
+24 points). The points agree with the Cube points to 1e-12 bohr, and LOL
+and ELF with the Multiwfn values within the 2e-5 relative tolerance used
+above; the largest difference is 0.24 of it.
+
 ## Multiwfn references for the ESP surface analysis
 
 `tests/data/multiwfn/` also contains the output of Multiwfn's quantitative
