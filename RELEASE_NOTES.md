@@ -1,3 +1,69 @@
+# chem-kumo 1.12.0 — release notes
+
+The library and the `kumo` CLI compute nine more real-space fields derived
+from the electron density, with Multiwfn's definitions: the localized
+orbital locator (LOL), the interaction region indicator (IRI), the density
+overlap regions indicator (DORI), the kinetic, potential and total energy
+densities K, V and H, the spin polarization and the Shannon and Fisher
+information densities. The public API is extended in a source-compatible
+way; existing outputs are unchanged.
+
+Library changes (`<chem/kumo/evaluator.hpp>`):
+
+- New `PropertyKind` values with `DensityDescriptor` helpers: `Lol`
+  (`lol()`), `InteractionRegionIndicator`, `DensityOverlapRegionsIndicator`,
+  `HamiltonianKineticEnergy`, `PotentialEnergyDensity`, `EnergyDensity`,
+  `SpinPolarization`, `ShannonEntropyDensity`, `FisherInformationDensity`.
+- LOL = t / (1 + t), t = D0 / tau, for Total, Alpha or Beta; the total LOL
+  sums tau and D0 over both channels, as the total ELF does.
+- IRI = |grad rho| / rho^1.1, capped at `interaction_region_indicator_cap`
+  (100); DORI = theta / (1 + theta), computed from q = grad rho / rho without
+  dependence on the scale of rho.
+- K = tau - lap rho / 4 (any component), V = lap rho / 4 - 2 tau and
+  H = lap rho / 4 - tau = -K (Total).
+- zeta = rho_spin / rho (Spin component), -rho ln rho and |grad rho|^2 / rho
+  (Total).
+- Edge values are documented (no density, critical points, tau = 0), and
+  `Evaluator::evaluate` throws `std::invalid_argument` for a component a
+  field is not defined for. Results do not depend on the number of OpenMP
+  threads.
+
+CLI changes:
+
+- `--property` accepts `lol`, `iri`, `dori`, `kinetic-k`,
+  `potential-energy`, `energy-density`, `spin-polarization`, `shannon` and
+  `fisher`, each written to its own Cube file with a descriptive comment.
+- Combinations a field is not defined for (for example `iri` with
+  `--spin alpha`, `lol` with `--spin difference`, `spin-polarization`
+  without it) are rejected, and an unknown property name lists the valid
+  ones.
+
+Validation:
+
+- The new test `density-fields` checks each field against its formula
+  applied to the Evaluator's own value, gradient, Hessian, Laplacian and
+  tau to 1e-13 (DORI 1e-12) for water, O2 and acrolein; K against the
+  orbital form -(1/2) sum_i psi_i lap psi_i to about 1e-13; DORI against
+  central finite differences to about 1e-7; closed-shell limits, ranges,
+  thread independence, far-field values and rejected components.
+- The test `multiwfn-reference` compares new Multiwfn 2026.9.1 Cube files
+  of water (LOL, IRI, DORI, K, V, H, Shannon, Fisher) and O2 (LOL, K, spin
+  polarization) point by point, with tolerances of 2e-5 to 1e-4 chosen per
+  field and documented in `tests/REFERENCE_CUBES.md`; the largest
+  difference is 41% of its tolerance. No existing tolerance was changed.
+- `cli-end-to-end` checks the ranges of LOL, DORI, IRI and zeta, H = -K,
+  and the rejected combinations.
+- 81/81 Meson tests passed on macOS ARM64 on 2026-11-13 with MacPorts
+  Clang 22 (serial and OpenMP) and GCC 15 (serial and OpenMP release
+  builds), all four without warnings. CI builds and tests on ubuntu-latest
+  and macos-latest, and runs the suite under AddressSanitizer and
+  UndefinedBehaviorSanitizer without the `slow` suite.
+
+Documentation: `docs/API.md`, the README and the mathematics document
+describe the new fields and their edge values.
+
+---
+
 # chem-kumo 1.11.0 — release notes
 
 The library and the `kumo` CLI compute the average local ionization energy
