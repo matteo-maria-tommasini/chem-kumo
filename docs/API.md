@@ -21,6 +21,36 @@ regular grid around the atomic bounding box. `Grid::origin` is the first
 point; `Grid::steps.col(k)` is the increment along grid axis `k`;
 `Grid::counts` gives the point count along each axis.
 
+A grid need not be axis-aligned or three-dimensional: an axis with one point
+gives a plane, two give a line. Two constructors build them (1.13.0):
+
+- `Grid::line(start, end, margin_bohr, spacing_bohr)`: points on the line
+  through `start` and `end`, from `margin_bohr` before `start` to
+  `margin_bohr` after `end`, evenly spaced with both ends included; the
+  fewest points (at least 2) whose spacing does not exceed `spacing_bohr`.
+  Counts are (n, 1, 1); the first axis runs from start to end and the other
+  two are orthogonal unit vectors.
+- `Grid::plane(a, b, c, margin_bohr, spacing_bohr)`: a rectangle in the
+  plane of three points. The first axis runs along b - a, the second
+  perpendicular to it towards c, and the third is the unit normal u x v,
+  with one point. The rectangle covers the three points enlarged by
+  `margin_bohr` on every side, edges included, with the fewest points along
+  each axis whose spacing does not exceed `spacing_bohr`. Counts are
+  (nu, nv, 1), so values are stored with v fastest.
+
+Both throw `std::invalid_argument` for nonfinite points, coincident ends or
+(nearly) collinear points, a negative or nonfinite margin, a nonpositive
+spacing, or more points than an `int` count holds. A length that is a
+multiple of the spacing up to rounding keeps that multiple, so a line or
+plane through points of another regular grid reproduces them. Every
+`Evaluator` property can be evaluated on these grids (for a single point,
+use a `Grid` with `origin` at the point and the default steps and counts);
+`read_cube()` and `FieldSampler` need at least two points per axis. The test
+`line-plane` checks the geometry, agreement with point-by-point evaluation
+(1e-12, and 2e-8 for the electrostatic potential), and LOL and ELF on a
+line and a plane through the points of the Multiwfn water Cube files
+(largest difference 24% of the 2e-5 relative tolerance).
+
 `Field::operator()(i,j,k)` accesses a sampled value. `Field::values()`
 provides a read-only contiguous view. `write_cube(path)` writes scalar fields;
 `write_orbital_cube(path, orbital_index)` writes a Gaussian-style orbital
