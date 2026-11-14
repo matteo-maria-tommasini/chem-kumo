@@ -1,4 +1,4 @@
-# chem-kumo 2.0.0
+# chem-kumo 2.0.1
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -379,7 +379,7 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 2.0.0 release registers **83 Meson tests**, all passing in the
+The 2.0.1 release registers **83 Meson tests**, all passing in the
 serial and OpenMP builds reported on macOS ARM64 on 2026-11-14, with both
 Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
 AddressSanitizer and UndefinedBehaviorSanitizer (except the three HBC cases

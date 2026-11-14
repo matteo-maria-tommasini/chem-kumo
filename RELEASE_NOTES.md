@@ -1,3 +1,25 @@
+# chem-kumo 2.0.1 — release notes
+
+A bug-fix release. Results and the public API are unchanged from 2.0.0;
+apart from the version in the first line of Cube files, every CLI output
+is byte-identical.
+
+Fix:
+
+- On machines with more OpenMP threads than blocks of points, the blocked
+  evaluation loops allocated a workspace (the AO and product matrices of a
+  block) in every thread, including threads that got no block. This wasted
+  memory, which grows with the basis size, and made the `parallel-blocks`
+  test fail with 176 threads ("made 176 for 63 blocks"). A thread now
+  allocates its workspace when it gets its first block. The behaviour went
+  back to 1.x; the test added in 1.13.1 exposed it.
+
+Tests:
+
+- `parallel-blocks` also checks 2 blocks and 0 blocks, which expose the
+  old behaviour with any number of threads above the number of blocks. The
+  whole OpenMP suite was run with `OMP_NUM_THREADS=176`.
+
 # chem-kumo 2.0.0 — release notes
 
 A new major version with a cleaner public API. libkumo had no external
