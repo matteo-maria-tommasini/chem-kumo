@@ -105,7 +105,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     std::vector<DensityDerivatives> result(count);
 
     struct Workspace {
-        Eigen::MatrixXd ao; // value, x, y, z, then the AO Hessian (xx, yy, zz, xy, xz, yz)
+        Eigen::MatrixXd ao; // value, x, y, z, then the AO Hessian (xx, xy, xz, yy, yz, zz)
         Eigen::MatrixXd product;
         Eigen::MatrixXd ao_kept, p_kept;
     };
@@ -266,8 +266,8 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
     // Closed shell: the beta occupied orbitals are the alpha ones, so the
     // beta projection and contraction would repeat the alpha ones exactly.
     const bool beta_is_alpha = need_a && need_b && !unrestricted_ && nalpha_ == nbeta_;
-    // AO panels: value, then x, y, z and the AO Hessian (xx, yy, zz, xy, xz,
-    // yz) as far as ao_order requires.
+    // AO panels: value, then x, y, z and the AO Hessian (xx, xy, xz, yy, yz,
+    // zz) as far as ao_order requires.
     const int panels = ao_order == 0 ? 1 : BasisEvaluator::derivative_panel_count(ao_order);
     using Projection = std::array<Eigen::MatrixXd, 10>;
     // Each spin channel is projected once per block onto its occupied MOs:

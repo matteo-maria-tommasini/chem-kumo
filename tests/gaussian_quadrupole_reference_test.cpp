@@ -25,14 +25,18 @@ int check(const std::string& path) {
     const Eigen::MatrixXd P = mol.density_matrix(DensityComponent::Total);
     if (P.rows() != moments.overlap.rows() || P.cols() != moments.overlap.cols())
         throw std::runtime_error("P / AO dimension mismatch");
+    // Gaussian orders the quadrupole xx, yy, zz, xy, xz, yz; kumo's second
+    // moments are xx, xy, xz, yy, yz, zz (kumo_index maps the first to the
+    // second).
     constexpr int iidx[6] = {0, 1, 2, 0, 0, 1};
     constexpr int jidx[6] = {0, 1, 2, 1, 2, 2};
+    constexpr int kumo_index[6] = {0, 3, 5, 1, 2, 4};
     std::array<double, 6> primitive{};
     for (int k = 0; k < 6; ++k) {
         double nuclear = 0;
         for (const auto& atom : mol.atoms())
             nuclear += atom.nuclear_charge * atom.position[iidx[k]] * atom.position[jidx[k]];
-        primitive[k] = nuclear - (P.cwiseProduct(moments.second[k])).sum();
+        primitive[k] = nuclear - (P.cwiseProduct(moments.second[kumo_index[k]])).sum();
     }
     const double tr = primitive[0] + primitive[1] + primitive[2];
     std::array<double, 6> gaussian{};

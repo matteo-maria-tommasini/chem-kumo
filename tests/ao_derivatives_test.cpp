@@ -34,7 +34,9 @@ int main(int argc, char** argv) {
                     max_first =
                         std::max(max_first, (fd1 - exact.gradient.col(a)).cwiseAbs().maxCoeff());
                     for (int b = a; b < 3; ++b) {
-                        const int component = (a == b) ? a : (a == 0 ? (b == 1 ? 3 : 4) : 5);
+                        // AODerivatives::hessian columns: xx, xy, xz, yy, yz, zz.
+                        constexpr int column[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
+                        const int component = column[a][b];
                         const auto fd2 = (plus.gradient.col(b) - minus.gradient.col(b)) / (2 * h);
                         max_second = std::max(
                             max_second, (fd2 - exact.hessian.col(component)).cwiseAbs().maxCoeff());

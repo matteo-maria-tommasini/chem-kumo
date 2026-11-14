@@ -322,12 +322,14 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
                             const double weight =
                                 A.primitive_weights(i, static_cast<Eigen::Index>(p)) *
                                 B.primitive_weights(j, static_cast<Eigen::Index>(q));
+                            // Overlap, first moments x, y, z, second moments
+                            // xx, xy, xz, yy, yz, zz.
                             const double values[10] = {
                                 v[0][0] * v[1][0] * v[2][0], v[0][1] * v[1][0] * v[2][0],
                                 v[0][0] * v[1][1] * v[2][0], v[0][0] * v[1][0] * v[2][1],
-                                v[0][2] * v[1][0] * v[2][0], v[0][0] * v[1][2] * v[2][0],
-                                v[0][0] * v[1][0] * v[2][2], v[0][1] * v[1][1] * v[2][0],
-                                v[0][1] * v[1][0] * v[2][1], v[0][0] * v[1][1] * v[2][1]};
+                                v[0][2] * v[1][0] * v[2][0], v[0][1] * v[1][1] * v[2][0],
+                                v[0][1] * v[1][0] * v[2][1], v[0][0] * v[1][2] * v[2][0],
+                                v[0][0] * v[1][1] * v[2][1], v[0][0] * v[1][0] * v[2][2]};
                             for (int k = 0; k < 10; ++k)
                                 sums[k] += weight * values[k];
                         }
@@ -609,12 +611,13 @@ void BasisEvaluator::evaluate_derivatives_batch(
                     sums[2] += weight * fx[0] * fy[1] * fz[0];
                     sums[3] += weight * fx[0] * fy[0] * fz[1];
                     if (order == 2) {
+                        // Hessian xx, xy, xz, yy, yz, zz.
                         sums[4] += weight * fx[2] * fy[0] * fz[0];
-                        sums[5] += weight * fx[0] * fy[2] * fz[0];
-                        sums[6] += weight * fx[0] * fy[0] * fz[2];
-                        sums[7] += weight * fx[1] * fy[1] * fz[0];
-                        sums[8] += weight * fx[1] * fy[0] * fz[1];
-                        sums[9] += weight * fx[0] * fy[1] * fz[1];
+                        sums[5] += weight * fx[1] * fy[1] * fz[0];
+                        sums[6] += weight * fx[1] * fy[0] * fz[1];
+                        sums[7] += weight * fx[0] * fy[2] * fz[0];
+                        sums[8] += weight * fx[0] * fy[1] * fz[1];
+                        sums[9] += weight * fx[0] * fy[0] * fz[2];
                     }
                 }
                 for (int c = 0; c < panels; ++c)

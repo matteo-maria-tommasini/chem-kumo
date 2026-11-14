@@ -97,9 +97,9 @@ void far_field(const std::string& label, const BasisSet& basis, const Molecule& 
     Eigen::Vector3d dipole;
     for (int a = 0; a < 3; ++a)
         dipole[a] = (P.array() * moments.first[static_cast<std::size_t>(a)].array()).sum();
-    // second: xx, yy, zz, xy, xz, yz
+    // second: xx, xy, xz, yy, yz, zz
     Eigen::Matrix3d second;
-    const int map[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+    const int map[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
     for (int a = 0; a < 3; ++a)
         for (int b = 0; b < 3; ++b)
             second(a, b) =
