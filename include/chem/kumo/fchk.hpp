@@ -8,8 +8,10 @@
 
 namespace chem::kumo {
 
-/// Typed reader for named records in a Gaussian formatted checkpoint file.
-/// Missing records or mismatched types are errors; no binary CHK support.
+/// Reader of the named records (scalars and arrays, integer or real) of a
+/// Gaussian formatted checkpoint file (FCHK). Asking for a missing record or
+/// for a record of another type is an error. Binary checkpoint files (.chk)
+/// are not supported.
 class FormattedCheckpoint {
 public:
     /// Read and parse a plain or gzip-compressed FCHK (detected from its
@@ -19,8 +21,9 @@ public:
 
     /// Whether a record with this exact label exists.
     [[nodiscard]] bool contains(const std::string& label) const;
-    /// Typed accessors. Each throws std::runtime_error if the record is
-    /// missing or has another type (scalar or array, integer or real).
+    /// Value of an integer scalar, real scalar, integer array or real array
+    /// record. Each throws std::runtime_error if the record is missing or
+    /// has another type (scalar or array, integer or real).
     [[nodiscard]] long long integer(const std::string& label) const;
     [[nodiscard]] double real(const std::string& label) const;
     [[nodiscard]] const std::vector<long long>& integers(const std::string& label) const;

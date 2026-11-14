@@ -514,12 +514,14 @@ hardness are
  \mathrm{EA}_L(\mathbf r)=-\frac{\sum_{i\in\mathrm{vir}}\varepsilon_i|\psi_i(\mathbf r)|^2}
  {\sum_{i\in\mathrm{vir}}|\psi_i(\mathbf r)|^2},\qquad
  E_{\mathrm{att}}(\mathbf r)=\frac{\sum_{i\in\mathrm{vir},\,\varepsilon_i<0}
- n_i\varepsilon_i|\psi_i(\mathbf r)|^2}{\rho(\mathbf r)},\\
+ w\,\varepsilon_i|\psi_i(\mathbf r)|^2}{\rho(\mathbf r)},\\
  \chi_L=\tfrac12(\bar I+\mathrm{EA}_L),\qquad \eta_L=\tfrac12(\bar I-\mathrm{EA}_L),
 \end{gather}
 where the virtual orbitals are the MOs of the file above the occupied ones
-in each channel, and $n_i=2$ for a restricted and $n_i=1$ for an
-unrestricted calculation (the weight would cancel in $\mathrm{EA}_L$).
+in each channel. The virtual orbitals are empty, so the weight $w$ is not
+an occupation: it counts the spin orbitals of a spatial orbital, $w=2$ for
+a restricted and $w=1$ for an unrestricted calculation (such a weight would
+cancel in $\mathrm{EA}_L$).
 $\chi_L$ and $\eta_L$ are local analogues of Mulliken's electronegativity
 $(I+A)/2$ and of the chemical hardness $(I-A)/2$.
 
@@ -585,8 +587,8 @@ electronic potential is $-\sum_{tuv}c_{tuv}R_{tuv}(p,\mathbf Q-\mathbf r)$.
 
 \subsection{Boys function}
 The Boys function $F_m(T)=\int_0^1t^{2m}e^{-Tt^2}\,dt$ is needed for
-$m\le32$. For $T<40$ the highest order needed is computed by a
-seventh-order Taylor expansion about the nearest point of a table with
+$m\le32$. For $T<40$ the highest order needed is computed by a Taylor
+polynomial of degree six (seven terms) about the nearest point of a table with
 spacing 0.05, using $dF_m/dT=-F_{m+1}$; the table is built from the series
 of positive terms
 $F_M(T)=e^{-T}\sum_{k\ge0}(2T)^k/[(2M+1)(2M+3)\cdots(2M+2k+1)]$. Lower

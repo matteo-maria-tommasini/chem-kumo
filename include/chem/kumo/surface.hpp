@@ -33,7 +33,8 @@ struct TriangleMesh {
     [[nodiscard]] double volume() const;
 };
 
-/// Statistics of a function V on a surface (Politzer and Murray), from the
+/// Statistics of a function V on a surface, as defined by Politzer and
+/// Murray for the electrostatic potential, computed from the
 /// piecewise-linear interpolation of its vertex values over the triangles:
 /// integrals are exact for that interpolation, and the positive and negative
 /// regions are bounded by its zero line, which may cross triangles. Values
@@ -50,10 +51,10 @@ struct SurfaceStatistics {
     std::size_t minimum_vertex = 0; ///< vertex of the minimum
     std::size_t maximum_vertex = 0; ///< vertex of the maximum
     double average = 0.0;           ///< (1/A) integral V
-    double positive_average = 0.0;  ///< over A+; NaN if A+ = 0
-    double negative_average = 0.0;  ///< over A-; NaN if A- = 0
-    double positive_variance = 0.0; ///< sigma^2_+ over A+; 0 if A+ = 0
-    double negative_variance = 0.0; ///< sigma^2_- over A-; 0 if A- = 0
+    double positive_average = 0.0;  ///< average over A+; NaN if A+ = 0
+    double negative_average = 0.0;  ///< average over A-; NaN if A- = 0
+    double positive_variance = 0.0; ///< sigma^2_+, about the A+ average; 0 if A+ = 0
+    double negative_variance = 0.0; ///< sigma^2_-, about the A- average; 0 if A- = 0
     double total_variance = 0.0;    ///< sigma^2_tot = sigma^2_+ + sigma^2_-
     /// Balance of charges nu = sigma^2_+ sigma^2_- / (sigma^2_tot)^2, in
     /// [0, 1/4]; NaN if sigma^2_tot = 0.
@@ -63,39 +64,44 @@ struct SurfaceStatistics {
     /// Molecular polarity index MPI = (1/A) integral |V|.
     double polarity_index = 0.0;
 
-    /// Surface local minima and maxima: vertices whose value is below
-    /// (above) that of every neighbour and every neighbour of a neighbour.
-    /// Minima are sorted by increasing value, maxima by decreasing value.
+    /// Surface local minima and maxima (vertex indices): vertices whose
+    /// value is below (for minima) or above (for maxima) that of every
+    /// vertex sharing a triangle edge with them and of every neighbour of
+    /// those. Minima are sorted by increasing value, maxima by decreasing
+    /// value.
     std::vector<std::size_t> local_minima;
     std::vector<std::size_t> local_maxima;
 };
 
 /// Statistics of the vertex values `values` (one per mesh vertex) on `mesh`.
-/// `polar_threshold` (default 10 kcal/mol in hartree) bounds the nonpolar
-/// area. Throws std::invalid_argument if the sizes differ, a value or the
+/// `polar_threshold`, in the unit of the values (default 10 kcal/mol
+/// expressed in hartree), defines the nonpolar area, where |V| <= threshold.
+/// Throws std::invalid_argument if the sizes differ, a value or the
 /// threshold is not finite, the threshold is negative, a triangle refers to
 /// a missing vertex, or the area is zero.
 [[nodiscard]] SurfaceStatistics
 surface_statistics(const TriangleMesh& mesh, std::span<const double> values,
                    double polar_threshold = 10.0 / hartree_in_kcal_per_mol);
 
-/// Smallest density isovalue accepted, e/bohr^3. The AO cutoff
-/// (BasisEvaluator::ao_cutoff) changes the density by up to about 1e-13
-/// e/bohr^3, which would move lower isosurfaces noticeably.
+/// Smallest density isovalue accepted, e/bohr^3. Leaving negligible atomic
+/// orbitals out of the density (BasisEvaluator::ao_cutoff and
+/// default_screening_threshold) changes it by up to about 1e-13 e/bohr^3,
+/// which would move isosurfaces of much lower density noticeably.
 inline constexpr double minimum_density_isovalue = 1e-8;
 
 /// Isosurface rho(r) = isovalue (e/bohr^3) of the total electron density.
 ///
 /// The density is evaluated on an axis-aligned grid of the given spacing
-/// (bohr) around the atoms, whose margin grows from 4 bohr until the grid
-/// boundary lies outside the isosurface. The grid is split into
-/// tetrahedra (six per cube, around its main diagonal), and the surface
-/// crosses each edge whose ends lie on either side of the isovalue. Each such
-/// vertex is then placed on the analytic isosurface itself, to 1e-10 bohr
-/// along its edge (Newton steps safeguarded by bisection). Throws
+/// (bohr) around the atoms (Grid::around), whose margin grows from 4 bohr in
+/// steps of 2 bohr until the isosurface does not reach the grid boundary.
+/// Each grid cube is split into six tetrahedra around its main diagonal
+/// (marching tetrahedra), and the surface has a vertex on each tetrahedron
+/// edge whose ends lie on opposite sides of the isovalue. Each vertex is
+/// then moved along its edge onto the isosurface of the exactly computed
+/// density, to 1e-10 bohr (Newton steps safeguarded by bisection). Throws
 /// std::invalid_argument for an isovalue below minimum_density_isovalue or
 /// not finite, or a nonpositive or nonfinite spacing; std::runtime_error if
-/// the isosurface extends 16 bohr beyond the atoms.
+/// the isosurface extends more than 16 bohr beyond the atoms.
 [[nodiscard]] TriangleMesh density_isosurface(const Molecule& molecule, double isovalue = 1e-3,
                                               double spacing = 0.25);
 
@@ -116,9 +122,11 @@ struct PotentialSurface {
 };
 
 /// Molecular electrostatic potential (as density::total.electrostatic_potential())
-/// on the total-density isosurface of density_isosurface(), with its surface
-/// statistics. The result does not depend on the number of OpenMP threads.
-/// Throws std::invalid_argument for invalid options.
+/// at the vertices of the total-density isosurface of density_isosurface(),
+/// with its surface statistics (polar threshold 10 kcal/mol). The result
+/// does not depend on the number of OpenMP threads. Throws
+/// std::invalid_argument for a negative or nonfinite potential_tolerance,
+/// and as density_isosurface().
 [[nodiscard]] PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
                                                                const SurfaceOptions& options = {});
 
@@ -129,13 +137,15 @@ struct PotentialSurface {
 ///
 /// over the occupied SCF orbitals phi_i, with energies e_i and occupations
 /// n_i (2 for the doubly occupied orbitals of a restricted calculation,
-/// otherwise 1), as in Multiwfn. The denominator is the density of the
-/// occupied orbitals, which equals the FCHK total density to within the
-/// precision of the FCHK matrices (ElectronicStructureInfo). The result does
-/// not depend on the number of OpenMP threads.
+/// otherwise 1), as in the Multiwfn program. The denominator is the density
+/// of the occupied orbitals, which equals the total density of the FCHK
+/// (Gaussian formatted checkpoint file) to within the precision of its
+/// density matrices (see ElectronicStructureInfo). The result does not
+/// depend on the number of OpenMP threads.
 ///
 /// Throws std::invalid_argument if a point is not finite, the FCHK has no
-/// orbital energies, its occupied MOs do not reproduce its density matrices
+/// orbital energies, its occupied molecular orbitals (MOs) do not reproduce
+/// its density matrices
 /// (ElectronicStructureInfo::ao_mo_eligible(); for example a post-SCF
 /// density), or the density vanishes at a point.
 [[nodiscard]] std::vector<double> average_local_ionization_energy(
@@ -146,10 +156,11 @@ struct PotentialSurface {
 struct IonizationEnergySurface {
     TriangleMesh mesh;
     std::vector<double> ionization_energy; ///< per vertex, hartree
-    /// Statistics of the ionization energy. It is positive, so A+ = A, the
-    /// positive average is the average and sigma^2_+ = sigma^2_tot is the
-    /// variance about it (Multiwfn's "Variance"); the negative quantities,
-    /// nu, the nonpolar area and MPI carry no information.
+    /// Statistics of the ionization energy. It is positive everywhere, so
+    /// A+ = A, the positive average is the average, and sigma^2_+ =
+    /// sigma^2_tot is the variance about it (Multiwfn's "Variance"); the
+    /// quantities of the negative region, the balance nu, the nonpolar area
+    /// and the polarity index MPI carry no information.
     SurfaceStatistics statistics;
 };
 
@@ -173,9 +184,10 @@ struct MappedSurface {
 /// Evaluate `properties` (one-component Evaluator properties: not Gradient
 /// or Hessian) with Evaluator::evaluate(points) at the vertices of
 /// density_isosurface(molecule, isovalue, spacing), and the statistics of
-/// each on the surface (surface_statistics() with polar threshold 0). The
-/// electrostatic potential is evaluated as at any points, so its values
-/// differ from electrostatic_potential_surface() within the tolerance. The
+/// each on the surface (surface_statistics() with polar threshold 0). A
+/// property listed twice is evaluated once. The electrostatic potential is
+/// evaluated as at any other points, so its values can differ from those of
+/// electrostatic_potential_surface() (both are within the tolerance). The
 /// result does not depend on the number of OpenMP threads. Throws
 /// std::invalid_argument for no properties, a multi-component property, and
 /// as density_isosurface() and Evaluator::evaluate().
@@ -191,7 +203,7 @@ struct MappedSurface {
 /// z and each other; comments must not contain line breaks. Throws
 /// std::invalid_argument for invalid names or comments, a wrong number of
 /// values or a nonfinite one, and std::runtime_error if the file cannot be
-/// written. Values are written with 10 significant digits.
+/// written. Vertices and values are written with 10 significant digits.
 void write_ply(const std::filesystem::path& path, const TriangleMesh& mesh,
                const std::vector<std::pair<std::string, std::vector<double>>>& fields,
                const std::vector<std::string>& comments = {});

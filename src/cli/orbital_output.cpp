@@ -15,6 +15,8 @@ using chem::kumo::Molecule;
 using chem::kumo::Spin;
 
 namespace {
+// A positive decimal integer (an orbital index or offset); throws
+// std::invalid_argument otherwise.
 std::size_t number(const std::string& s) {
     if (s.empty() ||
         !std::all_of(s.begin(), s.end(), [](unsigned char c) { return std::isdigit(c); }))
@@ -26,7 +28,9 @@ std::size_t number(const std::string& s) {
     return static_cast<std::size_t>(value);
 }
 
-// Resolve an absolute MO index or a HOMO/LUMO-relative index (1-based).
+// One end of an MO selector, as a 1-based MO index of `channel`: a number,
+// or homo (highest occupied MO) or lumo (lowest unoccupied MO), optionally
+// followed by +K or -K.
 std::size_t endpoint(const std::string& s, const Molecule& mol, Spin channel) {
     if (s.empty()) throw std::invalid_argument("empty orbital selector");
     if (std::isdigit(static_cast<unsigned char>(s[0]))) return number(s);
@@ -52,7 +56,9 @@ std::size_t endpoint(const std::string& s, const Molecule& mol, Spin channel) {
     return base - step;
 }
 
-// Expand inclusive ranges and de-duplicate MO selections in user order.
+// The 1-based MO indices of a --mo selector: comma-separated items, each an
+// end as above or an inclusive range FIRST:LAST of two ends; "frontier"
+// means homo,lumo. Repeated indices are dropped and the order given is kept.
 std::vector<std::size_t> select_mos(const std::string& selector, const Molecule& mol,
                                     Spin channel) {
     std::vector<std::size_t> result;
@@ -84,6 +90,7 @@ std::string spin_name(Spin s) {
     return s == Spin::Alpha ? "alpha" : "beta";
 }
 
+// The --list-mo table of one channel: index, occupation, energy, HOMO/LUMO.
 void list_mos(const Molecule& mol, Spin channel) {
     const auto count = mol.orbital_count(channel);
     const auto& energies = mol.orbital_energies(channel);
@@ -107,6 +114,8 @@ void list_mos(const Molecule& mol, Spin channel) {
     }
 }
 
+// Evaluate the selected MOs of one channel and write one Cube file each,
+// PREFIX_<alpha|beta>_mo_<index>.cube.
 void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Options& o,
                     Spin channel, Console& console) {
     const auto indices = select_mos(o.selector, mol, channel);

@@ -48,8 +48,9 @@ void report_areas(const chem::kumo::TriangleMesh& mesh, double total,
         << "\n";
 }
 
-// Local extrema table: value in hartree(/e) and in `unit` (`factor` per
-// hartree), position in Angstrom.
+// Local extrema table: the value in atomic units (column title `hartree`,
+// for example hartree/e) and in `unit` (`factor` units per atomic unit), and
+// the position in Angstrom.
 void report_extrema(const std::string& name, const std::vector<std::size_t>& vertices,
                     const chem::kumo::TriangleMesh& mesh, const std::vector<double>& values,
                     const std::string& hartree, const std::string& unit, double factor) {
@@ -67,8 +68,9 @@ void report_extrema(const std::string& name, const std::vector<std::size_t>& ver
     }
 }
 
-// --ply: PREFIX_surface.ply with the surface and one vertex property per
-// field (name, description, values); the file name follows the report.
+// --ply: write PREFIX_surface.ply with the surface and one vertex property
+// per field (name, values); `descriptions` (name, description) become PLY
+// comments. The file name is printed after the report.
 void write_surface_ply(const Options& o, const chem::kumo::TriangleMesh& mesh,
                        const std::vector<std::pair<std::string, std::string>>& descriptions,
                        std::vector<std::pair<std::string, std::vector<double>>> fields) {
@@ -186,8 +188,9 @@ void report_alie_surface(const Molecule& mol, const Options& o, Console& console
                           {{"alie", surface.ionization_energy}});
 }
 
-// Then (with --ply) the surface file. At most `listed` local extrema of each
-// kind are printed.
+// The report prints the surface area, then for each property its
+// statistics, positive and negative areas and local extrema (at most
+// `listed` of each kind); with --ply the surface file is written last.
 void report_surface_map(const Molecule& mol, const Options& o, const DensitySelection& selection,
                         Console& console) {
     constexpr std::size_t listed = 20;

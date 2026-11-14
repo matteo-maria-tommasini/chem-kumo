@@ -7,7 +7,8 @@
 
 namespace chem::kumo {
 
-/// Volume of a cell in the affine grid (bohr^3).
+/// Volume of one grid cell, |det(steps)| in bohr^3. Throws
+/// std::invalid_argument if it is zero or not finite.
 [[nodiscard]] inline double grid_cell_volume(const Field& field) {
     const double volume = std::abs(field.grid().steps.determinant());
     if (!(volume > 0.0) || !std::isfinite(volume))
@@ -15,7 +16,10 @@ namespace chem::kumo {
     return volume;
 }
 
-/// Integrate a scalar field with a rectangular rule, including all stored samples.
+/// Integral of a scalar field over its grid by the rectangle rule: the sum
+/// of all samples times the cell volume (field units times bohr^3). Throws
+/// std::invalid_argument for a nonfinite sample or cell volume, and
+/// std::overflow_error if the result is not finite.
 [[nodiscard]] inline double integrate_rectangular(const Field& field) {
     const double volume = grid_cell_volume(field);
     long double sum = 0.0L;
@@ -28,8 +32,10 @@ namespace chem::kumo {
     return result;
 }
 
-/// Integrate a scalar field with tensor-product trapezoidal weights.
-/// A singleton grid axis has unit weight (no interpolation is required).
+/// Integral of a scalar field over its grid by the trapezoidal rule along
+/// each axis: samples on the first and last plane of an axis have weight
+/// 1/2. An axis with a single point has weight 1. Throws as
+/// integrate_rectangular().
 [[nodiscard]] inline double integrate_trapezoidal(const Field& field) {
     const double volume = grid_cell_volume(field);
     const Eigen::Vector3i counts = field.grid().counts;

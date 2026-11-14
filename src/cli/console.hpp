@@ -44,27 +44,31 @@ public:
         bar_drawn_ = false;
     }
 
-    /// Progress callback for the current step (empty unless on a terminal).
+    /// Progress callback for the current step, which draws the progress bar;
+    /// empty (no bar) unless standard error is a terminal.
     chem::kumo::ProgressCallback progress() {
         if (!terminal_) return {};
         return [this](std::size_t done, std::size_t total) { draw(done, total); };
     }
 
-    /// End the current step with a summary such as "Evaluated in".
+    /// End the current step: end the progress-bar line, if any, and print
+    /// `summary` followed by the step's duration ("  Evaluated in 1.23 s").
     void end(const std::string& summary) {
         if (bar_drawn_) std::cerr << '\n';
         say("  " + summary + " " + seconds(since(step_start_)));
     }
 
+    /// Print the total run time.
     void finish() const { say("Finished in " + seconds(since(start_))); }
 
+    /// Duration as "1.23 s" (two decimals below 10 s, one above).
     static std::string seconds(double s) {
         std::ostringstream out;
         out << std::fixed << std::setprecision(s < 10 ? 2 : 1) << s << " s";
         return out.str();
     }
 
-    /// 1543260 -> "1,543,260".
+    /// Integer with thousands separators: 1543260 -> "1,543,260".
     static std::string grouped(std::size_t n) {
         auto digits = std::to_string(n);
         for (auto i = static_cast<std::ptrdiff_t>(digits.size()) - 3; i > 0; i -= 3)
@@ -77,6 +81,8 @@ private:
         return std::chrono::duration<double>(clock::now() - t).count();
     }
 
+    // Redraw the progress bar in place (after a carriage return) when the
+    // percentage changes:
     // "  [==========>         ]  52%  5.2 s elapsed, about 4.8 s left"
     void draw(std::size_t done, std::size_t total) {
         if (total == 0) return;
@@ -109,7 +115,7 @@ private:
     bool bar_drawn_ = false;
 };
 
-// "a", "a and b", "a, b and c".
+// Join items as an English list: "a", "a and b", "a, b and c".
 inline std::string join(const std::vector<std::string>& items) {
     std::string out;
     for (std::size_t i = 0; i < items.size(); ++i) {

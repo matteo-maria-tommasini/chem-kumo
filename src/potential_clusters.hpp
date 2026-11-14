@@ -1,12 +1,13 @@
 #pragma once
 
-// Electrostatic potential evaluated in clusters of nearby points. Grids use
-// tiles of grid points, isosurfaces tiles of the cells that hold the
-// vertices, and arbitrary points fixed cubes in space; in every case each
-// cluster is evaluated around its own centre with one far-field plan shared by
-// all clusters. Clusters depend only on the points, and each value only on its
-// point, its cluster centre and the plan, so the result does not depend on the
-// number of threads.
+// Electrostatic potential evaluated in clusters of nearby points. Grid points
+// are grouped in tiles of 8 x 8 x 8 grid points, isosurface vertices by the
+// block of 8 x 8 x 8 grid cells that holds them, and arbitrary points by fixed
+// cubes in space. In every case each cluster is evaluated around its own
+// centre with one far-field plan shared by all clusters (see 'Target
+// clusters' in docs/mathematics/chem-kumo-mathematics.tex). Clusters depend only on the points, and
+// each value only on its point, its cluster centre and the plan, so the result does not depend on
+// the number of threads.
 
 #include "chem/kumo/density.hpp"
 #include "electrostatic_potential.hpp"
@@ -23,7 +24,8 @@
 namespace chem::kumo::detail {
 
 /// Far-field plan for clusters whose points lie within `radius` of their
-/// centre, slightly enlarged to cover rounding in the point coordinates.
+/// centre. The radius is enlarged by a relative 1e-10 plus 1e-12 bohr to
+/// cover rounding in the point coordinates.
 inline ElectrostaticPotential::FarFieldPlan cluster_plan(const ElectrostaticPotential& potential,
                                                          double radius, double tolerance) {
     return potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);

@@ -1,5 +1,6 @@
-// Electron densities and their derivatives: AO-P contractions with the FCHK
-// density matrices and the validated occupied-MO (AO-MO) contraction.
+// Electron densities and their derivatives, from atomic-orbital (AO) values:
+// contractions with the FCHK AO density matrices P (AO-P), and the validated
+// contraction with the occupied molecular orbitals (AO-MO).
 
 #include "chem/kumo/density.hpp"
 
@@ -17,9 +18,10 @@
 
 namespace chem::kumo {
 namespace {
-// Density derivatives at point j of a block of b points, from the AO panels
-// `ao` (values, then x, y, z gradients, then, for ao_order 2, the six
-// Hessian panels in ao_hessian_column order) and product = P [values x y z].
+// Density derivatives at point j of a block of b points. `ao` holds AO panels
+// of b columns each: values, then the x, y, z first derivatives, then, for
+// ao_order 2, the six second-derivative panels in ao_hessian_column order.
+// `product` holds P times the first four panels (values and gradients).
 // `out` must start zeroed; Hessians are left zero for ao_order 1.
 void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
                           const Eigen::Ref<const Eigen::MatrixXd>& product, Eigen::Index b,
@@ -40,9 +42,10 @@ void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
     out.laplacian = out.hessian.trace();
 }
 
-// scale * (a + sign * b), property by property: the alpha and beta parts of
-// the canonical contractions (scale 1/2) or their sum and difference (scale
-// 1). The Laplacian is the trace of the combined Hessian.
+// scale * (a + sign * b), quantity by quantity (all are linear in P). With
+// scale 1/2 this gives alpha = (total + spin) / 2 and beta = (total - spin) / 2
+// from the total and spin contractions; with scale 1, total = alpha + beta and
+// spin = alpha - beta. The Laplacian is the trace of the combined Hessian.
 DensityDerivatives combine(const DensityDerivatives& a, const DensityDerivatives& b, double sign,
                            double scale) {
     DensityDerivatives d;
@@ -64,8 +67,9 @@ void store(std::map<Spin, std::vector<DensityDerivatives>>& result, Spin spin, s
 DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
                                                  Spin component) const {
     if (!point.allFinite()) throw std::invalid_argument("density evaluation point must be finite");
-    // P is symmetric. The alpha/beta split preserves the FCHK density
-    // convention and permits the same contractions for all four fields.
+    // P is the (symmetric) AO density matrix of the requested component; for
+    // alpha and beta it is built from the FCHK total and spin matrices as
+    // (P_total +/- P_spin) / 2, so the same contraction serves all four.
     Eigen::MatrixXd storage;
     const Eigen::MatrixXd& p = detail::select_density_matrix(total_, spin_, component, storage);
     const auto ao = evaluator_.evaluate_derivatives(point);
@@ -123,8 +127,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
             const auto ao = detail::kept_rows(all, kept, w.ao_kept);
             const Eigen::MatrixXd& pk = detail::kept_submatrix(p, kept, w.p_kept);
             const auto m = static_cast<Eigen::Index>(kept.size());
-            // The value and gradient panels are contiguous, so a single GEMM
-            // applies P to all four, improving reuse of the (potentially large) P.
+            // The value and gradient panels are contiguous, so a single
+            // matrix-matrix product applies P to all four, reading the
+            // (potentially large) P only once.
             auto product = w.product.topLeftCorner(m, 4 * b);
             product.noalias() = pk * ao.leftCols(4 * b);
             for (Eigen::Index j = 0; j < b; ++j)
@@ -134,9 +139,10 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     return result;
 }
 
-// Shared AO evaluation for all requested SCF spin components.
-// Total and spin are the canonical FCHK matrices; alpha/beta are linear
-// combinations of their contractions, never reconstructed from MO occupations.
+// One AO evaluation shared by all requested SCF spin components.
+// Total and spin are contracted with the FCHK matrices; alpha and beta are
+// linear combinations of these contractions, never reconstructed from MO
+// occupations.
 std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     const std::vector<Spin>& components, std::size_t block_size, int ao_order,
@@ -200,8 +206,8 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
             if (spin_needed)
                 product_spin.noalias() =
                     detail::kept_submatrix(spin_, kept, w.spin_kept) * ao.leftCols(4 * b);
-            // Construct the canonical contractions once, then combine their
-            // linear primitive properties for alpha/beta as needed.
+            // Contract the total and spin matrices once per point, then derive
+            // alpha and beta from them as needed.
             for (Eigen::Index j = 0; j < b; ++j) {
                 DensityDerivatives t, s;
                 if (total_needed) contract_derivatives(ao, product_total, b, j, ao_order, t);
@@ -262,8 +268,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
     // yz) as far as ao_order requires.
     const int panels = ao_order == 0 ? 1 : BasisEvaluator::derivative_panel_count(ao_order);
     using Projection = std::array<Eigen::MatrixXd, 10>;
-    // Each spin channel is projected once per block, using all occupied MOs:
-    // projected[a] = c^T * (AO panel a), restricted to the kept AOs.
+    // Each spin channel is projected once per block onto its occupied MOs:
+    // projected[a] = c^T * (AO panel a), with c the occupied MO coefficients,
+    // both restricted to the AOs kept by screening.
     const auto project = [&](const Eigen::Ref<const Eigen::MatrixXd>& c,
                              const Eigen::Ref<const Eigen::MatrixXd>& panels_kept, Eigen::Index b,
                              Projection& projected) {
@@ -376,8 +383,9 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     for (Spin component : components)
         buffers.try_emplace(component, count);
     if (buffers.empty()) return {};
-    // Each component is a quadratic form phi^T P phi, and each P costs one
-    // nAO x nAO x points product, which dominates the run time. Total and
+    // Each component is a quadratic form phi^T P phi (phi = AO values at a
+    // point), and each P costs one nAO x nAO x points matrix product
+    // (nAO = number of AOs), which dominates the run time. Total and
     // spin difference alone use the FCHK matrices directly, one product each.
     // If alpha or beta is requested, contract the alpha and beta matrices and
     // derive total = alpha + beta and difference = alpha - beta from them, so

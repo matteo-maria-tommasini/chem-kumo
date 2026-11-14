@@ -30,8 +30,9 @@ namespace detail {
 /// Access to the Molecule internals that the surface functions need.
 struct SurfaceAccess {
     /// Total density and gradient at the columns of `points`, with the
-    /// default AO screening (a change of about 1e-13 e/bohr^3; about 1e-10
-    /// bohr in the position of the rho = 0.001 isosurface).
+    /// default atomic-orbital (AO) screening. Screening changes the density by
+    /// about 1e-13 e/bohr^3, which moves the rho = 0.001 isosurface by about
+    /// 1e-10 bohr.
     static std::vector<DensityDerivatives>
     total_density(const Molecule& molecule,
                   const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points) {
@@ -54,7 +55,8 @@ namespace {
 constexpr double root_tolerance = 1e-10; // bohr, along the edge
 constexpr int max_root_iterations = 200;
 
-// Cell corners are numbered by masks: bit 0 for i, bit 1 for j, bit 2 for k.
+// The eight corners of a grid cell are numbered by 3-bit masks: bit 0 set
+// means i + 1, bit 1 means j + 1, bit 2 means k + 1.
 Eigen::Vector3i corner_offset(std::size_t mask) {
     return {static_cast<int>(mask & 1), static_cast<int>((mask >> 1) & 1),
             static_cast<int>(mask >> 2)};
@@ -65,16 +67,17 @@ Eigen::Vector3i corner_offset(std::size_t mask) {
 constexpr std::array<std::array<std::size_t, 4>, 6> tetrahedra = {
     {{0, 1, 3, 7}, {0, 1, 5, 7}, {0, 2, 3, 7}, {0, 2, 6, 7}, {0, 4, 5, 7}, {0, 4, 6, 7}}};
 
-// Polygon of one tetrahedron: its corners are the vertices on the edges
-// (inside corner, outside corner), in cyclic order; count is 0 if the
-// tetrahedron is not crossed, else 3 or 4.
+// Polygon where the isosurface crosses one tetrahedron. Each polygon corner
+// is the surface vertex on one tetrahedron edge, stored as the masks of that
+// edge's ends (inside corner, outside corner); the corners are in cyclic
+// order. `count` is 0 if the tetrahedron is not crossed, else 3 or 4.
 struct CornerPolygon {
     std::array<std::array<std::size_t, 2>, 4> ends{};
     int count = 0;
 };
 
-// The polygon of the tetrahedron with corners `masks`, oriented with its
-// normal from the inside corners to the outside ones.
+// The polygon of the tetrahedron with corners `masks`, oriented so that its
+// normal points from the inside corners (f >= isovalue) to the outside ones.
 CornerPolygon tetrahedron_polygon(const std::array<std::size_t, 4>& masks,
                                   const std::array<bool, 8>& inside,
                                   const std::array<Eigen::Vector3d, 8>& position) {
@@ -99,8 +102,9 @@ CornerPolygon tetrahedron_polygon(const std::array<std::size_t, 4>& masks,
         ends = {{{in[0], out[0]}, {in[0], out[1]}, {in[1], out[1]}, {in[1], out[0]}}};
         polygon.count = 4;
     }
-    // Orient with the edge midpoints, which depend only on the cell, so that
-    // the orientation is combinatorial.
+    // Orient using the edge midpoints rather than the vertex positions: the
+    // midpoints depend only on the cell, so the orientation depends only on
+    // which corners are inside, not on where the vertices end up.
     std::array<Eigen::Vector3d, 4> mid;
     for (std::size_t c = 0; c < static_cast<std::size_t>(polygon.count); ++c)
         mid[c] = 0.5 * (position[ends[c][0]] + position[ends[c][1]]);
@@ -116,8 +120,8 @@ CornerPolygon tetrahedron_polygon(const std::array<std::size_t, 4>& masks,
     return polygon;
 }
 
-// A grid edge crossed by the isosurface: its grid points (linear indices)
-// on either side and its lower end (i, j, k).
+// A grid edge crossed by the isosurface: the linear indices of its inside
+// and outside end points, and the grid indices (i, j, k) of its lower end.
 struct CrossedEdge {
     std::size_t inside = 0, outside = 0;
     Eigen::Vector3i cell;
@@ -134,7 +138,8 @@ struct Polygonization {
     std::vector<Polygon> polygons;
 };
 
-// Marching tetrahedra over all the cells, k fastest (see extract_isosurface).
+// Marching tetrahedra over all the cells, k fastest: the crossed edges (one
+// per surface vertex) and the polygons (see extract_isosurface()).
 Polygonization polygonize(const Grid& grid, std::span<const double> samples, double isovalue) {
     Polygonization result;
     // Vertex of each crossed edge, keyed by its lower end and direction.
@@ -158,8 +163,11 @@ Polygonization polygonize(const Grid& grid, std::span<const double> samples, dou
                     position[mask] = grid_point(grid, corner[mask]);
 
                 // Vertex on the edge from inside corner a to outside corner b.
-                // The masks of a tetrahedron are nested, so the smaller one is
-                // the lower end of the edge.
+                // The corner masks of a tetrahedron are nested bit sets (for
+                // example 0, 1, 3, 7), so on each of its edges the smaller
+                // mask is the lower end and high ^ low is the edge direction.
+                // The key (lower end, direction) identifies the edge across
+                // all the cells that share it.
                 const auto vertex = [&](std::size_t a, std::size_t b) {
                     const std::size_t low = std::min(a, b), high = std::max(a, b);
                     const std::uint64_t key =
@@ -335,9 +343,10 @@ DensitySurface density_surface(const Molecule& molecule, double isovalue, double
                              "use a larger isovalue");
 }
 
-// Calls piece(area, w0, w1, w2) for triangles covering the part of triangle x
-// where the linear interpolation of its vertex values v is >= level (upper)
-// or < level (lower); w are the interpolated values at their corners.
+// Clip triangle x, with values v at its corners interpolated linearly, to the
+// part where the value is >= level (upper = true) or < level (upper = false).
+// That part is split into triangles, and piece(area, w0, w1, w2) is called
+// for each, with w0, w1, w2 the interpolated values at its corners.
 template <typename Piece>
 void clip(const std::array<Eigen::Vector3d, 3>& x, const std::array<double, 3>& v, double level,
           bool upper, const Piece& piece) {
@@ -364,8 +373,8 @@ void clip(const std::array<Eigen::Vector3d, 3>& x, const std::array<double, 3>& 
     }
 }
 
-// Integral over a triangle of area `area` of (w - s)^2, w linear with corner
-// values w0, w1, w2.
+// Integral of (w - s)^2 over a triangle of area `area`, where w varies
+// linearly with corner values w0, w1, w2.
 double square_integral(double area, double w0, double w1, double w2, double s) {
     const double a = w0 - s, b = w1 - s, c = w2 - s;
     return area / 6.0 * (a * a + b * b + c * c + a * b + b * c + c * a);
@@ -477,7 +486,8 @@ SurfaceStatistics surface_statistics(const TriangleMesh& mesh, std::span<const d
     s.minimum = *lowest;
     s.maximum = *highest;
 
-    // Local extrema: below (above) every neighbour and neighbour of a neighbour.
+    // A vertex is a local minimum (maximum) if its value is below (above)
+    // those of all its neighbours and of their neighbours.
     std::vector<std::vector<std::size_t>> neighbours(nvertices);
     for (const auto& t : mesh.triangles)
         for (std::size_t a = 0; a < 3; ++a) {
@@ -547,7 +557,8 @@ std::vector<double> average_local_ionization_energy(
 
 IonizationEnergySurface local_ionization_energy_surface(const Molecule& molecule, double isovalue,
                                                         double spacing) {
-    // Check the orbitals before building the surface (no points to evaluate).
+    // Check the orbitals before building the surface: a call with no points
+    // runs only the checks.
     (void)average_local_ionization_energy(molecule, Eigen::Matrix<double, 3, 0>());
     auto surface = detail::density_surface(molecule, isovalue, spacing).surface;
     auto& mesh = surface.mesh;
@@ -574,8 +585,10 @@ PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
                                                    molecule.atoms());
 
     // Vertices are evaluated in clusters: those whose edges start in the same
-    // block of tile^3 grid cells, so they lie within the index box
-    // [tile T, tile (T + 1)] around the block centre tile (T + 1/2).
+    // block of tile^3 grid cells. Along each axis, a vertex of block T lies
+    // within grid indices [tile T, tile (T + 1)], so the cluster centre is at
+    // index tile (T + 1/2) and the radius is half the diagonal of a box of
+    // `tile` steps.
     constexpr int tile = 8;
     const auto& mesh = surface.mesh;
     const std::size_t nvertices = mesh.vertices.size();

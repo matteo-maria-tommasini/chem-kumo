@@ -9,8 +9,8 @@ inline constexpr int boys_max_order = 32;
 /// Boys function F_m(T) = integral_0^1 t^(2m) exp(-T t^2) dt for
 /// m = 0, ..., values.size() - 1, written to `values`.
 ///
-/// For T < 40, F_M (M the highest order requested) comes from a seventh-order
-/// Taylor expansion about the nearest point of a table with spacing 0.05, and
+/// For T < 40, F_M (M the highest order requested) comes from a seven-term
+/// (sixth-degree) Taylor expansion about the nearest point of a table with spacing 0.05, and
 /// the lower orders from the downward recursion
 ///   F_(m-1) = (2 T F_m + exp(-T)) / (2m - 1),
 /// which is stable. For T >= 40, F_0 = sqrt(pi / T) / 2 (erf(sqrt(T)) differs

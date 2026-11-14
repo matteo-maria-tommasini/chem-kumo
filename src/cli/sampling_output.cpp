@@ -174,10 +174,10 @@ void print_points(const Molecule& mol, const Options& o, const DensitySelection&
         Table::row(std::cout, {points[p].x(), points[p].y(), points[p].z()}, Table::at(values, p));
 }
 
-// Line rows give t, the signed distance from A along A->B; plane rows give u
-// and v, the coordinates in the plane from A along the grid axes (u along
-// A->B), with a blank line after each row of constant u, as gnuplot expects
-// for surfaces.
+// Each line row starts with t, the signed distance from A along A->B; each
+// plane row starts with u and v, the coordinates in the plane from A along
+// the grid axes (u along A->B), and a blank line separates rows of
+// different u, as gnuplot expects for surfaces.
 void write_profile(const Molecule& mol, const Options& o, const DensitySelection& selection,
                    Console& console) {
     const bool is_line = !o.line.empty();

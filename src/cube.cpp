@@ -97,7 +97,8 @@ void write_field_cube(const std::filesystem::path& path, const std::string& comm
         out << '\n';
     }
     if (orbital) out << std::setw(5) << 1 << std::setw(5) << orbital_index << '\n';
-    // Six values per line, and a new line at the end of every k column.
+    // Six values per line, and a line break after every run of values along
+    // the third grid axis (k), as cubegen writes them.
     out << std::scientific << std::setprecision(5);
     for (std::size_t i = 0; i < values.size(); ++i) {
         out << std::setw(13) << values[i];
@@ -126,7 +127,8 @@ CubeData read_cube(const std::filesystem::path& path) {
         }
     };
     CubeData result = parse();
-    // Read to the end of the member to verify the CRC32/ISIZE trailer.
+    // Read to the end of the gzip member to verify its trailer (CRC32
+    // checksum and uncompressed size).
     buffer.finish();
     return result;
 }

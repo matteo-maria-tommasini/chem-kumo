@@ -19,14 +19,23 @@ constexpr std::size_t hermite_count(int s) {
     return static_cast<std::size_t>((s + 1) * (s + 2) * (s + 3) / 6);
 }
 
-// Factor from a Hermite coefficient c_k (with its 2 pi / p) to the weight
-// e_k = c_k sqrt(pi / p) / 2 of the point multipole d^alpha (1 / R).
+// Notation in this file: p is the exponent and P (or Q) the centre of a pair
+// of primitive Gaussians, C an evaluation point, R = |P - C|, and d^alpha the
+// derivative of order alpha = (t, u, v) with respect to the components of
+// P - C. See 'Molecular electrostatic potential' in
+// docs/mathematics/chem-kumo-mathematics.tex.
+
+// Factor that turns a stored Hermite coefficient c_k (which already includes
+// the factor 2 pi / p) into the weight e_k = c_k sqrt(pi / p) / 2 of the
+// point-multipole term e_k d^alpha (1 / R) of the pair.
 double multipole_factor(double exponent) {
     return 0.5 * std::sqrt(std::numbers::pi / exponent);
 }
 
-// The normalized AO blocks of the basis, checking the angular momentum:
-// expansions of a pair need Boys orders up to la + lb + local_order.
+// The normalized AO blocks of the basis. The local expansion of a pair of
+// angular momenta la and lb needs Boys function orders up to
+// la + lb + local_order, which must not exceed boys_max_order; this limits
+// each shell to l <= (boys_max_order - local_order) / 2.
 std::vector<NormalizedBlock> blocks_of(const BasisSet& basis) {
     constexpr int largest = (boys_max_order - ElectrostaticPotential::local_order) / 2;
     auto blocks = normalized_blocks(basis);
@@ -38,9 +47,10 @@ std::vector<NormalizedBlock> blocks_of(const BasisSet& basis) {
 }
 
 // Hermite expansion coefficients E^(ij)_t of the one-dimensional product
-// (x - A)^i (x - B)^j exp(-alpha (x-A)^2 - beta (x-B)^2), without the
-// exponential prefactor exp(-mu (A - B)^2), which is applied to the whole
-// three-dimensional pair:
+// (x - A)^i (x - B)^j exp(-alpha (x-A)^2 - beta (x-B)^2), with p = alpha + beta,
+// P = (alpha A + beta B) / p, X_PA = P - A and X_PB = P - B. The prefactor
+// exp(-mu (A - B)^2), mu = alpha beta / p, is left out here and applied once to
+// the whole three-dimensional pair:
 //   E^(i+1,j)_t = E^(ij)_(t-1) / (2p) + X_PA E^(ij)_t + (t + 1) E^(ij)_(t+1),
 //   E^(i,j+1)_t = E^(ij)_(t-1) / (2p) + X_PB E^(ij)_t + (t + 1) E^(ij)_(t+1).
 // Stored as table[(i * (lb + 1) + j) * (la + lb + 1) + t].
@@ -129,9 +139,12 @@ ElectrostaticPotential::ElectrostaticPotential(const BasisSet& basis,
                 static_cast<int>(hermite_offset(h.t, h.u, h.v)));
     }
 
-    // Local expansion terms beta, |beta| <= multipole_order (pairs use the
-    // first ones, |beta| <= local_order): their offsets in the Hermite table
-    // (added to those of alpha), (-1)^|beta| / beta!, and the powers of h.
+    // Terms beta = (t, u, v) of the local (Taylor) expansions, with
+    // |beta| = t + u + v <= multipole_order; single pairs use only the first
+    // ones, |beta| <= local_order. For each term store its table offset (added
+    // to the offset of a Hermite index alpha to address alpha + beta), the
+    // factor (-1)^|beta| / beta! with beta! = t! u! v!, and the powers of the
+    // displacement h from the expansion centre.
     for (const auto& h : hermite_triples(multipole_order)) {
         local_offsets_.push_back(static_cast<int>(hermite_offset(h.t, h.u, h.v)));
         double factor = ((h.t + h.u + h.v) % 2 == 0) ? 1.0 : -1.0;
@@ -245,7 +258,8 @@ void ElectrostaticPotential::prepare(Scratch& scratch) const {
 }
 
 // Hermite Coulomb integrals (Helgaker, Jorgensen and Olsen, Molecular
-// Electronic-Structure Theory, section 9.9):
+// Electronic-Structure Theory, section 9.9), with pc = P - C and F_n the Boys
+// function:
 //   R^n_000 = (-2p)^n F_n(p |PC|^2),
 //   R^n_(t+1,u,v) = t R^(n+1)_(t-1,u,v) + X_PC R^(n+1)_(t,u,v),
 // and likewise for u and v, from n = L down to n = 0. R^0_tuv for
@@ -264,8 +278,9 @@ void ElectrostaticPotential::hermite_integrals(double exponent, const Eigen::Vec
     hermite_recursion(pc, L, scratch);
 }
 
-// Derivatives of 1/|X|: the same recursion with R^n_000 = (-1)^n (2n-1)!! /
-// |X|^(2n+1), the limit of the Hermite integrals for a point charge.
+// Derivatives d^alpha (1/|X|), left in scratch.current like R^0_tuv: the same
+// recursion with R^n_000 = (-1)^n (2n-1)!! / |X|^(2n+1), the limit of the
+// Hermite integrals for a point charge.
 void ElectrostaticPotential::coulomb_derivatives(const Eigen::Vector3d& x, int L,
                                                  Scratch& scratch) const {
     const double inverse = 1.0 / x.norm(), inverse2 = inverse * inverse;
@@ -277,8 +292,9 @@ void ElectrostaticPotential::coulomb_derivatives(const Eigen::Vector3d& x, int L
     hermite_recursion(x, L, scratch);
 }
 
-// R^n_(t+1,u,v) = t R^(n+1)_(t-1,u,v) + X_t R^(n+1)_(t,u,v), and likewise for
-// u and v, from n = L down to 0, starting from R^n_000 = scratch.boys[n].
+// R^n_(t+1,u,v) = t R^(n+1)_(t-1,u,v) + X R^(n+1)_(t,u,v), with X the x
+// component of `pc`, and likewise for u and v (with Y and Z), from n = L down
+// to 0, starting from R^n_000 = scratch.boys[n].
 void ElectrostaticPotential::hermite_recursion(const Eigen::Vector3d& pc, int L,
                                                Scratch& scratch) const {
     const auto offset = [this](const HermiteIndex& h) { return hermite_offset(h.t, h.u, h.v); };
@@ -344,13 +360,16 @@ void ElectrostaticPotential::evaluate(
     }
 }
 
-// Error bound of the local expansion of one primitive pair (see the class
-// documentation). Its potential is
+// Error bound of the local expansion of one primitive pair, derived in
+// 'Far-field approximations' in docs/mathematics/chem-kumo-mathematics.tex.
+// The potential of the pair splits into point multipoles and a short-range
+// part:
 //   sum_k c_k R_(alpha_k)(p, P - C) = sum_k e_k d^alpha_k [1 / R]
 //                                     - sum_k e_k d^alpha_k [erfc(sqrt(p) R) / R],
 // with R = |P - C| and e_k = c_k sqrt(pi / p) / 2. For a cluster of points
-// within rho of its centre b, at distance d = |P - b| > rho, the error of the
-// Taylor polynomial of order K about b is at most
+// within rho of its centre b, with the pair centre at distance
+// d = |P - b| > rho, the error of the Taylor polynomial of order K about b is
+// at most
 //   sum_L W_L [ T_L(d) + G_L(d - rho) + sum_(n<=K) (sqrt(3) rho)^n / n! G_(L+n)(d) ],
 // with W_L the sum of |e_k| over the terms of order L:
 //  - T_L(d) = sum_(n>K) (n+L)! / n! rho^n / d^(n+L+1) bounds the Taylor
@@ -415,7 +434,8 @@ void erfc_derivative_bounds(double exponent, double r, std::vector<double>& valu
     }
 }
 
-// T_L(d) for one L; infinite unless the series converges (rho < d).
+// T_L(d) above for one order L, Taylor order K and cluster radius rho;
+// infinite unless the series converges fast enough (d > 1.25 rho).
 double taylor_remainder_bound(int L, int K, double rho, double d) {
     // Closer than 1.25 rho the series converges too slowly to be useful;
     // infinity keeps such pairs exact.
@@ -452,7 +472,8 @@ double smallest_distance(const Bound& bound, double low, double high, double all
     return high;
 }
 
-// A squared distance as a float no smaller than it.
+// `value` rounded up to a float, so that a stored distance threshold is never
+// smaller than the exact one.
 float upward_float(double value) {
     const auto f = static_cast<float>(value);
     return static_cast<double>(f) < value
@@ -496,8 +517,10 @@ ElectrostaticPotential::far_field_plan(double radius, double tolerance) const {
     return plan;
 }
 
-// Individual pairs: the bound on a geometric grid of distances, then the
-// smallest grid distance at which it is below each level.
+// For each pair, evaluate the error bound of its local expansion at 64
+// distances in geometric progression from max(1.25 radius, 0.05) to 400 bohr,
+// and record, for each error level, the smallest of these distances at which
+// the bound is within that level.
 void ElectrostaticPotential::plan_pair_levels(FarFieldPlan& plan) const {
     constexpr int levels = FarFieldPlan::level_count;
     constexpr int K = local_order;
@@ -548,18 +571,20 @@ void ElectrostaticPotential::plan_pair_levels(FarFieldPlan& plan) const {
     }
 }
 
-// Source clusters: pairs grouped by cell of their centre and by exponent
-// (a factor of 4 per class), in order of first appearance.
+// Source clusters: the pairs are grouped by the cube of edge cell_size that
+// contains their centre and by exponent interval [4^k, 4^(k+1)); clusters are
+// numbered in order of first appearance.
 //
-// For a cluster with centre c and a target cluster with centre b, write
-// P - C = X0 + z with X0 = c - b and z = (P - c) - (C - b), |z| <= a + rho
-// (a: cluster radius). Each 1/R term d^alpha (1/|P - C|) is expanded in z
-// about X0 to total order N; expanding z^gamma binomially in u = P - c and
-// h = C - b is exact, so the error is the Taylor remainder in z, bounded by
-// T_L(N, a + rho, |X0|) as for single pairs. The erfc terms are left out;
-// every pair centre is at least |X0| - a - rho from the points, where they
-// are bounded by G_L for the smallest exponent of the cluster (G decreases
-// with the exponent and the distance).
+// Take a source cluster with centre c and radius a, and a target cluster
+// with centre b and radius rho. Write P - C = X0 + z with X0 = c - b and
+// z = (P - c) - (C - b), so |z| <= a + rho. Each point-multipole term
+// d^alpha (1/|P - C|) is expanded in z about X0 to total order N; expanding
+// each power z^gamma by the binomial theorem in u = P - c and h = C - b is
+// exact, so the error is the Taylor remainder in z, bounded by
+// T_L(N, a + rho, |X0|) as for single pairs. The short-range erfc terms are
+// left out: every pair centre is at least |X0| - a - rho from the points,
+// where these terms are bounded by G_L for the smallest exponent of the
+// cluster (G decreases as the exponent and the distance grow).
 void ElectrostaticPotential::plan_source_clusters(FarFieldPlan& plan) const {
     std::map<std::array<long, 4>, std::size_t> index;
     for (std::size_t i = 0; i < pairs_.size(); ++i) {
@@ -599,8 +624,10 @@ void ElectrostaticPotential::plan_source_clusters(FarFieldPlan& plan) const {
         cluster.center = 0.5 * (low + high);
         cluster.radius = 0.0;
         cluster_weights.assign(static_cast<std::size_t>(largest_order + 1), 0.0);
-        // Moments Q^(m)_nu = sum e_k u^delta / delta! over alpha_k + delta = nu
-        // and |delta| <= m, stored for m = 0..N (cumulative in m).
+        // Multipole moments Q^(m)_nu = sum e_k u^delta / delta!, summed over the
+        // pairs of the cluster (u = pair centre - cluster centre) and over the
+        // Hermite terms alpha_k and multi-indices delta with alpha_k + delta = nu
+        // and |delta| <= m. They are stored for every m = 0, ..., N.
         cluster.moments.assign(static_cast<std::size_t>(N + 1) * moments.size(), 0.0);
         std::vector<double> by_order(static_cast<std::size_t>(N + 1) * moments.size(), 0.0);
         for (const std::size_t i : cluster.pairs) {
@@ -637,9 +664,12 @@ void ElectrostaticPotential::plan_source_clusters(FarFieldPlan& plan) const {
                     (m > 0 ? cluster.moments[static_cast<std::size_t>(m - 1) * moments.size() + nu]
                            : 0.0) +
                     by_order[static_cast<std::size_t>(m) * moments.size() + nu];
-        // Truncation: sum_L W_L T_L(N, a + rho, D) <= share; erfc terms:
-        // sum_L W_L G_L(p_min, r) <= share for r >= erfc_radius (G decreases
-        // with p and r).
+        // The cluster may be translated to a target cluster at distance D only
+        // if both error parts fit in `share`: the truncation error
+        // sum_L W_L T_L(N, a + rho, D), and the neglected erfc terms
+        // sum_L W_L G_L(r) for the smallest exponent of the cluster, where
+        // r >= erfc_radius is the distance from the points to the nearest
+        // pair centre (G decreases as the exponent and r grow).
         const double reach = cluster.radius + plan.radius;
         const auto truncation = [&](double D) {
             double total = 0.0;
@@ -694,8 +724,9 @@ void ElectrostaticPotential::evaluate_cluster(
 }
 
 // Fills scratch.local with the coefficients (factors (-1)^|beta| / beta!
-// included) of the local expansion about `center` of the far source
-// clusters and the expanded pairs, and returns the pairs to evaluate exactly.
+// included) of the local expansion about `center` of the source clusters far
+// enough away and of the individually expanded pairs, and returns the
+// indices of the pairs that must be evaluated exactly.
 std::vector<std::size_t> ElectrostaticPotential::expand_far_field(const Eigen::Vector3d& center,
                                                                   const FarFieldPlan& plan,
                                                                   Scratch& scratch) const {
@@ -703,7 +734,8 @@ std::vector<std::size_t> ElectrostaticPotential::expand_far_field(const Eigen::V
     std::fill(scratch.local.begin(), scratch.local.end(), 0.0);
 
     // Source clusters far enough away: one multipole-to-local translation each,
-    //   local_beta += sum_nu Q^(N - |beta|)_nu d^(nu+beta) (1/|X|) at X = c_S - b.
+    //   local_beta += sum_nu Q^(N - |beta|)_nu d^(nu+beta) (1/|X|),
+    // at X = (source cluster centre) - (target centre).
     std::vector<char> handled(pairs_.size(), 0);
     const int N = multipole_order;
     for (const auto& cluster : plan.clusters) {
@@ -726,10 +758,12 @@ std::vector<std::size_t> ElectrostaticPotential::expand_far_field(const Eigen::V
             handled[i] = 1;
     }
 
-    // Remaining pairs: the level of each (its bound at this distance is at
-    // most levels[j]); the pairs with the smallest levels are expanded while
-    // the sum of their levels stays within pair_tolerance, the others are
-    // evaluated exactly. Ties at the last level go in pair order.
+    // Remaining pairs: find the level j of each, the largest j whose distance
+    // threshold the pair centre reaches (so its error bound here is at most
+    // levels[j]; -1 if none). Pairs are expanded starting from the smallest
+    // error levels (largest j) while the sum of their levels stays within
+    // pair_tolerance; the others are evaluated exactly. At the last level that
+    // fits only in part, pairs are taken in index order.
     std::vector<signed char> level(pairs_.size(), -1);
     std::array<std::size_t, levels> population{};
     for (std::size_t i = 0; i < pairs_.size(); ++i) {
@@ -742,6 +776,7 @@ std::vector<std::size_t> ElectrostaticPotential::expand_far_field(const Eigen::V
         level[i] = static_cast<signed char>(j);
         if (j >= 0) ++population[static_cast<std::size_t>(j)];
     }
+    // Of the pairs at level `cut`, only the first `partial` are expanded.
     int cut = levels; // levels > cut are expanded in full
     std::size_t partial = 0;
     double used = 0.0;

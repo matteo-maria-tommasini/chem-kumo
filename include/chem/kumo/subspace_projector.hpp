@@ -10,11 +10,20 @@
 
 namespace chem::kumo {
 
-/// S-orthogonal projector onto the column space of an AO coefficient matrix.
-/// Stores an S-orthonormal basis, not an M-by-M projector.
-/// The AO overlap metric must be symmetric positive definite.
+/// Projector onto the space spanned by the columns of an atomic-orbital (AO)
+/// coefficient matrix C, such as a set of molecular orbitals, orthogonal
+/// with respect to the AO overlap matrix S (the metric):
+///   P v = B B^T S v,  with B = C (C^T S C)^(-1/2),
+/// so that B^T S B = 1 (B is an S-orthonormal basis of the space). Only B is
+/// stored, not the M x M matrix of P (M = number of AOs).
 class SubspaceProjector {
 public:
+    /// Throws std::invalid_argument for empty or mismatched dimensions, more
+    /// columns than AOs, nonfinite data, a tolerance outside (0, 1), a metric
+    /// that is not symmetric (to 1e-12 relative) or not positive definite,
+    /// or columns that are not linearly independent: an eigenvalue of
+    /// C^T S C at most relative_rank_tolerance times the largest one. Throws
+    /// std::runtime_error if the eigenvalue solver fails.
     SubspaceProjector(const Eigen::Ref<const Eigen::MatrixXd>& metric,
                       const Eigen::Ref<const Eigen::MatrixXd>& columns,
                       double relative_rank_tolerance = 1e-12)
@@ -45,7 +54,8 @@ public:
             throw std::invalid_argument(
                 "SubspaceProjector: rank-deficient or ill-conditioned subspace");
 
-        // Symmetric inverse square root avoids an explicit matrix inverse.
+        // (C^T S C)^(-1/2) from the eigendecomposition of C^T S C, without
+        // an explicit matrix inverse.
         const Eigen::MatrixXd inverse_sqrt = eig.eigenvectors() *
                                              values.array().rsqrt().matrix().asDiagonal() *
                                              eig.eigenvectors().transpose();
@@ -63,7 +73,9 @@ public:
     /// S-orthonormal basis of the subspace, one AO coefficient vector per column.
     [[nodiscard]] const Eigen::MatrixXd& orthonormal_basis() const noexcept { return basis_; }
 
-    /// Apply to one or several columns of AO expansion coefficients.
+    /// Projection P v of each column v of AO coefficients in `vectors`.
+    /// Throws std::invalid_argument if the number of rows differs from the
+    /// number of AOs or an entry is not finite.
     [[nodiscard]] Eigen::MatrixXd apply(const Eigen::Ref<const Eigen::MatrixXd>& vectors) const {
         if (vectors.rows() != metric_.rows())
             throw std::invalid_argument("SubspaceProjector: vector dimension mismatch");
@@ -72,7 +84,7 @@ public:
         return basis_ * (basis_.transpose() * (metric_ * vectors));
     }
 
-    /// Materialize the coefficient-space projector, for tests and diagnostics.
+    /// The M x M matrix of the projector, B B^T S, for tests and diagnostics.
     [[nodiscard]] Eigen::MatrixXd matrix() const { return basis_ * (basis_.transpose() * metric_); }
 
 private:

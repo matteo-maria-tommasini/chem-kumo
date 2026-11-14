@@ -30,8 +30,9 @@ enum class Method {
     OrbitalEnergies, ///< SCF orbitals weighted by their energies
 };
 
-/// One --property: the library property for each component, its names and
-/// where it is defined.
+/// One --property name: how to get the library property for each density
+/// component, the texts that describe it, and the components it is defined
+/// for.
 struct DensityProperty {
     PropertyKind kind;
     std::string name;        ///< --property name, file suffix and column prefix
@@ -39,7 +40,8 @@ struct DensityProperty {
     std::string summary;     ///< in "Evaluating the <summary> of the ... density"
     Components components;
     Method method;
-    /// Library property of a component: (descriptor.*property)().
+    /// Member function of DensityDescriptor that returns the library
+    /// Property for a component: (descriptor.*property)().
     chem::kumo::Property (chem::kumo::DensityDescriptor::*property)() const;
 };
 
@@ -58,7 +60,8 @@ chem::kumo::Property density_property(Spin component, const DensityProperty& pro
 /// "total", "alpha", "beta" or "alpha-beta difference".
 std::string component_label(Spin component);
 
-/// Table column (and PLY property) name: "<property>_<total|alpha|beta|spin>".
+/// Table column name "<property>_<total|alpha|beta|spin>"; also the PLY
+/// property name, with '-' replaced by '_'.
 std::string column_name(Spin component, const DensityProperty& property);
 
 /// How `property` was computed, for Cube comments and table headers.
@@ -77,13 +80,15 @@ std::vector<double> scalar_values(const chem::kumo::PropertyField& field, Proper
 /// Density components and properties selected with --spin and --property, and
 /// the contraction selected with --backend.
 struct DensitySelection {
-    std::vector<std::pair<Spin, std::string>> components; ///< with Cube filename suffix
+    std::vector<std::pair<Spin, std::string>> components; ///< with their Cube filename suffix
     std::vector<DensityProperty> properties;
     chem::kumo::Backend backend = chem::kumo::Backend::AUTO;
 };
 
-/// Read --spin, --property and --backend, check them, and report the
-/// contraction on the console.
+/// Read --spin, --property and --backend, check them (and that
+/// --esp-tolerance comes with --property esp), and report the chosen
+/// contraction on the console. Throws std::invalid_argument for invalid or
+/// inconsistent values.
 DensitySelection select_density(const Options& o, const Molecule& mol, Console& console);
 
 /// Evaluator options of a selection: backend, --esp-tolerance and the

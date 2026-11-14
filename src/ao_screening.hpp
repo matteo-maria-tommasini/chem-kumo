@@ -12,10 +12,12 @@ inline void validate_screening_threshold(double threshold) {
         throw std::invalid_argument("screening threshold must be finite and nonnegative");
 }
 
-/// Block screening of AO values. Gaussian AOs decay quickly, so in a block of
-/// nearby grid points most of them are negligible everywhere (about 70% for
-/// HBC def2-TZVP with 128-point blocks). Contracting only the significant AOs
-/// replaces the nAO x nAO density-matrix product by a much smaller one.
+/// Block screening of atomic-orbital (AO) values. Gaussian AOs decay quickly,
+/// so in a block of nearby grid points most of them are negligible at every
+/// point (about 70% for HBC def2-TZVP with 128-point blocks; HBC is the
+/// 60-atom hexabenzocoronene test molecule in tests/data/hbc). Contracting
+/// only the significant AOs replaces the nAO x nAO density-matrix product
+/// (nAO = number of AOs) by a much smaller one.
 ///
 /// Returns the rows of `ao` (one AO per row, one point per column) whose
 /// absolute value exceeds `threshold` at least at one point of the block.
@@ -25,7 +27,8 @@ inline void validate_screening_threshold(double threshold) {
 /// negligible; every dropped term of the derivative contractions then still
 /// contains a factor of magnitude <= threshold.
 ///
-/// Every dropped term of phi^T P phi contains a dropped AO factor of
+/// In the density rho = phi^T P phi (phi = vector of AO values at a point,
+/// P = AO density matrix), every dropped term contains a dropped AO factor of
 /// magnitude <= threshold. With the default 1e-12 the observed change in the
 /// density is at rounding level (about 1e-13 e/bohr^3 on HBC def2-TZVP, where
 /// the density peaks at about 90 e/bohr^3).

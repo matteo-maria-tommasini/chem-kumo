@@ -514,7 +514,7 @@ error budget, not the arithmetic, limits the gain: with an absolute bound
 of 1e-8 for a molecule with 234 electrons, the far field must be resolved to
 about 1e-11 relative.
 
-The Boys function uses a seventh-order Taylor expansion about a table with
+The Boys function uses a sixth-degree (seven-term) Taylor expansion about a table with
 spacing 0.05 for T < 40 and the closed form of F_0 with upward recursion
 above, with downward recursion to the lower orders. It agrees with
 quadrature of its definition to 2.3e-15 relative for m <= 32.

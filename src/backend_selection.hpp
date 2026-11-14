@@ -7,19 +7,13 @@
 #include <stdexcept>
 
 namespace chem::kumo::detail {
-/// AO-P is authoritative. AO-MO is eligible only after validating BOTH
-/// total and spin density matrices against the occupied-orbital reconstruction.
-///
-/// Both differences are measured relative to the norm of the total density
-/// matrix. The spin matrix P_alpha - P_beta is rebuilt as a difference of two
-/// matrices of the size of the total one, so the rounding of the FCHK
-/// coefficients (about nine significant digits) gives it an error that
-/// scales with the total matrix, not with the spin matrix itself; relative
-/// to a small spin matrix (a weakly spin-polarized state such as a
-/// broken-symmetry singlet) that error would fail a check that the orbitals
-/// actually pass. The scale is never below the spin matrix norm.
+/// Backend chosen by validate_orbital_backend(): AoP contracts with the FCHK
+/// atomic-orbital (AO) density matrix P, AoMo with the occupied molecular-
+/// orbital (MO) coefficients.
 enum class ElectronicBackend { AoP, AoMo };
 
+/// Outcome of validate_orbital_backend(), with the Frobenius-norm errors of
+/// the reconstructed total and spin density matrices.
 struct BackendDecision {
     ElectronicBackend backend = ElectronicBackend::AoP;
     double total_absolute_error = 0.0;
@@ -28,6 +22,24 @@ struct BackendDecision {
     double spin_relative_error = 0.0;
 };
 
+/// Decide whether the occupied MOs may replace the FCHK density matrices.
+/// The FCHK matrices are authoritative: AoMo is chosen only if BOTH the total
+/// and the spin density matrix agree with their reconstruction from the
+/// occupied MOs, P_alpha = C_alpha,occ C_alpha,occ^T (likewise for beta;
+/// restricted wavefunctions use the alpha coefficients for both spins).
+/// Inconsistent shapes or non-finite input give AoP with zero errors.
+///
+/// Each error is accepted if it is at most
+/// absolute_tolerance + relative_tolerance * scale. The total scale is the
+/// larger of the norms of the FCHK and reconstructed total matrices; the
+/// spin scale is the largest of the two spin-matrix norms and the total
+/// scale. The spin matrix P_alpha - P_beta is rebuilt as a difference
+/// of two matrices of the size of the total one, so the rounding of the FCHK
+/// coefficients (about nine significant digits) gives it an error that
+/// scales with the total matrix, not with the spin matrix itself; relative
+/// to a small spin matrix (a weakly spin-polarized state such as a
+/// broken-symmetry singlet) that error would fail a check that the orbitals
+/// actually pass.
 inline BackendDecision
 validate_orbital_backend(const Eigen::MatrixXd& total, const Eigen::MatrixXd& spin,
                          const Eigen::MatrixXd& alpha, const Eigen::MatrixXd& beta,

@@ -11,6 +11,7 @@ namespace {
 constexpr double table_spacing = 0.05;
 constexpr double table_end = 40.0;
 constexpr int taylor_terms = 7; // k = 0, ..., 6
+// The Taylor series for F_m needs F_m, ..., F_(m+6) at the table point.
 constexpr int table_orders = boys_max_order + taylor_terms;
 constexpr int table_points = 801; // T = 0, 0.05, ..., 40
 
@@ -60,6 +61,7 @@ void boys_function(double T, std::span<double> values) {
     const int point = static_cast<int>(std::lround(T / table_spacing));
     const double delta = T - point * table_spacing; // |delta| <= 0.025
     const double* row = table().data() + static_cast<std::size_t>(point * table_orders);
+    // Taylor expansion about the nearest table point T0:
     // F_m(T0 + delta) = sum_k F_(m+k)(T0) (-delta)^k / k!, since dF_m/dT = -F_(m+1).
     double sum = 0.0;
     double factor = 1.0;
