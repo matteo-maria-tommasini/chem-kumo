@@ -15,7 +15,11 @@ optional OpenMP. Public GitHub repo: `matteo-maria-tommasini/chem-kumo`.
 
 - `include/chem/kumo.hpp`, `include/chem/kumo/*.hpp` — public API (installed).
 - `src/*.cpp` — library implementation; `src/*.hpp` are internal headers
-  (not installed). `src/kumo_main.cpp` is the CLI.
+  (not installed). The CLI is `src/kumo_main.cpp` (mode dispatch) and
+  `src/cli/`: `options` (parsing and checks), `properties` (the table of
+  `--property` names, components and methods), and one output module per
+  mode (`density_output`, `orbital_output`, `sampling_output`,
+  `surface_output`).
 - `tests/` — one executable per `*_test.cpp`, plus shell tests
   (`cli_*.sh`, `check-installed-consumer.sh`). Reference data in
   `tests/data/` (Gaussian `.fchk.gz` and reference Cube files; provenance in
