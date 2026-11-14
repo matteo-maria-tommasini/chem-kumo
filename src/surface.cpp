@@ -490,21 +490,22 @@ std::vector<double> average_local_ionization_energy(
     const auto count = static_cast<std::size_t>(points.cols());
     std::vector<double> result(count);
     constexpr std::size_t block_size = 128;
-    const std::size_t nblocks = detail::parallel_block_count(
-        count, block_size, "too many ionization energy blocks for parallel evaluation");
-    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t block) {
-        const std::size_t start = block * block_size;
-        const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-        const auto sums = fields.evaluate(points.middleCols(static_cast<Eigen::Index>(start), b));
-        for (std::size_t t = 0; t < static_cast<std::size_t>(b); ++t) {
-            const double density = sums.occupied_density[t];
-            if (!(density > 0.0))
-                throw std::invalid_argument(
-                    "the average local ionization energy is undefined where the density "
-                    "vanishes");
-            result[start + t] = sums.occupied_energy[t] / density;
-        }
-    });
+    detail::for_each_point_block(
+        count, block_size, "too many ionization energy blocks for parallel evaluation",
+        [&](detail::PointBlock range) {
+            const std::size_t start = range.start;
+            const auto b = static_cast<Eigen::Index>(range.size);
+            const auto sums =
+                fields.evaluate(points.middleCols(static_cast<Eigen::Index>(start), b));
+            for (std::size_t t = 0; t < static_cast<std::size_t>(b); ++t) {
+                const double density = sums.occupied_density[t];
+                if (!(density > 0.0))
+                    throw std::invalid_argument(
+                        "the average local ionization energy is undefined where the density "
+                        "vanishes");
+                result[start + t] = sums.occupied_energy[t] / density;
+            }
+        });
     return result;
 }
 
@@ -568,7 +569,7 @@ PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
 
     PotentialSurface result;
     result.potential.assign(nvertices, 0.0);
-    detail::for_each_block<detail::Schedule::Dynamic>(starts.size() - 1, [&](std::size_t g) {
+    detail::for_each_block(starts.size() - 1, [&](std::size_t g) {
         const std::size_t begin = starts[g], end = starts[g + 1];
         const auto count = static_cast<Eigen::Index>(end - begin);
         Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, count);

@@ -291,21 +291,17 @@ void evaluate_point_path(const PointSet& set, std::size_t block_size,
         if (uses_point_path(plan_for(plan, component), backend, grid))
             needed.push_back(spin_of(component));
 
-    const std::size_t nblocks =
-        detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
     detail::Progress report(progress, n);
-    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t index) {
-        const std::size_t start = static_cast<std::size_t>(index) * block_size;
-        const std::size_t count = std::min(block_size, n - start);
-        const auto points = set.block(start, count);
-        const auto block = evaluate_block(points, needed);
-
-        for (auto& [key, output] : fields)
-            if (from_point_path(key, backend, grid)) store_block(output, key, block, count, start);
-        // Serialized and monotonic; a throwing callback is captured
-        // like any other block error.
-        report.advance(count);
-    });
+    detail::for_each_point_block(
+        n, block_size, "too many point blocks for evaluation", [&](detail::PointBlock range) {
+            const auto block = evaluate_block(set.block(range.start, range.size), needed);
+            for (auto& [key, output] : fields)
+                if (from_point_path(key, backend, grid))
+                    store_block(output, key, block, range.size, range.start);
+            // Serialized and monotonic; a throwing callback is captured
+            // like any other block error.
+            report.advance(range.size);
+        });
 }
 
 // Electrostatic potential pass. The grid is split into clusters of up to
@@ -340,7 +336,7 @@ void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double to
     const auto ntiles = static_cast<std::size_t>(tiles[0]) * static_cast<std::size_t>(tiles[1]) *
                         static_cast<std::size_t>(tiles[2]);
     detail::Progress report(progress, n);
-    detail::for_each_block<detail::Schedule::Dynamic>(ntiles, [&](std::size_t index) {
+    detail::for_each_block(ntiles, [&](std::size_t index) {
         const auto per_plane = static_cast<std::size_t>(tiles[1] * tiles[2]);
         const Eigen::Vector3i tile(static_cast<int>(index / per_plane),
                                    static_cast<int>((index / static_cast<std::size_t>(tiles[2])) %
@@ -408,7 +404,7 @@ void evaluate_electrostatic_potential(
     const auto plan = potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);
 
     detail::Progress report(progress, n);
-    detail::for_each_block<detail::Schedule::Dynamic>(starts.size() - 1, [&](std::size_t g) {
+    detail::for_each_block(starts.size() - 1, [&](std::size_t g) {
         const std::size_t begin = starts[g], end = starts[g + 1];
         const auto count = static_cast<Eigen::Index>(end - begin);
         Eigen::Matrix<double, 3, Eigen::Dynamic> cluster(3, count);
@@ -583,16 +579,13 @@ Evaluator::evaluate_at(const Grid* grid,
     // Blocks of points for the orbital passes: each block writes its own
     // range, so the result does not depend on the number of threads.
     const auto for_each_point_block = [&](const auto& body) {
-        const std::size_t size = options_.block_size;
-        const std::size_t nblocks =
-            detail::parallel_block_count(n, size, "too many point blocks for evaluation");
         detail::Progress report(pass_progress, n);
-        detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t index) {
-            const std::size_t start = index * size;
-            const std::size_t count = std::min(size, n - start);
-            body(set.block(start, count), start, count);
-            report.advance(count);
-        });
+        detail::for_each_point_block(n, options_.block_size, "too many point blocks for evaluation",
+                                     [&](detail::PointBlock range) {
+                                         body(set.block(range.start, range.size), range.start,
+                                              range.size);
+                                         report.advance(range.size);
+                                     });
         completed += n;
     };
 

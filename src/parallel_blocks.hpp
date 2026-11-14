@@ -4,11 +4,13 @@
 // into independent blocks; with OpenMP the blocks run on worker threads, and
 // in serial builds the same loop runs on the calling thread.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 namespace chem::kumo::detail {
@@ -95,32 +97,72 @@ private:
     std::size_t done_ = 0;
 };
 
-/// How blocks are assigned to OpenMP threads.
-enum class Schedule { Static, Dynamic };
-
-/// Call body(block) for block = 0, ..., nblocks - 1, on OpenMP threads when
-/// there is more than one block. The first exception thrown by any block is
-/// rethrown after all blocks have run; blocks must write disjoint outputs.
-template <Schedule S, typename Body> void for_each_block(std::size_t nblocks, const Body& body) {
+/// Call body(block) for block = 0, ..., nblocks - 1, on OpenMP threads
+/// (dynamic schedule) when there is more than one block. The first exception
+/// thrown by any block is rethrown after all blocks have run; blocks must
+/// write disjoint outputs.
+template <typename Body> void for_each_block(std::size_t nblocks, const Body& body) {
     FirstException errors;
-    if constexpr (S == Schedule::Dynamic) {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) if (nblocks > 1)
 #endif
-        for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-            try {
-                body(static_cast<std::size_t>(block));
-            } catch (...) {
-                errors.capture();
-            }
+    for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+        try {
+            body(static_cast<std::size_t>(block));
+        } catch (...) {
+            errors.capture();
         }
-    } else {
+    }
+    errors.rethrow_if_any();
+}
+
+/// Consecutive points [start, start + size) of a point block.
+struct PointBlock {
+    std::size_t start;
+    std::size_t size;
+};
+
+/// Split `count` points into consecutive blocks of at most `block_size` and
+/// call body(PointBlock) on each, as for_each_block does. `what` is the
+/// parallel_block_count message.
+template <typename Body>
+void for_each_point_block(std::size_t count, std::size_t block_size, const char* what,
+                          const Body& body) {
+    for_each_block(parallel_block_count(count, block_size, what), [&](std::size_t block) {
+        const std::size_t start = block * block_size;
+        body(PointBlock{start, std::min(block_size, count - start)});
+    });
+}
+
+/// As for_each_point_block, with a workspace per OpenMP worker (the calling
+/// thread in serial builds): make_workspace() is called once per worker and
+/// body(PointBlock, workspace&) reuses it for all the blocks of that worker.
+/// If make_workspace() throws, that worker skips its blocks and the
+/// exception is rethrown after the loop.
+template <typename MakeWorkspace, typename Body>
+void for_each_point_block_with_workspace(std::size_t count, std::size_t block_size,
+                                         const char* what, const MakeWorkspace& make_workspace,
+                                         const Body& body) {
+    const std::size_t nblocks = parallel_block_count(count, block_size, what);
+    FirstException errors;
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) if (nblocks > 1)
+#pragma omp parallel if (nblocks > 1)
+#endif
+    {
+        std::optional<decltype(make_workspace())> workspace;
+        try {
+            workspace.emplace(make_workspace());
+        } catch (...) {
+            errors.capture();
+        }
+#ifdef _OPENMP
+#pragma omp for schedule(dynamic)
 #endif
         for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
+            if (!workspace) continue;
             try {
-                body(static_cast<std::size_t>(block));
+                const std::size_t start = static_cast<std::size_t>(block) * block_size;
+                body(PointBlock{start, std::min(block_size, count - start)}, *workspace);
             } catch (...) {
                 errors.capture();
             }

@@ -7,7 +7,6 @@
 #include <cmath>
 #include <stdexcept>
 #include <limits>
-#include <cstdint>
 #include <exception>
 
 namespace chem::kumo {
@@ -74,46 +73,33 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     if (!points.allFinite()) throw std::invalid_argument("MO evaluation points must be finite");
     const std::size_t count = static_cast<std::size_t>(points.cols());
     std::vector<OrbitalDerivatives> result(count);
-    const std::size_t nblocks = detail::parallel_block_count(
-        count, block_size, "too many orbital derivative blocks for parallel evaluation");
-    detail::FirstException worker_errors;
     const auto c = coeff.col(static_cast<Eigen::Index>(index - 1));
     const auto n = static_cast<Eigen::Index>(basis_size());
-#ifdef _OPENMP
-#pragma omp parallel if (nblocks > 1)
-#endif
-    {
-        // AO panels: value, x, y, z, xx, yy, zz, xy, xz, yz (one per point each).
-        const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
-        Eigen::MatrixXd ao(n, 10 * capacity);
-#ifdef _OPENMP
-#pragma omp for schedule(dynamic)
-#endif
-        for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-            try {
-                const std::size_t start = static_cast<std::size_t>(block) * block_size;
-                const auto b = static_cast<Eigen::Index>(std::min(block_size, count - start));
-                evaluator_.evaluate_derivatives_batch(
-                    points.middleCols(static_cast<Eigen::Index>(start), b), 2, ao.leftCols(10 * b));
-                const auto panel = [&](int component, Eigen::Index j) {
-                    return c.dot(ao.col(component * b + j));
-                };
-                for (Eigen::Index j = 0; j < b; ++j) {
-                    auto& out = result[start + static_cast<std::size_t>(j)];
-                    out.value = panel(0, j);
-                    for (int a = 0; a < 3; ++a) {
-                        out.gradient[a] = panel(1 + a, j);
-                        for (int e = a; e < 3; ++e)
-                            out.hessian(a, e) = out.hessian(e, a) =
-                                panel(4 + detail::ao_hessian_column[a][e], j);
-                    }
+    const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
+    // Each worker reuses its AO panels: value, x, y, z, xx, yy, zz, xy, xz,
+    // yz (one column per point each).
+    detail::for_each_point_block_with_workspace(
+        count, block_size, "too many orbital derivative blocks for parallel evaluation",
+        [&] { return Eigen::MatrixXd(n, 10 * capacity); },
+        [&](detail::PointBlock range, Eigen::MatrixXd& ao) {
+            const auto b = static_cast<Eigen::Index>(range.size);
+            evaluator_.evaluate_derivatives_batch(
+                points.middleCols(static_cast<Eigen::Index>(range.start), b), 2,
+                ao.leftCols(10 * b));
+            const auto panel = [&](int component, Eigen::Index j) {
+                return c.dot(ao.col(component * b + j));
+            };
+            for (Eigen::Index j = 0; j < b; ++j) {
+                auto& out = result[range.start + static_cast<std::size_t>(j)];
+                out.value = panel(0, j);
+                for (int a = 0; a < 3; ++a) {
+                    out.gradient[a] = panel(1 + a, j);
+                    for (int e = a; e < 3; ++e)
+                        out.hessian(a, e) = out.hessian(e, a) =
+                            panel(4 + detail::ao_hessian_column[a][e], j);
                 }
-            } catch (...) {
-                worker_errors.capture();
             }
-        }
-    }
-    worker_errors.rethrow_if_any();
+        });
     return result;
 }
 
@@ -137,23 +123,22 @@ std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::s
         selected.col(static_cast<Eigen::Index>(i)) =
             coeff.col(static_cast<Eigen::Index>(indices[i] - 1));
     constexpr std::size_t block_size = 128;
-    const std::size_t nblocks = detail::parallel_block_count(
-        count, block_size, "too many orbital blocks for parallel evaluation");
     detail::Progress report(progress, count);
-    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t block) {
-        const std::size_t start = static_cast<std::size_t>(block) * block_size;
-        const auto size = std::min(block_size, count - start);
-        const auto b = static_cast<Eigen::Index>(size);
-        const auto points = detail::grid_points(grid, start, size);
-        Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
-        evaluator_.evaluate_batch(points, phi);
-        const Eigen::MatrixXd psi = selected.transpose() * phi;
-        for (std::size_t mo = 0; mo < indices.size(); ++mo)
-            for (Eigen::Index t = 0; t < b; ++t)
-                buffers[mo][start + static_cast<std::size_t>(t)] =
-                    psi(static_cast<Eigen::Index>(mo), t);
-        report.advance(size);
-    });
+    detail::for_each_point_block(
+        count, block_size, "too many orbital blocks for parallel evaluation",
+        [&](detail::PointBlock range) {
+            const auto [start, size] = range;
+            const auto b = static_cast<Eigen::Index>(size);
+            const auto points = detail::grid_points(grid, start, size);
+            Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis_size()), b);
+            evaluator_.evaluate_batch(points, phi);
+            const Eigen::MatrixXd psi = selected.transpose() * phi;
+            for (std::size_t mo = 0; mo < indices.size(); ++mo)
+                for (Eigen::Index t = 0; t < b; ++t)
+                    buffers[mo][start + static_cast<std::size_t>(t)] =
+                        psi(static_cast<Eigen::Index>(mo), t);
+            report.advance(size);
+        });
     std::vector<Field> result;
     result.reserve(indices.size());
     for (auto& buffer : buffers)
