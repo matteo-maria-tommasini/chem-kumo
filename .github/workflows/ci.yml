@@ -6,8 +6,9 @@ on:
 
 jobs:
   test:
-    # The sanitizer entry gets its own name; the others keep "test (<os>)".
-    name: ${{ matrix.sanitize && format('sanitizers ({0})', matrix.os) || format('test ({0})', matrix.os) }}
+    # The sanitizer and OpenMP entries get their own names; the others keep
+    # "test (<os>)".
+    name: ${{ matrix.sanitize && format('sanitizers ({0})', matrix.os) || matrix.openmp && format('openmp ({0})', matrix.os) || format('test ({0})', matrix.os) }}
     runs-on: ${{ matrix.os }}
     # A normal run takes about 5 minutes; fail stuck jobs instead of
     # letting them hang for the 6-hour GitHub default.
@@ -23,6 +24,13 @@ jobs:
         include:
           - os: ubuntu-latest
             sanitize: true
+          # OpenMP build (GCC, libgomp) with more threads than the runner has
+          # cores, so that per-thread behaviour (one workspace per thread, the
+          # thread-count independence of the results) is exercised as on
+          # large machines.
+          - os: ubuntu-latest
+            sanitize: false
+            openmp: true
     steps:
       - uses: actions/checkout@v4
       # Package mirrors and DNS on hosted runners occasionally fail for a few
@@ -74,7 +82,9 @@ jobs:
       # cannot leave them broken.
       - name: Configure
         if: ${{ !matrix.sanitize }}
-        run: meson setup build --buildtype=debugoptimized -Dwerror=true -Dbenchmarks=true
+        run: >-
+          meson setup build --buildtype=debugoptimized -Dwerror=true -Dbenchmarks=true
+          ${{ matrix.openmp && '-Dopenmp=true' || '' }}
       # Warnings are checked by the other jobs. Sanitizer instrumentation can
       # make GCC report extra false-positive warnings, so they do not fail here.
       - name: Configure (sanitizers)
@@ -88,10 +98,15 @@ jobs:
       # multiplied by 5 there. The 'slow' suite (screening tests on the large
       # HBC molecule) took 6 to over 10 minutes under GCC sanitizers on hosted
       # runners; the sanitizer job skips it, the other jobs run it.
+      # The OpenMP job runs 16 threads on the runner's few cores, which is
+      # slow for the large HBC cases, so it skips the 'slow' suite too.
       - name: Test
+        env:
+          OMP_NUM_THREADS: ${{ matrix.openmp && '16' || '' }}
         run: >-
           meson test -C build --print-errorlogs
           ${{ matrix.sanitize && '--timeout-multiplier 5 --no-suite slow' || '' }}
+          ${{ matrix.openmp && '--timeout-multiplier 3 --no-suite slow' || '' }}
       - name: Installed consumer
         if: ${{ !matrix.sanitize }}
         run: ./tests/check-installed-consumer.sh

@@ -45,6 +45,11 @@ kumo_lib = library(
     ],
     include_directories: inc,
     dependencies: [eigen_dep, zlib_dep] + openmp_deps,
+    # The shared library is versioned like the project; its soname carries
+    # the major version, which changes when the public API breaks
+    # (libkumo.so.2 on Linux, libkumo.2.dylib on macOS).
+    version: meson.project_version(),
+    soversion: meson.project_version().split('.')[0],
     install: true,
 )
 kumo_dep = declare_dependency(
