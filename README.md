@@ -4,6 +4,15 @@
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
 </p>
 
+## Motivation
+
+chem-kumo grew out of the wish to give the students of my course, in the long
+run, a state-of-the-art tool with which they can freely explore the wonders of
+the electronic structure of molecules and of the chemical bond. It is free
+software, released under the MIT License, for teaching and research.
+
+## Overview
+
 **chem-kumo** is a lightweight C++20 library and command-line application for
 reconstructing ground-state SCF electron densities and molecular orbitals from
 Gaussian formatted checkpoint (`.fchk` or gzip-compressed `.fchk.gz`) files.
