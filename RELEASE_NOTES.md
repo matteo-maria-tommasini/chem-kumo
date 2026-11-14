@@ -1,3 +1,61 @@
+# chem-kumo 1.13.1 — release notes
+
+A maintenance release from a code, consistency and documentation audit.
+Apart from the block-size fix below, results are unchanged: every CLI
+output, error messages included, is byte-identical to 1.13.0 (checked on
+529 output files, in serial and OpenMP builds). The public API is
+unchanged.
+
+Fix:
+
+- `EvaluationOptions::block_size` is now checked once, when the
+  `Evaluator` is built: it must be between 1 and the new constant
+  `max_block_size` (65536, in `<chem/kumo/density.hpp>`), otherwise
+  `std::invalid_argument` is thrown. Before, a block size above the limit
+  was accepted by some evaluation paths and rejected by others, depending
+  on the request.
+
+Code organization (no change in results):
+
+- The CLI is split into `src/kumo_main.cpp` (mode dispatch) and modules in
+  `src/cli/`: option parsing, one table of the `--property` names with
+  their components and methods, and one output module per mode. On a
+  terminal, `--surface-map` now shows a progress bar like the other modes.
+- `density.cpp` is split into `grid.cpp` (grids and `Field`),
+  `molecule.cpp` (FCHK loading) and `density.cpp` (density kernels); the
+  Gaussian-format Cube writer moves to `cube.cpp`.
+- All block-parallel loops use two shared helpers; an allocation failure
+  in a worker thread is now reported as an exception instead of
+  terminating the program.
+- The electrostatic potential on grids, on surface vertices and at
+  arbitrary points shares one clustering implementation.
+- `Evaluator::evaluate` and the isosurface extraction are split into named
+  steps.
+- The restricted open-shell code paths are kept on purpose, for future
+  support of such files.
+
+Documentation:
+
+- The mathematics document is reorganized with one notation table and one
+  meaning per symbol, and now covers the AO-MO contraction and its
+  eligibility check, the automatic backend choice, the construction of
+  grids, lines and planes, the clustering of the electrostatic potential
+  and the values used where a field is undefined.
+- `docs/OPENMP.md` lists every parallel loop and explains why results do
+  not depend on the number of threads.
+- `docs/API.md` and the README state that restricted open-shell (ROHF,
+  ROKS) files cannot be loaded yet, since Gaussian writes no beta MO
+  coefficients for them.
+- Code comments throughout the library, the public headers and the CLI are
+  rewritten for clarity, and about twenty that no longer matched the code
+  are corrected (for example, the Boys-function Taylor expansion has degree
+  six, seven terms).
+
+Tests:
+
+- New tests of the block-parallel helpers; the worker-error test now uses a
+  throwing progress callback instead of an oversized block.
+
 # chem-kumo 1.13.0 — release notes
 
 The library and the `kumo` CLI evaluate density properties outside Cube
