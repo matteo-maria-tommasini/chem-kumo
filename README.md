@@ -474,10 +474,12 @@ gzip -t tests/data/o2.fchk.gz
 
 The test data include compressed Gaussian formatted checkpoints for O2,
 acrolein, HBC basis-set variants and additional molecular validation cases.
-The exact inventory is maintained under `tests/data/`. chem-kumo reads FCHK gzip
-files directly without temporary decompression; the `fchk-gzip` regression
-test compares compressed and plain-text inputs and rejects corrupted gzip
-trailers. The scalar Cube I/O tests separately validate compressed Cube input.
+The exact inventory is maintained under `tests/data/`. The FCHK files and the
+Gaussian reference Cube files were computed with Gaussian 09, Revision D.01;
+its citation is in [tests/REFERENCE_CUBES.md](tests/REFERENCE_CUBES.md).
+chem-kumo reads FCHK gzip files directly without temporary decompression; the
+`fchk-gzip` regression test compares compressed and plain-text inputs and
+rejects corrupted gzip trailers. The scalar Cube I/O tests separately validate compressed Cube input.
 
 ## Development
 
