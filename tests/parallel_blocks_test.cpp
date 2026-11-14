@@ -132,9 +132,11 @@ void check_point_blocks() {
     }
 }
 
-// Workspaces: each worker builds one and reuses it for all its blocks, so
-// there are at most as many workspaces as blocks and every block sees a built
-// workspace; a throwing make_workspace() is rethrown after the loop.
+// Workspaces: a worker builds one when it gets its first block and reuses it
+// for all its blocks, so there are at most as many workspaces as blocks,
+// whatever the number of threads (workers without blocks build none), and
+// every block sees a built workspace; a throwing make_workspace() is
+// rethrown after the loop.
 void check_point_blocks_with_workspace() {
     constexpr std::size_t count = 1000;
     std::vector<std::atomic<int>> visits(count);
@@ -161,8 +163,23 @@ void check_point_blocks_with_workspace() {
     check(wrong == 0, "for_each_point_block_with_workspace covers every point once (" +
                           std::to_string(wrong) + " points visited a different number of times)");
     check(made.load() >= 1 && made.load() <= 63,
-          "one workspace per worker, never one per block (made " + std::to_string(made.load()) +
-              " for 63 blocks)");
+          "one workspace per worker with blocks, never one per block (made " +
+              std::to_string(made.load()) + " for 63 blocks)");
+    // Fewer blocks than threads, and no blocks at all.
+    for (const std::size_t points : {std::size_t{32}, std::size_t{0}}) {
+        std::atomic<int> few{0};
+        for_each_point_block_with_workspace(
+            points, 16, "x",
+            [&] {
+                few.fetch_add(1);
+                return Workspace{};
+            },
+            [](PointBlock, Workspace&) {});
+        const int blocks = static_cast<int>(points / 16);
+        check(few.load() <= blocks && (blocks == 0 || few.load() >= 1),
+              "workers without blocks build no workspace (made " + std::to_string(few.load()) +
+                  " for " + std::to_string(blocks) + " blocks)");
+    }
     check(unbuilt.load() == 0, "every block receives a built workspace");
 
     bool rethrown = false;
