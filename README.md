@@ -78,9 +78,15 @@ kumo molecule.fchk --alie-surface                # ionization energy statistics
 kumo molecule.fchk --property alie,lea,leae      # orbital-energy fields (Cube)
 kumo molecule.fchk --surface-map --property leae --isovalue 0.004 --ply
                                                  # LEAE on rho = 0.004, with a PLY file
+# Locations: X,Y,Z in bohr, or @N = the position of atom N of the FCHK (1-based)
 kumo molecule.fchk --point @1 --point 0,0,1.5 --property density,laplacian
-kumo molecule.fchk --line @1:@2 --property density,lol   # profile -> PREFIX_line.dat
-kumo molecule.fchk --plane @1:@2:@3 --property elf      # map -> PREFIX_plane.dat
+                                  # at the nucleus of atom 1 and at (0, 0, 1.5) bohr
+kumo molecule.fchk --line @1:@2 --property density,lol
+                                  # profile from atom 1 to atom 2 -> PREFIX_line.dat
+kumo molecule.fchk --line @1:0,0,3 --property density
+                                  # from atom 1 to the point (0, 0, 3) bohr
+kumo molecule.fchk --plane @1:@2:@3 --property elf
+                                  # map in the plane of atoms 1, 2, 3 -> PREFIX_plane.dat
 kumo molecule.fchk --mo homo                     # HOMO amplitude
 kumo molecule.fchk --mo frontier                 # HOMO and LUMO
 kumo molecule.fchk --mo 8,10:12,15               # explicit 1-based indices
@@ -182,8 +188,21 @@ whose occupied orbitals reproduce the FCHK density. Acrolein takes about
 0.3 s.
 
 `--point`, `--line` and `--plane` evaluate the `--property` and `--spin`
-selection at chosen points instead of a Cube grid. Locations are `X,Y,Z` in
-bohr or `@N`, the position of atom N (1-based). `--point` (repeatable)
+selection at chosen points instead of a Cube grid. A location is given in
+one of two ways:
+
+- `X,Y,Z`: Cartesian coordinates in bohr, separated by commas without
+  spaces, for example `0,0,1.5` or `-1.2,0.4,2`;
+- `@N`: the position of the nucleus of atom N, counting the atoms from 1 in
+  the order of the FCHK file (the order of the Gaussian input). `@1` is the
+  first atom; nothing else defines it.
+
+Both refer to the coordinates stored in the FCHK, which are those of the
+orientation Gaussian used for the calculation (its standard orientation,
+unless the input asked for `NoSymm`), in bohr. Explicit coordinates and
+atoms can be mixed, as in `--line @1:0,0,3`. Every output table lists the
+x, y, z of each point (bohr), so the position of `@N` can be read there.
+`--point` (repeatable)
 prints a table on standard output. `--line A:B` writes `PREFIX_line.dat`,
 evenly spaced points from A to B with both ends included (default spacing
 0.01 bohr), extended by `--margin` beyond each end (default 0); its rows
