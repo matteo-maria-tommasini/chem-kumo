@@ -1,3 +1,32 @@
+# chem-kumo 2.0.2 — release notes
+
+A packaging release. Results and the public API are unchanged from 2.0.1;
+apart from the version in the first line of Cube files, every CLI output
+is byte-identical.
+
+Build:
+
+- The shared library now carries its version. The major version is the
+  ABI version (soversion), so this release installs `libkumo.so.2.0.2`
+  with the links `libkumo.so.2` and `libkumo.so` on Linux, and
+  `libkumo.2.dylib` with the link `libkumo.dylib` on macOS.
+  Programs link against `libkumo.so.2` (`libkumo.2.dylib`), so a future 3.x
+  library can be installed next to them without breaking them. Packages
+  built from 2.0.1 or earlier installed an unversioned `libkumo.so`;
+  programs linked against it must be relinked.
+
+Continuous integration:
+
+- A new job, `openmp (ubuntu-latest)`, builds with `-Dopenmp=true` and
+  runs the test suite with 16 OpenMP threads (without the `slow` suite),
+  next to the existing serial jobs.
+
+Documentation:
+
+- The README explains how the CLI takes locations: either `X,Y,Z` in bohr,
+  in the coordinate frame of the FCHK file, or `@N`, the nucleus of atom N
+  of the FCHK (counting from 1).
+
 # chem-kumo 2.0.1 — release notes
 
 A bug-fix release. Results and the public API are unchanged from 2.0.0;
