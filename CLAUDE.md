@@ -23,7 +23,9 @@ optional OpenMP. Public GitHub repo: `matteo-maria-tommasini/chem-kumo`.
 - `tests/` — one executable per `*_test.cpp`, plus shell tests
   (`cli_*.sh`, `check-installed-consumer.sh`). Reference data in
   `tests/data/` (Gaussian `.fchk.gz` and reference Cube files; provenance in
-  `tests/REFERENCE_CUBES.md`).
+  `tests/REFERENCE_CUBES.md`). `tests/molecule_test_access.hpp` gives tests
+  and benchmarks access to the private `Molecule` kernels and pointwise
+  reference implementations (the public API evaluates through `Evaluator`).
 - `benchmarks/` — optional, built only with `-Dbenchmarks=true`.
 - `docs/API.md`, `docs/OPENMP.md`, `docs/mathematics/*.tex` — documentation.
 - `meson.build` — the single build file; every test is registered there.

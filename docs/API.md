@@ -2,24 +2,103 @@
 
 Include `<chem/kumo.hpp>` and link against `kumo_dep` in Meson. Public types
 are in namespace `chem::kumo`. Examples use fully qualified names (such as
-`chem::kumo::Molecule` and `chem::kumo::Spin`) rather than namespace-wide
-`using` directives. All spatial coordinates and grid vectors use atomic
-units (bohr).
+`chem::kumo::Molecule`) rather than namespace-wide `using` directives. All
+spatial coordinates and grid vectors are in atomic units (bohr).
 
-## Reading an FCHK
+The library has two main classes:
 
-`Molecule::from_fchk(path)` accepts plain FCHK or gzip-compressed FCHK (detected by magic bytes), and constructs the molecule, basis evaluator, SCF
-matrices and available MO coefficient/energy arrays. `FormattedCheckpoint`
-provides typed access to named scalar and array records; a missing or
-incorrectly typed record raises an exception. No Gaussian executable is
-required at runtime.
+- `Molecule` holds what an FCHK file provides: atoms, basis set, SCF density
+  matrices, molecular orbitals (MOs) and their energies.
+- `Evaluator` evaluates fields of a `Molecule` (densities and their
+  derivatives, orbitals, derived descriptors, the electrostatic potential)
+  on a grid or at arbitrary points.
+
+```cpp
+const auto molecule = chem::kumo::Molecule::from_fchk("water.fchk.gz");
+const auto grid = chem::kumo::Grid::around(molecule.atoms(), 4.0, 0.2);
+const chem::kumo::Evaluator evaluator(molecule);
+evaluator.field(grid, chem::kumo::density::total.value()).write_cube("density.cube");
+```
+
+## Migrating from 1.x to 2.0
+
+Version 2.0 changes the public API; the numerical results are those of
+1.13. The table lists each change and its replacement.
+
+| 1.x | 2.0 |
+|---|---|
+| `Spin::Total`, `Alpha`, `Beta`, `Difference` (densities) | `DensityComponent::Total`, `Alpha`, `Beta`, `Difference` |
+| `Spin::Alpha`, `Spin::Beta` and `OrbitalSpin` (MO channels) | `SpinChannel::Alpha`, `SpinChannel::Beta` |
+| `DensityComponent::Spin`, `density::spin` | `DensityComponent::Difference`, `density::difference` |
+| `molecule.density(grid, c)` | `evaluator.field(grid, DensityDescriptor{c}.value())`, e.g. `evaluator.field(grid, density::total.value())` |
+| `densities()`, `densities_blocked()`, `spin_densities()` | one `Request` with the components wanted, evaluated with `Evaluator::evaluate(grid, request)` |
+| `orbital(grid, i, channel)`, `orbitals(...)` | `orbital::alpha(i).value()` (or `beta`) in a `Request`, or `evaluator.field(grid, orbital::alpha(i).value())` |
+| `density_derivatives(point, c)`, `density_derivatives_blocked(points, ...)` | `value()`, `gradient()`, `hessian()`, `laplacian()`, `tau()` of a density component, with `Evaluator::evaluate(points, request)` |
+| `orbital_derivatives(point, i, channel)`, `orbital_derivatives_blocked(...)` | `orbital::alpha(i).value()`, `.gradient()`, `.hessian()` with `Evaluator::evaluate(points, request)` |
+| `density_pointwise()` | removed (a test reference) |
+| `DensityDerivatives`, `OrbitalDerivatives`, `SpinDensities` | removed from the public API (results are `PropertyField`s) |
+| AO Hessian columns `xx, yy, zz, xy, xz, yz` (`AODerivatives::hessian`, derivative batch panels, `CartesianAOMoments::second`) | `xx, xy, xz, yy, yz, zz`, as in Evaluator results |
+| `int occupied_count()` | `std::size_t occupied_count()` |
+
+The same evaluations are therefore done by one class, with one set of options
+(backend, block size, AO screening, progress) and the same validation.
+
+## Molecule
+
+`Molecule::from_fchk(path)` reads a plain or gzip-compressed FCHK
+(recognized by its first bytes) and builds the molecule. No Gaussian
+executable is needed. It throws `std::runtime_error` for a file that cannot
+be read or has missing, malformed or inconsistent records.
+`FormattedCheckpoint` gives typed access to the named records of an FCHK;
+a missing or wrongly typed record raises an exception.
+
+The molecule provides:
+
+- `atoms()`: atomic numbers, nuclear charges and positions (bohr), in FCHK
+  order;
+- `basis_size()`: the number of atomic orbitals (AOs);
+- `density_matrix(component)`: the AO density matrix of a density component
+  (see below);
+- `unrestricted()`: whether the file has separate beta MOs;
+- `mo_coefficients(channel)`: the MO coefficients of a spin channel,
+  `basis_size()` x `orbital_count()`, one MO per column (column i is MO
+  i + 1); a restricted calculation returns the same matrix for both
+  channels;
+- `orbital_count(channel)`, `occupied_count(channel)` and
+  `orbital_energies(channel)` (hartree; entry i is MO i + 1);
+- `electronic_structure_info()`: the result of the check, made when the
+  file is loaded, of the occupied MOs against the density matrices (see
+  Backends below).
+
+An MO is `psi_i(r) = sum_mu C[mu,i] chi_mu(r)`, a signed amplitude in
+bohr^(-3/2); no phase convention or normalization is applied. MO indices are
+one-based everywhere in the public API. HOMO and LUMO labels in the CLI come
+from the occupied counts of each channel.
+
+## Density components and spin channels
+
+Two enumerations, in `<chem/kumo/spin.hpp>`, select what a property refers
+to:
+
+- `DensityComponent` selects a density: `Total` (`rho_alpha + rho_beta`),
+  `Alpha`, `Beta`, or `Difference` (`rho_alpha - rho_beta`, which can be
+  negative). Densities are in e/bohr^3. The FCHK stores the total and
+  spin-difference matrices; the alpha and beta matrices are
+  `(Total + Difference) / 2` and `(Total - Difference) / 2`, never rebuilt
+  from MO occupations.
+- `SpinChannel` selects the MOs of one spin: `Alpha` or `Beta`. In a
+  restricted calculation both channels have the same spatial orbitals.
+
+Because orbitals take a `SpinChannel`, asking for a "total" orbital does
+not compile.
 
 ## Grid and fields
 
 `Grid::around(atoms, margin_bohr, spacing_bohr)` builds an axis-aligned
 regular grid around the atomic bounding box. `Grid::origin` is the first
 point; `Grid::steps.col(k)` is the increment along grid axis `k`;
-`Grid::counts` gives the point count along each axis.
+`Grid::counts` gives the point count along each axis. Values are stored with
+the third axis fastest ("Field order"), as in Cube files.
 
 A grid need not be axis-aligned or three-dimensional: an axis with one point
 gives a plane, two give a line. Two constructors build them (1.13.0):
@@ -43,86 +122,162 @@ Both throw `std::invalid_argument` for nonfinite points, coincident ends or
 spacing, or more points than an `int` count holds. A length that is a
 multiple of the spacing up to rounding keeps that multiple, so a line or
 plane through points of another regular grid reproduces them. Every
-`Evaluator` property can be evaluated on these grids (for a single point,
-use a `Grid` with `origin` at the point and the default steps and counts);
-`read_cube()` and `FieldSampler` need at least two points per axis. The test
-`line-plane` checks the geometry, agreement with point-by-point evaluation
-(1e-12, and 2e-8 for the electrostatic potential), and LOL and ELF on a
-line and a plane through the points of the Multiwfn water Cube files
-(largest difference 24% of the 2e-5 relative tolerance).
+`Evaluator` property can be evaluated on these grids; `read_cube()` and
+`FieldSampler` need at least two points per axis. The test `line-plane`
+checks the geometry, agreement with point-by-point evaluation (1e-12, and
+2e-8 for the electrostatic potential), and LOL and ELF on a line and a plane
+through the points of the Multiwfn water Cube files (largest difference 24%
+of the 2e-5 relative tolerance).
 
-`Field::operator()(i,j,k)` accesses a sampled value. `Field::values()`
-provides a read-only contiguous view. `write_cube(path)` writes scalar fields;
-`write_orbital_cube(path, orbital_index)` writes a Gaussian-style orbital
-Cube with an MO index record. `Field` stores values, atoms, and grid geometry.
+A `Field` holds the values of one scalar field on a grid, with the grid and
+the atoms. `Field::operator()(i, j, k)` returns one value and
+`Field::values()` a read-only contiguous view. `write_cube(path)` writes a
+Gaussian Cube file; `write_orbital_cube(path, orbital_index)` writes an
+orbital Cube file with Gaussian's MO index record.
+`Evaluator::field(grid, property)` returns the Field of one one-component
+property.
 
-## Density methods
+## Evaluator
 
-`Spin::Total`, `Spin::Alpha`, `Spin::Beta`, and `Spin::Difference` select
-`rho_alpha + rho_beta`, `rho_alpha`, `rho_beta`, and
-`rho_alpha - rho_beta`, respectively. Densities have units e/bohr^3.
+`Evaluator` (`<chem/kumo/evaluator.hpp>`) evaluates a `Request` of
+properties on a `Grid` or at arbitrary points. It is the interface the CLI
+uses for all its output.
 
-- `density(grid, spin)` returns one component.
-- `densities(grid, {components...})` computes selected fields with shared AO
-  evaluation; duplicate component requests do not create duplicate fields.
-- `spin_densities(grid)` returns all four components in a named structure.
-- `densities_blocked(grid, components, block_size, screening_threshold,
-  progress)` explicitly selects a block size (the default density path uses
-  128 points per block), an AO screening threshold and an optional progress
-  callback.
-- Progress reports: `ProgressCallback` (`<chem/kumo/density.hpp>`) is a
-  `std::function<void(std::size_t done, std::size_t total)>`, accepted by
-  `densities_blocked`, `orbitals` and `EvaluationOptions::progress`. It is
-  called after each block of grid points with the number of points done so
-  far and the total; calls are serialized (never concurrent, possibly from
-  an OpenMP worker thread), `done` increases up to `total`, and an
-  exception thrown by the callback aborts the evaluation and reaches the
-  caller. For `Evaluator::evaluate`, `total` counts the points of all passes
-  over the grid: the derivative or AO-MO pass, if any, plus one pass per
-  AO-P density or orbital field. The callback does not change the
-  results.
-- AO screening: in each block, AOs whose absolute value is at most
-  `default_screening_threshold` (1e-12) at every point are left out of the
-  density-matrix contraction. This makes large-basis densities several times
-  faster; the change in the density is at rounding level (at most about
-  1e-13 e/bohr^3 in the tested systems). A threshold of 0 gives the exact
-  contraction. `EvaluationOptions::screening_threshold` sets the same
-  threshold for `Evaluator` AO_P densities and density derivatives, and
-  `density_derivatives_blocked()` takes it as a parameter. For derivatives
-  an AO is left out only if its value and all its derivatives are at most
-  the threshold in the block; on HBC def2-TZVP this makes AO_P gradients and
-  Hessians about five times faster, with relative changes of about 1e-15.
-  The AO_MO contraction (densities and derivatives) is screened the same
-  way: negligible AOs are dropped from the AO panels and from the occupied
-  MO coefficients of each block (about 1.6 times faster on HBC
-  def2-TZVP, where AO evaluation then dominates).
-- `density_pointwise(grid, spin)` retains the original pointwise algorithm
-  for regression comparisons.
+```cpp
+chem::kumo::Evaluator evaluator(molecule, {.potential_tolerance = 1e-6});
+chem::kumo::Request request;
+request.add(chem::kumo::density::total.value())
+    .add(chem::kumo::density::total.gradient())
+    .add(chem::kumo::density::total.electrostatic_potential())
+    .add(chem::kumo::orbital::alpha(5).value());
+const auto results = evaluator.evaluate(grid, request);
+const std::span<const double> rho =
+    results.get(chem::kumo::density::total.value()).component();
+```
 
-## Molecular orbitals
+- **Requests.** `density::total`, `alpha`, `beta` and `difference` give
+  `value()`, `gradient()`, `hessian()`, `laplacian()`, `tau()`, `elf()`,
+  `reduced_gradient()`, `sign_lambda2_density()`,
+  `electrostatic_potential()` and the fields of the sections below.
+  `orbital::alpha(i)` and `orbital::beta(i)` (one-based) give `value()`,
+  `gradient()` and `hessian()` of the MO amplitude (2.0 for the last two).
+  A property requested twice is evaluated once, and the order of a request
+  does not matter.
+- **Results.** `Results::get(property)` returns a `PropertyField`, one array
+  per component, in Field order on grids and in column order at points.
+  Gradients have 3 components (x, y, z) and Hessians 6, the upper triangle
+  row by row (xx, xy, xz, yy, yz, zz); the other properties have 1.
+  `component(c)` returns a `std::span` into the Results, which must stay
+  alive while the span is used. `Results::backend_used()` reports the
+  density contraction actually used.
+- **One field.** `field(grid, property)` evaluates one one-component
+  property and returns it as a `Field`, ready for `write_cube()`; it throws
+  `std::invalid_argument` for gradients and Hessians. Requesting several
+  properties in one `evaluate()` call is faster than several `field()`
+  calls, because they share the AO values.
+- **Arbitrary points.** `evaluate(points, request)` evaluates the same
+  requests at the columns of a `3 x N` matrix (bohr), in column order, for
+  example the vertices of a surface or the points of a profile. Values equal
+  grid evaluation at the same points to rounding (the test
+  `point-evaluation` finds at most 5e-15 relative, with both backends). The
+  electrostatic potential groups the points by cubes of
+  `potential_cluster_edge` (1.6 bohr) aligned with the axes at multiples of
+  the edge, each evaluated around its centre within `potential_tolerance`;
+  it agrees with grid evaluation within 2e-10 in that test. A nonfinite
+  point throws `std::invalid_argument`; an empty matrix gives empty fields.
+- **Options** (`EvaluationOptions`):
+  - `backend`: `AUTO`, `AO_P` or `AO_MO` (see Backends);
+  - `block_size`: points per block, default 128, from 1 to `max_block_size`
+    (65536); other values are rejected by the constructor;
+  - `screening_threshold`: AO screening (see below), default 1e-12, 0 for
+    the exact contraction;
+  - `potential_tolerance`: error bound of the electrostatic potential,
+    default 1e-8 hartree/e, 0 for the exact sum;
+  - `progress`: a progress callback (see below);
+  - `threads`: only 0 and 1 are accepted; in OpenMP builds the number of
+    threads is set with `OMP_NUM_THREADS`.
+- **Lifetime.** The Evaluator keeps a pointer to the `Molecule`, which must
+  outlive it and every call to `evaluate()`.
+- **Errors.** The constructor throws `std::invalid_argument` for invalid
+  options or for `AO_MO` on a molecule whose orbitals are not AO-MO
+  eligible. `evaluate()` throws `std::invalid_argument` for an invalid grid,
+  an orbital index of 0, a derived property requested for a component it is
+  not defined for, or an orbital-energy field whose requirements are not
+  met; `std::out_of_range` for an orbital index past the last MO; and
+  `std::runtime_error` for an orbital request when the file has no MOs.
+- **Determinism.** Results do not depend on the number of OpenMP threads,
+  and the electrostatic potential does not depend on the block size either
+  (see [OPENMP.md](OPENMP.md)). With AO screening, different requests may
+  differ at rounding level, because a block keeps the AOs needed by the most
+  demanding property requested.
 
-`orbital_count(channel)`, `occupied_count(channel)`, and
-`orbital_energies(channel)` inspect alpha or beta MO metadata.
-`orbital(grid, index_one_based, channel)` returns a signed spatial orbital
-amplitude, and `orbitals(grid, indices_one_based, channel)` computes multiple
-orbital fields with shared AO batches. Index 1 means the first orbital.
-`Spin::Alpha` and `Spin::Beta` are valid MO channels; `Spin::Total` and
-`Spin::Difference` describe densities and are not MO channels.
+**Backends.** A density can be contracted in two ways: with the AO density
+matrix of the file (`AO_P`), or with the occupied MOs (`AO_MO`), which is
+usually faster. The two agree only if the occupied MOs reproduce the density
+matrices, which `Molecule::from_fchk` checks once
+(`electronic_structure_info()`): the differences, relative to the norm of
+the total density matrix, must be at most `orbital_check_relative_tolerance`
+(1e-8) for both the total and the spin-difference matrix. `AUTO` (the
+default) uses `AO_MO` when the molecule passes the check and the request
+involves a density, `AO_P` otherwise. An explicit `AO_MO` request for a
+molecule that fails the check is an error, never silently replaced.
 
-An orbital is `psi_i(r) = sum_mu C[mu,i] chi_mu(r)`. The returned value is
-**not** its square and has units bohr^(-3/2). No phase adjustment or
-normalization is applied. For restricted calculations alpha and beta refer
-to the same spatial orbital set; unrestricted calculations use independent
-alpha/beta coefficients and orbital energies. HOMO/LUMO labels in the CLI
-are determined from occupied counts per channel.
+**Progress.** `ProgressCallback` (`<chem/kumo/density.hpp>`) is a
+`std::function<void(std::size_t done, std::size_t total)>`, set with
+`EvaluationOptions::progress`. It is called after each block of points with
+the number of points done so far and the total; `total` counts the points of
+all the passes of the evaluation (the derivative or AO-MO pass, the
+electrostatic potential, the orbital-energy fields, the orbitals at points,
+one pass per AO-P density on a grid and one per spin channel of orbitals on
+a grid). Calls are serialized (never concurrent, possibly from an OpenMP
+worker thread), `done` increases up to `total`, and an exception thrown by
+the callback aborts the evaluation and reaches the caller. The callback does
+not change the results.
+
+**AO screening.** In each block of points, AOs whose absolute value (and,
+for derivatives, that of all their derivatives) is at most
+`screening_threshold` at every point are left out of the contraction, both
+from the density matrix (AO_P) and from the occupied MO coefficients
+(AO_MO). This makes large-basis evaluations several times faster: on HBC
+(hexabenzocoronene) def2-TZVP, AO_P gradients and Hessians about five times
+and AO_MO about 1.6 times, where AO evaluation then dominates. The change is at rounding
+level: at most about 1e-13 e/bohr^3 in the density, and relative changes of
+about 1e-15 in the derivatives, in the tested systems. A threshold of 0
+gives the exact contraction.
+
+The densities and their derivatives are **spatial derivatives at fixed
+geometry and fixed wavefunction**, not derivatives with respect to nuclear
+positions. The positive kinetic-energy density is
+`tau = (1/2) sum_i n_i |grad psi_i|^2` for a spin channel; for
+`DensityComponent::Difference` the returned tau is the **signed** difference
+`tau_alpha - tau_beta`. Units: density e/bohr^3, gradient e/bohr^4,
+Hessian and Laplacian e/bohr^5, tau hartree/bohr^3. The mathematical
+derivation is in [chem-kumo-mathematics.tex](mathematics/chem-kumo-mathematics.tex);
+performance methodology and HBC measurements are in
+[SPATIAL_DERIVATIVES.md](../benchmarks/SPATIAL_DERIVATIVES.md).
 
 ## AO and basis interfaces
 
-`BasisSet` represents Gaussian shells, including Cartesian, pure, and SP
-shell metadata. `BasisEvaluator::evaluate(point)` returns AO values in FCHK
-ordering; `evaluate_into` fills a caller-provided vector; `evaluate_batch`
-produces AO columns for a batch of points. The `evaluate_into_reference`
-method is a numerical-regression implementation.
+`BasisSet` represents the Gaussian shells of an FCHK, including Cartesian,
+pure and SP shells. `BasisEvaluator::evaluate(point)` returns the AO values
+at a point in FCHK order; `evaluate_into` fills a caller-provided vector;
+`evaluate_batch` fills one column per point for a batch of points. The
+`evaluate_into_reference` method is a simple implementation kept for
+numerical regression tests.
+
+`BasisEvaluator::evaluate_derivatives(point)` returns an `AODerivatives`
+structure: `values` (N AO), `gradient` (N AO x 3, columns x, y, z) and
+`hessian` (N AO x 6). The Hessian columns are **xx, xy, xz, yy, yz, zz**
+(before 2.0: xx, yy, zz, xy, xz, yz). `evaluate_derivatives_batch(points,
+order, output)` computes the same quantities for a 3 x N batch of points
+without per-point allocations; `order` is 1 (values and gradient) or 2 (also
+the Hessian). `output` must be N AO x (panels * N), with `panels =
+BasisEvaluator::derivative_panel_count(order)` (4 or 10); it is filled with
+consecutive N AO x N panels in the order value, x, y, z, xx, xy, xz, yy, yz,
+zz, so component `c` at point `j` is column `c * N + j`.
+`BasisEvaluator::cartesian_moments()` returns the AO overlap, first and
+second moment matrices (`CartesianAOMoments`); the second moments use the
+same order xx, xy, xz, yy, yz, zz.
 
 Shell cutoff (1.6.0): for each shell, the evaluator precomputes a radius
 beyond which a rigorous bound on every AO of the shell and on its first and
@@ -134,133 +289,9 @@ def2-TZVP grids this makes densities about 1.3 times (AO_MO about 1.5
 times) and derivatives 1.1 to 1.3 times faster, with changes of at most
 about 6e-14 in the results.
 
-## Spatial derivative API (1.2.0)
-
-`BasisEvaluator::evaluate_derivatives(point)` returns an `AODerivatives`
-structure: `values` (N AO), `gradient` (N AO x 3) and `hessian`
-(N AO x 6). The Hessian columns are **xx, yy, zz, xy, xz, yz**; the
-coordinate axes and units are Cartesian bohr. AO ordering follows the FCHK.
-
-`BasisEvaluator::evaluate_derivatives_batch(points, order, output)` computes
-the same quantities for a 3 x N batch of points without per-point
-allocations, which is how the library evaluates density and orbital
-derivatives on grids. `order` is 1 (values and gradient) or 2 (also the
-Hessian). `output` must be N AO x (panels * N), with
-`panels = BasisEvaluator::derivative_panel_count(order)` (4 or 10); it is
-filled with consecutive N AO x N panels in the order value, x, y, z, xx, yy,
-zz, xy, xz, yz, so component `c` at point `j` is column `c * N + j`.
-
-`Molecule::orbital_derivatives(point, index_one_based, channel)` returns
-`OrbitalDerivatives` with signed `value`, `gradient` (3-vector) and
-`hessian` (symmetric 3 x 3 matrix). The MO channel must be Alpha or Beta.
-
-`Molecule::density_derivatives(point, component)` returns
-`DensityDerivatives` with `value`, `gradient`, `hessian`, `laplacian`,
-and `tau`. `laplacian` equals the trace of `hessian`. The positive
-kinetic-energy density is defined as
-`tau = (1/2) sum_i occupation_i |grad psi_i|^2` for a physical spin
-channel; for `Spin::Difference`, the returned tau is the **signed**
-difference `tau_alpha - tau_beta`. Units are density bohr^-3, gradient
-bohr^-4, Hessian/Laplacian bohr^-5 and tau hartree/bohr^3 in atomic units.
-
-`Molecule::density_derivatives_blocked(points, component, block_size=128,
-screening_threshold=default_screening_threshold)`
-accepts a **3 x N** Eigen matrix with one Cartesian point per column,
-and returns `std::vector<DensityDerivatives>` in the same order. A zero
-block size, non-finite points and a negative or nonfinite screening
-threshold are rejected. The method currently
-materializes the result vector; it is not a streaming grid writer.
-
-`Molecule::orbital_derivatives_blocked(points, index_one_based, channel,
-block_size=128)` accepts the same 3 x N point layout and returns ordered
-`OrbitalDerivatives` for one alpha/beta MO, evaluating the AO derivatives of
-each block with `evaluate_derivatives_batch()`.
-
-When built with `-Dopenmp=true`, `densities_blocked()`,
-`density_derivatives_blocked()`, `orbitals()` (and `orbital()` through it), and
-`orbital_derivatives_blocked()` schedule independent grid/point blocks across
-OpenMP workers. OpenMP is optional and off by default. Pointwise evaluators
-remain serial; thread count is controlled through `OMP_NUM_THREADS`.
-See [docs/OPENMP.md](OPENMP.md) for execution and deployment notes.
-
-The blocked derivative path uses Eigen to apply the density matrix once
-to a packed panel containing AO values and their three first derivatives.
-Six AO second-derivative panels are used in linear reductions; no density
-matrix product is needed for those panels. AO derivatives of a block are
-evaluated together with `evaluate_derivatives_batch()`, and negligible AOs
-are screened out of the contraction as described above. There is no sparse
-matrix contraction or new numerical dependency.
-
-These are **spatial derivatives at fixed geometry and fixed wavefunction**,
-not derivatives with respect to nuclear positions. The `kumo` CLI writes
-the gradient norm, Laplacian and `tau` of any density component as Cube
-files with `--property` (see the README).
-The mathematical derivation is in
-[chem-kumo-mathematics.tex](mathematics/chem-kumo-mathematics.tex).
-Performance methodology and HBC measurements are in
-[SPATIAL_DERIVATIVES.md](../benchmarks/SPATIAL_DERIVATIVES.md).
-
-## Evaluator (1.4.0)
-
-`Evaluator` (`<chem/kumo/evaluator.hpp>`) evaluates typed requests on a
-`Grid` and is the interface the CLI uses for all density output.
-
-```cpp
-Evaluator evaluator(molecule, {.potential_tolerance = 1e-6});
-Request request;
-request.add(density::total.value())
-    .add(density::total.gradient())
-    .add(density::total.electrostatic_potential())
-    .add(orbital::alpha(5).value());
-const Results results = evaluator.evaluate(grid, request);
-const std::span<const double> rho = results.get(density::total.value()).component();
-```
-
-- **Requests.** `density::total`, `alpha`, `beta` and `spin` (alpha minus
-  beta) give `value()`, `gradient()`, `hessian()`, `laplacian()`, `tau()`,
-  `elf()`, `reduced_gradient()`, `sign_lambda2_density()`,
-  `electrostatic_potential()` and the fields of the sections below; `orbital::alpha(i)` and `orbital::beta(i)`
-  (one-based) give `value()`. A property requested twice is evaluated once,
-  and the order of a request does not matter.
-- **Results.** `Results::get(property)` returns a `PropertyField`, one array
-  per component in Field order (third grid axis fastest): gradients have 3
-  components (x, y, z), Hessians 6 (xx, xy, xz, yy, yz, zz), the others 1.
-  `component()` returns a `std::span` into the Results, which must stay
-  alive while the span is used. `Results::backend_used()` reports the
-  density contraction actually used.
-- **Options** (`EvaluationOptions`): `backend` (`AUTO`, `AO_P`, `AO_MO`; see
-  the README), `block_size` (grid points per block, default 128, from 1 to
-  `max_block_size` = 65536; other values are rejected by the constructor),
-  `screening_threshold` (AO screening, default 1e-12, 0 exact),
-  `potential_tolerance` (electrostatic potential error bound, default 1e-8
-  hartree/e, 0 exact), `progress` (see Density methods) and `threads`
-  (only 0 and 1 are accepted; use `OMP_NUM_THREADS` in OpenMP builds).
-- **Lifetime.** The Evaluator keeps a pointer to the `Molecule`, which must
-  outlive it and every call to `evaluate()`.
-- **Errors.** The constructor throws `std::invalid_argument` for invalid
-  options or for `AO_MO` on a molecule whose orbitals are not AO-MO
-  eligible (`Molecule::electronic_structure_info()` reports the check: its
-  differences, relative to the norm of the total density matrix, must be
-  at most `orbital_check_relative_tolerance`, 1e-8, for both the total and
-  the spin density matrix); `evaluate()` throws it for an invalid grid, an orbital index of
-  0, or a derived property requested for a component it is not defined for.
-- **Determinism.** Results do not depend on the number of OpenMP threads,
-  and the electrostatic potential does not depend on the block size either
-  (see [OPENMP.md](OPENMP.md)). With AO screening, different requests may differ
-  at rounding level, because a block keeps the AOs needed by the most
-  demanding property requested.
-- **Arbitrary points (1.13.0).** `evaluate(points, request)` evaluates the
-  same requests at the columns of a `3 x N` matrix (bohr), in column order,
-  for example the vertices of a surface. Values equal grid evaluation at the
-  same points to rounding (the test `point-evaluation` finds at most 5e-15
-  relative, with both backends): densities come from the point kernels
-  (with AO-P too), orbitals from their own pass. The electrostatic potential
-  groups the points by cubes of `potential_cluster_edge` (1.6 bohr) aligned
-  with the axes at multiples of the edge, each evaluated around its centre
-  within `potential_tolerance`; it agrees with grid evaluation within 2e-10
-  in that test. A nonfinite point throws `std::invalid_argument`; an empty
-  matrix gives empty fields. Results do not depend on the number of OpenMP
-  threads.
+When built with `-Dopenmp=true`, the Evaluator runs its blocks of points on
+OpenMP threads; OpenMP is optional and off by default. See
+[docs/OPENMP.md](OPENMP.md).
 
 ## Derived properties: ELF, reduced gradient, sign(lambda2) rho (1.8.0)
 
@@ -360,7 +391,7 @@ Multiwfn's definitions, which the reference tests check:
   electronic energy density `H = G + V = lap rho / 4 - tau = -K`. Its sign
   at a bond critical point is used to characterize interactions (Cremer and
   Kraka).
-- `density::spin.spin_polarization()` (`PropertyKind::SpinPolarization`,
+- `density::difference.spin_polarization()` (`PropertyKind::SpinPolarization`,
   Spin only): `zeta = (rho_alpha - rho_beta) / (rho_alpha + rho_beta)`, in
   [-1, 1]: 0 for a closed shell or where there is no density, ±1 where only
   one spin is present.
@@ -378,7 +409,7 @@ Validation (tests `density-fields` and `multiwfn-reference`):
   gradient, Hessian, Laplacian and tau to 1e-13 (DORI 1e-12), for water,
   O2 (unrestricted) and acrolein;
 - K agrees with the orbital form `-(1/2) sum_i psi_i lap psi_i`, evaluated
-  with `Molecule::orbital_derivatives()`, to about 1e-13 of
+  with the pointwise MO derivatives, to about 1e-13 of
   `|tau| + |lap rho| / 4`, and DORI with central finite differences of
   `|grad rho|^2 / rho^2` to about 1e-7 (the tests require 1e-7 and 1e-5);
 - for a closed shell the total LOL equals the unpolarized formula and the
@@ -432,7 +463,7 @@ Validation (tests `point-evaluation`, `multiwfn-reference`,
 `molecular-surface`):
 
 - the five fields equal their formulas evaluated from
-  `Molecule::orbital_derivatives()` and the orbital energies to 1e-12 of
+  the pointwise MO amplitudes and the orbital energies to 1e-12 of
   the ALIE for water, O2 (unrestricted) and acrolein (LEAE also to 1e-12 of
   itself where |LEAE| >= 1e-3 hartree), and the ALIE equals
   `average_local_ionization_energy()`; LEAE is 0 for water, all fields are
@@ -688,7 +719,7 @@ one core.
 Validation (tests `molecular-surface` and `multiwfn-surface-reference`):
 
 - at vertices and at points near and between the nuclei, the values agree
-  with the orbital formula evaluated with `Molecule::orbital_derivatives()`
+  with the orbital formula evaluated with the pointwise MO amplitudes
   to 1e-12 relative, for restricted (water) and unrestricted (O2) files;
 - the values lie between the smallest and largest occupied |e_i|, and 2 and
   4 threads give identical results;

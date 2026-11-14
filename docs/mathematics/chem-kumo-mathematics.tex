@@ -113,7 +113,9 @@ Differentiation commutes with the contraction and with the
 Cartesian-to-pure transformation, so the derivatives of the AOs are
 obtained by applying both to the derivatives of the primitives. For each AO
 the evaluator returns the value, the three first derivatives and the six
-distinct second derivatives, stored in the order $xx,yy,zz,xy,xz,yz$.
+distinct second derivatives, stored in the order $xx,xy,xz,yy,yz,zz$ (the
+upper triangle of the Hessian, row by row), the order of every
+six-component Hessian of the library.
 
 \subsection{Screening of negligible AOs}\label{sec:screening}
 Gaussian functions decay quickly, so at any point most AOs of a large

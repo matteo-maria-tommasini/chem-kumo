@@ -1,8 +1,9 @@
 # Parallel density benchmark (OpenMP Stage 02b)
 
 This is a **developer benchmark**, not a correctness or timing-gated CI test.
-It exercises `Molecule::densities_blocked()` (total and spin-difference
-fields) on a fixed grid for a single FCHK, sweeping **1, 2, 4, 8, 16**
+It exercises the blocked AO-P density kernel `densities_blocked()` (total
+and spin-difference fields; private to `Molecule` since 2.0, used by the
+`Evaluator` for AO-P densities on grids) on a fixed grid for a single FCHK, sweeping **1, 2, 4, 8, 16**
 OpenMP threads in the same executable. With OpenMP disabled it measures only
 one thread. The grid and block size remain identical throughout the sweep.
 
