@@ -11,6 +11,12 @@ run, a state-of-the-art tool with which they can freely explore the wonders of
 the electronic structure of molecules and of the chemical bond. It is free
 software, released under the MIT License, for teaching and research.
 
+I am deeply grateful to Tian Lu, the author of
+[Multiwfn](http://sobereva.com/multiwfn/), a project that has been a profound
+inspiration to me and that provided a solid reference throughout the
+development of chem-kumo. Without Multiwfn, chem-kumo would have been much
+harder to conceive and to build.
+
 ## Overview
 
 **chem-kumo** is a lightweight C++20 library and command-line application for
