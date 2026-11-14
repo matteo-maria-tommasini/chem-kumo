@@ -53,66 +53,103 @@ namespace {
 constexpr double root_tolerance = 1e-10; // bohr, along the edge
 constexpr int max_root_iterations = 200;
 
-// The six tetrahedra of a cell around its main diagonal: corners 0,
-// e_a, e_a + e_b and (1,1,1) for each permutation (a, b, c) of the axes.
-// Corner masks have bit 0 for i, bit 1 for j, bit 2 for k.
-constexpr std::array<std::array<int, 2>, 6> tetrahedron_axes = {
-    {{0, 1}, {0, 2}, {1, 0}, {1, 2}, {2, 0}, {2, 1}}};
-
-} // namespace
-
-bool isosurface_reaches_boundary(const Grid& grid, std::span<const double> samples,
-                                 double isovalue) {
-    const int nx = grid.counts[0], ny = grid.counts[1], nz = grid.counts[2];
-    for (int i = 0; i < nx; ++i)
-        for (int j = 0; j < ny; ++j) {
-            const bool face = i == 0 || i == nx - 1 || j == 0 || j == ny - 1;
-            for (int k = 0; k < nz; k += face || nz == 1 ? 1 : nz - 1)
-                if (samples[grid_index(grid, i, j, k)] >= isovalue) return true;
-        }
-    return false;
+// Cell corners are numbered by masks: bit 0 for i, bit 1 for j, bit 2 for k.
+Eigen::Vector3i corner_offset(std::size_t mask) {
+    return {static_cast<int>(mask & 1), static_cast<int>((mask >> 1) & 1),
+            static_cast<int>(mask >> 2)};
 }
 
-Isosurface extract_isosurface(const Grid& grid, std::span<const double> samples, double isovalue,
-                              const ScalarFunction& function) {
-    const std::size_t npoints = validated_point_count(grid);
-    if (grid.counts.minCoeff() < 2)
-        throw std::invalid_argument("isosurface grid needs at least two points along each axis");
-    if (samples.size() != npoints)
-        throw std::invalid_argument("isosurface samples do not match the grid");
-    if (!std::isfinite(isovalue)) throw std::invalid_argument("isovalue must be finite");
-    if (!std::all_of(samples.begin(), samples.end(), [](double v) { return std::isfinite(v); }))
-        throw std::invalid_argument("isosurface samples must be finite");
-    if (isosurface_reaches_boundary(grid, samples, isovalue))
-        throw std::invalid_argument(
-            "the isosurface reaches the grid boundary, so it would not be closed");
+// The six tetrahedra of a cell around its main diagonal: corners 0,
+// e_a, e_a + e_b and (1,1,1) for each permutation (a, b, c) of the axes.
+constexpr std::array<std::array<std::size_t, 4>, 6> tetrahedra = {
+    {{0, 1, 3, 7}, {0, 1, 5, 7}, {0, 2, 3, 7}, {0, 2, 6, 7}, {0, 4, 5, 7}, {0, 4, 6, 7}}};
 
-    // One vertex per crossed grid edge, keyed by its lower end and direction.
-    struct Edge {
-        std::size_t inside = 0, outside = 0; // grid points (linear) on either side
-        Eigen::Vector3i cell;                // lower end (i, j, k)
-    };
+// Polygon of one tetrahedron: its corners are the vertices on the edges
+// (inside corner, outside corner), in cyclic order; count is 0 if the
+// tetrahedron is not crossed, else 3 or 4.
+struct CornerPolygon {
+    std::array<std::array<std::size_t, 2>, 4> ends{};
+    int count = 0;
+};
 
-    std::vector<Edge> edges;
-    std::unordered_map<std::uint64_t, std::size_t> edge_ids;
+// The polygon of the tetrahedron with corners `masks`, oriented with its
+// normal from the inside corners to the outside ones.
+CornerPolygon tetrahedron_polygon(const std::array<std::size_t, 4>& masks,
+                                  const std::array<bool, 8>& inside,
+                                  const std::array<Eigen::Vector3d, 8>& position) {
+    std::array<std::size_t, 4> in{}, out{};
+    int nin = 0, nout = 0;
+    for (std::size_t mask : masks) {
+        if (inside[mask])
+            in[static_cast<std::size_t>(nin++)] = mask;
+        else
+            out[static_cast<std::size_t>(nout++)] = mask;
+    }
+    CornerPolygon polygon;
+    if (nin == 0 || nout == 0) return polygon;
+    auto& ends = polygon.ends;
+    if (nin == 1) {
+        ends = {{{in[0], out[0]}, {in[0], out[1]}, {in[0], out[2]}, {}}};
+        polygon.count = 3;
+    } else if (nout == 1) {
+        ends = {{{in[0], out[0]}, {in[1], out[0]}, {in[2], out[0]}, {}}};
+        polygon.count = 3;
+    } else {
+        ends = {{{in[0], out[0]}, {in[0], out[1]}, {in[1], out[1]}, {in[1], out[0]}}};
+        polygon.count = 4;
+    }
+    // Orient with the edge midpoints, which depend only on the cell, so that
+    // the orientation is combinatorial.
+    std::array<Eigen::Vector3d, 4> mid;
+    for (std::size_t c = 0; c < static_cast<std::size_t>(polygon.count); ++c)
+        mid[c] = 0.5 * (position[ends[c][0]] + position[ends[c][1]]);
+    const Eigen::Vector3d normal = polygon.count == 3
+                                       ? Eigen::Vector3d((mid[1] - mid[0]).cross(mid[2] - mid[0]))
+                                       : Eigen::Vector3d((mid[2] - mid[0]).cross(mid[3] - mid[1]));
+    Eigen::Vector3d outward = Eigen::Vector3d::Zero();
+    for (std::size_t c = 0; c < static_cast<std::size_t>(nout); ++c)
+        outward += position[out[c]] / nout;
+    for (std::size_t c = 0; c < static_cast<std::size_t>(nin); ++c)
+        outward -= position[in[c]] / nin;
+    if (normal.dot(outward) < 0) std::reverse(ends.begin(), ends.begin() + polygon.count);
+    return polygon;
+}
 
-    struct Polygon {
-        std::array<std::size_t, 4> vertex{};
-        int count = 0;
-    };
+// A grid edge crossed by the isosurface: its grid points (linear indices)
+// on either side and its lower end (i, j, k).
+struct CrossedEdge {
+    std::size_t inside = 0, outside = 0;
+    Eigen::Vector3i cell;
+};
 
+// A triangle or quadrilateral of vertex (crossed edge) indices.
+struct Polygon {
+    std::array<std::size_t, 4> vertex{};
+    int count = 0;
+};
+
+struct Polygonization {
+    std::vector<CrossedEdge> edges; // one per vertex
     std::vector<Polygon> polygons;
+};
 
-    const auto inside = [&](std::size_t linear) { return samples[linear] >= isovalue; };
+// Marching tetrahedra over all the cells, k fastest (see extract_isosurface).
+Polygonization polygonize(const Grid& grid, std::span<const double> samples, double isovalue) {
+    Polygonization result;
+    // Vertex of each crossed edge, keyed by its lower end and direction.
+    std::unordered_map<std::uint64_t, std::size_t> edge_ids;
     for (int i = 0; i + 1 < grid.counts[0]; ++i)
         for (int j = 0; j + 1 < grid.counts[1]; ++j)
             for (int k = 0; k + 1 < grid.counts[2]; ++k) {
+                const Eigen::Vector3i cell(i, j, k);
                 std::array<std::size_t, 8> corner{};
+                std::array<bool, 8> inside{};
                 int ninside = 0;
-                for (int mask = 0; mask < 8; ++mask) {
-                    corner[static_cast<std::size_t>(mask)] =
-                        grid_index(grid, i + (mask & 1), j + ((mask >> 1) & 1), k + (mask >> 2));
-                    ninside += inside(corner[static_cast<std::size_t>(mask)]);
+                for (std::size_t mask = 0; mask < 8; ++mask) {
+                    const Eigen::Vector3i c = cell + corner_offset(mask);
+                    corner[mask] = grid_index(grid, c[0], c[1], c[2]);
+                    inside[mask] = samples[corner[mask]] >= isovalue;
+                    ninside += inside[mask];
                 }
                 if (ninside == 0 || ninside == 8) continue;
                 std::array<Eigen::Vector3d, 8> position;
@@ -122,79 +159,35 @@ Isosurface extract_isosurface(const Grid& grid, std::span<const double> samples,
                 // Vertex on the edge from inside corner a to outside corner b.
                 // The masks of a tetrahedron are nested, so the smaller one is
                 // the lower end of the edge.
-                const auto vertex = [&](int a, int b) {
-                    const int low = std::min(a, b), high = std::max(a, b);
-                    const auto base = corner[static_cast<std::size_t>(low)];
-                    const std::uint64_t key = static_cast<std::uint64_t>(base) * 8 +
-                                              static_cast<std::uint64_t>(high ^ low);
-                    const auto [it, added] = edge_ids.try_emplace(key, edges.size());
+                const auto vertex = [&](std::size_t a, std::size_t b) {
+                    const std::size_t low = std::min(a, b), high = std::max(a, b);
+                    const std::uint64_t key =
+                        static_cast<std::uint64_t>(corner[low]) * 8 + (high ^ low);
+                    const auto [it, added] = edge_ids.try_emplace(key, result.edges.size());
                     if (added)
-                        edges.push_back(
-                            {corner[static_cast<std::size_t>(a)],
-                             corner[static_cast<std::size_t>(b)],
-                             Eigen::Vector3i(i + (low & 1), j + ((low >> 1) & 1), k + (low >> 2))});
+                        result.edges.push_back({corner[a], corner[b], cell + corner_offset(low)});
                     return it->second;
                 };
 
-                for (const auto& axes : tetrahedron_axes) {
-                    const int first = 1 << axes[0];
-                    const std::array<int, 4> masks = {0, first, first | (1 << axes[1]), 7};
-                    std::array<int, 4> in{}, out{};
-                    int nin = 0, nout = 0;
-                    for (int mask : masks) {
-                        if (inside(corner[static_cast<std::size_t>(mask)]))
-                            in[static_cast<std::size_t>(nin++)] = mask;
-                        else
-                            out[static_cast<std::size_t>(nout++)] = mask;
-                    }
-                    if (nin == 0 || nout == 0) continue;
-                    // Polygon corners as (inside, outside) corner pairs, in cyclic order.
-                    std::array<std::array<int, 2>, 4> ends{};
-                    int count = 3;
-                    if (nin == 1)
-                        ends = {{{in[0], out[0]}, {in[0], out[1]}, {in[0], out[2]}, {}}};
-                    else if (nout == 1)
-                        ends = {{{in[0], out[0]}, {in[1], out[0]}, {in[2], out[0]}, {}}};
-                    else {
-                        ends = {
-                            {{in[0], out[0]}, {in[0], out[1]}, {in[1], out[1]}, {in[1], out[0]}}};
-                        count = 4;
-                    }
-                    // Orient with the edge midpoints, which depend only on the
-                    // cell, so that the orientation is combinatorial: the
-                    // normal points from the inside corners to the outside ones.
-                    std::array<Eigen::Vector3d, 4> mid;
-                    for (int c = 0; c < count; ++c) {
-                        const auto& e = ends[static_cast<std::size_t>(c)];
-                        mid[static_cast<std::size_t>(c)] =
-                            0.5 * (position[static_cast<std::size_t>(e[0])] +
-                                   position[static_cast<std::size_t>(e[1])]);
-                    }
-                    const Eigen::Vector3d normal =
-                        count == 3 ? Eigen::Vector3d((mid[1] - mid[0]).cross(mid[2] - mid[0]))
-                                   : Eigen::Vector3d((mid[2] - mid[0]).cross(mid[3] - mid[1]));
-                    Eigen::Vector3d outward = Eigen::Vector3d::Zero();
-                    for (int c = 0; c < nout; ++c)
-                        outward +=
-                            position[static_cast<std::size_t>(out[static_cast<std::size_t>(c)])] /
-                            nout;
-                    for (int c = 0; c < nin; ++c)
-                        outward -=
-                            position[static_cast<std::size_t>(in[static_cast<std::size_t>(c)])] /
-                            nin;
-                    if (normal.dot(outward) < 0) std::reverse(ends.begin(), ends.begin() + count);
+                for (const auto& masks : tetrahedra) {
+                    const auto corners = tetrahedron_polygon(masks, inside, position);
+                    if (corners.count == 0) continue;
                     Polygon polygon;
-                    polygon.count = count;
-                    for (int c = 0; c < count; ++c) {
-                        const auto& e = ends[static_cast<std::size_t>(c)];
-                        polygon.vertex[static_cast<std::size_t>(c)] = vertex(e[0], e[1]);
-                    }
-                    polygons.push_back(polygon);
+                    polygon.count = corners.count;
+                    for (std::size_t c = 0; c < static_cast<std::size_t>(corners.count); ++c)
+                        polygon.vertex[c] = vertex(corners.ends[c][0], corners.ends[c][1]);
+                    result.polygons.push_back(polygon);
                 }
             }
+    return result;
+}
 
-    // Place every vertex on the isosurface: the root of f - isovalue along
-    // its edge, x(t) = inside + t (outside - inside), bracketed by [0, 1].
+// Position of every vertex on the isosurface: the root of f - isovalue along
+// its edge, x(t) = inside + t (outside - inside), bracketed by [0, 1] and
+// found by safeguarded Newton steps, all unconverged vertices at once.
+std::vector<Eigen::Vector3d> place_vertices(const Grid& grid, std::span<const double> samples,
+                                            double isovalue, const std::vector<CrossedEdge>& edges,
+                                            const ScalarFunction& function) {
     const std::size_t nvertices = edges.size();
     std::vector<double> t(nvertices), low(nvertices, 0.0), high(nvertices, 1.0);
     for (std::size_t v = 0; v < nvertices; ++v) {
@@ -240,28 +233,69 @@ Isosurface extract_isosurface(const Grid& grid, std::span<const double> samples,
         }
         active = std::move(next);
     }
-
-    Isosurface surface;
-    surface.mesh.vertices.resize(nvertices);
-    surface.vertex_cells.resize(nvertices);
+    std::vector<Eigen::Vector3d> vertices(nvertices);
     for (std::size_t v = 0; v < nvertices; ++v) {
         const auto [a, b] = end_points(v);
-        surface.mesh.vertices[v] = a + t[v] * (b - a);
-        surface.vertex_cells[v] = edges[v].cell;
+        vertices[v] = a + t[v] * (b - a);
     }
-    const auto& x = surface.mesh.vertices;
+    return vertices;
+}
+
+// Triangles of the polygons; quadrilaterals are split along their shorter
+// diagonal.
+std::vector<std::array<std::size_t, 3>> triangulate(const std::vector<Polygon>& polygons,
+                                                    const std::vector<Eigen::Vector3d>& x) {
+    std::vector<std::array<std::size_t, 3>> triangles;
     for (const auto& polygon : polygons) {
         const auto& p = polygon.vertex;
         if (polygon.count == 3)
-            surface.mesh.triangles.push_back({p[0], p[1], p[2]});
+            triangles.push_back({p[0], p[1], p[2]});
         else if ((x[p[0]] - x[p[2]]).squaredNorm() <= (x[p[1]] - x[p[3]]).squaredNorm()) {
-            surface.mesh.triangles.push_back({p[0], p[1], p[2]});
-            surface.mesh.triangles.push_back({p[0], p[2], p[3]});
+            triangles.push_back({p[0], p[1], p[2]});
+            triangles.push_back({p[0], p[2], p[3]});
         } else {
-            surface.mesh.triangles.push_back({p[0], p[1], p[3]});
-            surface.mesh.triangles.push_back({p[1], p[2], p[3]});
+            triangles.push_back({p[0], p[1], p[3]});
+            triangles.push_back({p[1], p[2], p[3]});
         }
     }
+    return triangles;
+}
+
+} // namespace
+
+bool isosurface_reaches_boundary(const Grid& grid, std::span<const double> samples,
+                                 double isovalue) {
+    const int nx = grid.counts[0], ny = grid.counts[1], nz = grid.counts[2];
+    for (int i = 0; i < nx; ++i)
+        for (int j = 0; j < ny; ++j) {
+            const bool face = i == 0 || i == nx - 1 || j == 0 || j == ny - 1;
+            for (int k = 0; k < nz; k += face || nz == 1 ? 1 : nz - 1)
+                if (samples[grid_index(grid, i, j, k)] >= isovalue) return true;
+        }
+    return false;
+}
+
+Isosurface extract_isosurface(const Grid& grid, std::span<const double> samples, double isovalue,
+                              const ScalarFunction& function) {
+    const std::size_t npoints = validated_point_count(grid);
+    if (grid.counts.minCoeff() < 2)
+        throw std::invalid_argument("isosurface grid needs at least two points along each axis");
+    if (samples.size() != npoints)
+        throw std::invalid_argument("isosurface samples do not match the grid");
+    if (!std::isfinite(isovalue)) throw std::invalid_argument("isovalue must be finite");
+    if (!std::all_of(samples.begin(), samples.end(), [](double v) { return std::isfinite(v); }))
+        throw std::invalid_argument("isosurface samples must be finite");
+    if (isosurface_reaches_boundary(grid, samples, isovalue))
+        throw std::invalid_argument(
+            "the isosurface reaches the grid boundary, so it would not be closed");
+
+    const auto polygonization = polygonize(grid, samples, isovalue);
+    Isosurface surface;
+    surface.mesh.vertices = place_vertices(grid, samples, isovalue, polygonization.edges, function);
+    surface.vertex_cells.reserve(polygonization.edges.size());
+    for (const auto& edge : polygonization.edges)
+        surface.vertex_cells.push_back(edge.cell);
+    surface.mesh.triangles = triangulate(polygonization.polygons, surface.mesh.vertices);
     return surface;
 }
 
