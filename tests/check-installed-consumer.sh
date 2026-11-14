@@ -7,7 +7,7 @@ PREFIX="$TMP/prefix"
 meson setup "$TMP/build-kumo" "$ROOT" --prefix="$PREFIX" --buildtype=debugoptimized
 meson compile -C "$TMP/build-kumo"
 meson install -C "$TMP/build-kumo"
-LIBDIR=$(find "$PREFIX" -type f \( -name 'libkumo.so*' -o -name 'libkumo.dylib' -o -name 'libkumo.a' \) -print -quit)
+LIBDIR=$(find "$PREFIX" -type f \( -name 'libkumo.so*' -o -name 'libkumo.dylib' -o -name 'libkumo.*.dylib' -o -name 'libkumo.a' \) -print -quit)
 if [ -z "$LIBDIR" ]; then echo 'ERROR: installed KUMO library not found' >&2; exit 1; fi
 LIBDIR=$(dirname "$LIBDIR")
 meson setup "$TMP/build-consumer" "$ROOT/tests/installed-consumer" -Dkumo_prefix="$PREFIX" --libdir="${LIBDIR#"$PREFIX"/}"
