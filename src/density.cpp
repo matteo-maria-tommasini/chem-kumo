@@ -572,7 +572,7 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
         throw std::invalid_argument("AO-MO backend is not eligible for this molecule");
     if (ao_order < 0 || ao_order > 2)
         throw std::invalid_argument("AO-MO derivative order must be 0, 1 or 2");
-    if (block_size == 0 || block_size > 65536)
+    if (block_size == 0 || block_size > max_block_size)
         throw std::invalid_argument("invalid AO-MO block size");
     if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
     detail::validate_screening_threshold(screening_threshold);
@@ -732,8 +732,9 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                                                   double screening_threshold,
                                                   const ProgressCallback& progress) const {
     const auto count = detail::validated_point_count(grid);
-    if (block_size == 0 || block_size > 65536)
-        throw std::invalid_argument("block_size must be in [1,65536]");
+    if (block_size == 0 || block_size > max_block_size)
+        throw std::invalid_argument("block_size must be in [1, " + std::to_string(max_block_size) +
+                                    "]");
     detail::validate_screening_threshold(screening_threshold);
     std::map<Spin, std::vector<double>> buffers;
     for (Spin component : components)

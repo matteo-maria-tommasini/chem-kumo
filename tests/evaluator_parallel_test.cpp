@@ -75,18 +75,34 @@ int main(int argc, char** argv) {
                     }
                 }
             }
-            // A kernel error inside a worker block reaches the caller.
-            if (molecule.electronic_structure_info().ao_mo_eligible()) {
+            // An error inside a worker block (here from the progress
+            // callback, which runs in the block loop) reaches the caller.
+            for (const Backend backend : {Backend::AO_P, Backend::AO_MO}) {
+                if (backend == Backend::AO_MO &&
+                    !molecule.electronic_structure_info().ao_mo_eligible())
+                    continue;
                 kumo_test::set_threads(4);
-                const Evaluator evaluator(molecule,
-                                          {.block_size = 70000, .backend = Backend::AO_MO});
+                const Evaluator evaluator(molecule, {.block_size = 7,
+                                                     .backend = backend,
+                                                     .progress = [](std::size_t done, std::size_t) {
+                                                         if (done > 20)
+                                                             throw std::domain_error("stop");
+                                                     }});
                 Request gradient;
                 gradient.add(density::total.gradient());
-                kumo_test::check_throws<std::invalid_argument>(
+                kumo_test::check_throws<std::domain_error>(
                     [&] { (void)evaluator.evaluate(grid, gradient); },
                     std::string(argv[file]) +
-                        ": invalid AO-MO block size throws from the point path");
+                        ": an error in a worker block of the point path reaches the caller");
             }
+            // Block sizes outside [1, max_block_size] are rejected up front,
+            // whatever the backend and the request.
+            for (const std::size_t block : {std::size_t{0}, max_block_size + 1})
+                kumo_test::check_throws<std::invalid_argument>(
+                    [&] { (void)Evaluator(molecule, {.block_size = block}); },
+                    std::string(argv[file]) + ": block_size " + std::to_string(block) +
+                        " is rejected by the Evaluator");
+            (void)Evaluator(molecule, {.block_size = max_block_size});
             std::cout << argv[file] << " (" << n << " points) evaluator point path OK\n";
         }
     });

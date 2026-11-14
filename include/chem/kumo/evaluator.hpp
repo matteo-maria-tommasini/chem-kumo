@@ -277,7 +277,8 @@ struct EvaluationOptions {
     /// not currently change the number of threads: in OpenMP builds, set it
     /// with OMP_NUM_THREADS.
     int threads = 0;
-    std::size_t block_size = 128; ///< grid points per evaluation block; must be > 0
+    /// Grid points per evaluation block, 1 to max_block_size.
+    std::size_t block_size = 128;
     Backend backend = Backend::AUTO;
     /// AO screening threshold for densities and density derivatives, with
     /// both backends (see default_screening_threshold); must be finite and
@@ -343,8 +344,8 @@ private:
 ///   std::span<const double> rho = results.get(density::total.value()).component();
 class Evaluator {
 public:
-    /// Throws std::invalid_argument for invalid options: block_size == 0,
-    /// threads < 0 or > 1, a negative or nonfinite screening_threshold or
+    /// Throws std::invalid_argument for invalid options: block_size outside
+    /// 1 to max_block_size, threads < 0 or > 1, a negative or nonfinite screening_threshold or
     /// potential_tolerance, an unknown backend, or AO_MO requested for a molecule whose orbitals
     /// are not AO-MO eligible.
     explicit Evaluator(const Molecule& molecule, EvaluationOptions options = {});

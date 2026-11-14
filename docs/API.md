@@ -229,7 +229,8 @@ const std::span<const double> rho = results.get(density::total.value()).componen
   alive while the span is used. `Results::backend_used()` reports the
   density contraction actually used.
 - **Options** (`EvaluationOptions`): `backend` (`AUTO`, `AO_P`, `AO_MO`; see
-  the README), `block_size` (grid points per block, default 128),
+  the README), `block_size` (grid points per block, default 128, from 1 to
+  `max_block_size` = 65536; other values are rejected by the constructor),
   `screening_threshold` (AO screening, default 1e-12, 0 exact),
   `potential_tolerance` (electrostatic potential error bound, default 1e-8
   hartree/e, 0 exact), `progress` (see Density methods) and `threads`

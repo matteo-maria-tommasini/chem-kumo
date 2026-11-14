@@ -26,6 +26,10 @@ enum class Spin { Total, Alpha, Beta, Difference };
 /// A threshold of 0 disables screening and gives the exact contraction.
 inline constexpr double default_screening_threshold = 1e-12;
 
+/// Largest number of grid points per evaluation block (Evaluator and the
+/// blocked density methods of Molecule).
+inline constexpr std::size_t max_block_size = 65536;
+
 /// Progress report of a grid evaluation: called after each block of grid
 /// points with the number of points done so far and the total. Calls are
 /// serialized (never concurrent, possibly from an OpenMP worker thread) and
@@ -221,7 +225,8 @@ public:
     /// Evaluate only requested density components, sharing AO work.
     [[nodiscard]] std::map<Spin, Field> densities(const Grid& grid,
                                                   std::initializer_list<Spin> components) const;
-    /// Explicit blocked Eigen path; block_size is in grid points (1 to 65536).
+    /// Explicit blocked Eigen path; block_size is in grid points (1 to
+    /// max_block_size).
     /// screening_threshold must be finite and >= 0; 0 disables AO screening
     /// (see default_screening_threshold).
     /// `progress`, if set, is called after each block (see ProgressCallback).
