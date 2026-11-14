@@ -36,7 +36,7 @@ struct AoMoTestAccess {
         const auto ao = m.evaluator_.evaluate_derivatives(point, 2);
         const auto y = p * ao.values;
         const auto pg = p * ao.gradient;
-        constexpr int index[3][3] = {{0, 3, 4}, {3, 1, 5}, {4, 5, 2}};
+        constexpr int index[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
         DensityDerivatives d;
         d.value = ao.values.dot(y);
         for (int a = 0; a < 3; ++a) {

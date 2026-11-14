@@ -56,12 +56,9 @@ OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, s
     result.value = c.dot(ao.values);
     result.gradient = ao.gradient.transpose() * c;
     const Eigen::Matrix<double, 6, 1> h = ao.hessian.transpose() * c;
-    result.hessian(0, 0) = h[0];
-    result.hessian(1, 1) = h[1];
-    result.hessian(2, 2) = h[2];
-    result.hessian(0, 1) = result.hessian(1, 0) = h[3];
-    result.hessian(0, 2) = result.hessian(2, 0) = h[4];
-    result.hessian(1, 2) = result.hessian(2, 1) = h[5];
+    for (int a = 0; a < 3; ++a)
+        for (int b = 0; b < 3; ++b)
+            result.hessian(a, b) = h[detail::ao_hessian_column[a][b]];
     return result;
 }
 
@@ -80,7 +77,7 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     const auto n = static_cast<Eigen::Index>(basis_size());
     const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
     // Each worker reuses one matrix of ten AO panels side by side (values;
-    // x, y, z first derivatives; xx, yy, zz, xy, xz, yz second derivatives),
+    // x, y, z first derivatives; xx, xy, xz, yy, yz, zz second derivatives),
     // each panel with one column per point.
     detail::for_each_point_block_with_workspace(
         count, block_size, "too many orbital derivative blocks for parallel evaluation",

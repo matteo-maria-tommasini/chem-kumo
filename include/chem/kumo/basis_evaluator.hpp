@@ -36,7 +36,7 @@ struct CartesianPower {
 /// Values of all atomic orbitals (AOs) at one point and their first and
 /// second derivatives with respect to the point's Cartesian coordinates
 /// (nuclei fixed). One row per AO, in FCHK order; the gradient columns are
-/// x, y, z and the Hessian columns xx, yy, zz, xy, xz, yz. Lengths in bohr.
+/// x, y, z and the Hessian columns xx, xy, xz, yy, yz, zz. Lengths in bohr.
 struct AODerivatives {
     Eigen::VectorXd values;
     Eigen::Matrix<double, Eigen::Dynamic, 3> gradient;
@@ -45,7 +45,7 @@ struct AODerivatives {
 
 /// AO moment matrices about the coordinate origin, in atomic units:
 /// overlap <mu|nu>, first moments <mu|r_a|nu> (a = x, y, z) and second
-/// moments <mu|r_a r_b|nu> (ab = xx, yy, zz, xy, xz, yz), where mu and nu
+/// moments <mu|r_a r_b|nu> (ab = xx, xy, xz, yy, yz, zz), where mu and nu
 /// are AOs and r = (x, y, z). Rows and columns are AOs in FCHK order, pure
 /// shells included.
 struct CartesianAOMoments {
@@ -99,7 +99,7 @@ public:
     void evaluate_batch(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                         Eigen::Ref<Eigen::MatrixXd> output) const;
     /// Number of output panels of evaluate_derivatives_batch(): 4 for order 1
-    /// (value, x, y, z), 10 for order 2 (followed by xx, yy, zz, xy, xz, yz).
+    /// (value, x, y, z), 10 for order 2 (followed by xx, xy, xz, yy, yz, zz).
     /// Throws std::invalid_argument for another order.
     [[nodiscard]] static int derivative_panel_count(int order);
     /// AO values and derivatives up to `order` (1 or 2) at the N columns of
@@ -108,7 +108,7 @@ public:
     /// (otherwise throws std::runtime_error); it holds consecutive nAO x N
     /// panels, so component c at point j is column c * N + j. The components
     /// are ordered as in AODerivatives: value, gradient x, y, z, then the
-    /// Hessian xx, yy, zz, xy, xz, yz. evaluate_derivatives() uses the same
+    /// Hessian xx, xy, xz, yy, yz, zz. evaluate_derivatives() uses the same
     /// code.
     void evaluate_derivatives_batch(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, int order,

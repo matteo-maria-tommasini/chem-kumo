@@ -66,9 +66,10 @@ int main(int argc, char** argv) {
             const auto count = static_cast<Eigen::Index>(shell.function_count());
             for (Eigen::Index i = offset; i < offset + count; ++i) {
                 for (int d = 0; d < 3; ++d) {
+                    constexpr int diagonal[3] = {0, 3, 5}; // xx, yy, zz
                     const double center = shell.origin[d];
                     const double variance =
-                        m.second[static_cast<std::size_t>(d)](i, i) -
+                        m.second[static_cast<std::size_t>(diagonal[d])](i, i) -
                         2 * center * m.first[static_cast<std::size_t>(d)](i, i) +
                         center * center * m.overlap(i, i);
                     check(variance > 0, "AO " + std::to_string(i) + " axis " + std::to_string(d) +
