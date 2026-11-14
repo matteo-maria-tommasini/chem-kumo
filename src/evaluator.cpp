@@ -18,6 +18,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace chem::kumo {
@@ -458,8 +459,10 @@ void store_orbital_energy_block(std::map<Property, PropertyField>& fields,
 
 Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
     : molecule_(&molecule), options_(options) {
-    if (!options.block_size || options.threads < 0)
-        throw std::invalid_argument("invalid evaluation options");
+    if (options.block_size == 0 || options.block_size > max_block_size)
+        throw std::invalid_argument("evaluation block_size must be in [1, " +
+                                    std::to_string(max_block_size) + "]");
+    if (options.threads < 0) throw std::invalid_argument("invalid evaluation options");
     detail::validate_screening_threshold(options.screening_threshold);
     if (!std::isfinite(options.potential_tolerance) || options.potential_tolerance < 0.0)
         throw std::invalid_argument("potential tolerance must be finite and nonnegative");
