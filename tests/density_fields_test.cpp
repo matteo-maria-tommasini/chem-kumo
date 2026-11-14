@@ -14,6 +14,7 @@
 //    identical results with 1, 2 and 4 threads.
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -210,7 +211,7 @@ void check_molecule(const std::string& name) {
                                                   std::pair{SpinChannel::Beta, density::beta}}) {
             double k = 0.0;
             for (std::size_t i = 1; i <= molecule.occupied_count(channel); ++i) {
-                const auto phi = molecule.orbital_derivatives(x, i, channel);
+                const auto phi = kumo_test::Kernels::orbital_derivatives(molecule, x, i, channel);
                 k -= 0.5 * phi.value * phi.hessian.trace();
             }
             const double tau = at(r, descriptor.tau(), p), lap = at(r, descriptor.laplacian(), p);
@@ -219,7 +220,7 @@ void check_molecule(const std::string& name) {
         }
         // theta from central differences (step 1e-4 bohr) of f = |grad rho|^2 / rho^2.
         const auto f = [&](const Eigen::Vector3d& y) {
-            const auto d = molecule.density_derivatives(y);
+            const auto d = kumo_test::Kernels::density_derivatives(molecule, y);
             return d.gradient.squaredNorm() / (d.value * d.value);
         };
         const double h = 1e-4, f0 = f(x);

@@ -1,5 +1,6 @@
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <map>
 #include <vector>
@@ -26,15 +27,17 @@ int main(int argc, char** argv) {
             for (auto spin :
                  {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
                   chem::kumo::DensityComponent::Beta, chem::kumo::DensityComponent::Difference}) {
-                const auto reference = mol.density_derivatives_blocked(points, spin, 32);
+                const auto reference =
+                    kumo_test::Kernels::density_derivatives_blocked(mol, points, spin, 32);
                 // Single-thread results by block size: with the same blocks,
                 // other thread counts must give identical values.
-                std::map<std::size_t, std::vector<chem::kumo::DensityDerivatives>> serial;
+                std::map<std::size_t, std::vector<chem::kumo::detail::DensityDerivatives>> serial;
                 for (int threads : {1, 2, 4}) {
                     kumo_test::set_threads(threads);
                     for (std::size_t block :
                          {std::size_t(1), std::size_t(16), std::size_t(32), std::size_t(64)}) {
-                        const auto actual = mol.density_derivatives_blocked(points, spin, block);
+                        const auto actual = kumo_test::Kernels::density_derivatives_blocked(
+                            mol, points, spin, block);
                         if (threads == 1) serial.emplace(block, actual);
                         const std::string label = std::string(argv[file]) + " spin " +
                                                   std::to_string(static_cast<int>(spin)) +

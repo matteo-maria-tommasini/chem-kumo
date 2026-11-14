@@ -130,7 +130,9 @@ struct EvaluationPlan {
     [[nodiscard]] static EvaluationPlan from(const Request& request) {
         EvaluationPlan plan;
         for (const Property& property : request.properties()) {
-            if (property.kind == PropertyKind::Orbital) {
+            if (property.kind == PropertyKind::Orbital ||
+                property.kind == PropertyKind::OrbitalGradient ||
+                property.kind == PropertyKind::OrbitalHessian) {
                 if (property.orbital_index == 0)
                     throw std::invalid_argument("orbital indices are one-based");
                 plan.orbitals = true;

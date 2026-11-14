@@ -10,6 +10,7 @@
 #include "chem/kumo.hpp"
 #include "chem/kumo/basis_evaluator.hpp"
 #include "electrostatic_potential.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -162,7 +163,8 @@ void poisson(const std::string& label, const BasisSet& basis, const Molecule& mo
                           potential.electronic(r - 2 * e)) /
                          (12.0 * h * h);
         }
-        const double expected = 4.0 * pi * molecule.density_derivatives(r).value;
+        const double expected =
+            4.0 * pi * kumo_test::Kernels::density_derivatives(molecule, r).value;
         worst = std::max(worst, std::abs(laplacian - expected) / std::max(1.0, expected));
     }
     std::cout << label << ": Poisson equation at " << points.size()

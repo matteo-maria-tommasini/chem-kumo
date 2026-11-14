@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/LU>
 #include <algorithm>
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
         for (int a = 0; a < 3; ++a)
             if (std::abs(g.steps(a, a) - h) < 0.500001e-6) g.steps(a, a) = h;
         auto mol = Molecule::from_fchk(argv[1]);
-        auto field = mol.orbital(g, index, channel);
+        auto field = kumo_test::Kernels::orbital(mol, g, index, channel);
         auto values = field.values();
         double max_plus = 0, max_minus = 0, l1_plus = 0, l1_minus = 0, ref_l1 = 0, sq_plus = 0,
                sq_minus = 0, sum_ref2 = 0, sum_calc2 = 0;

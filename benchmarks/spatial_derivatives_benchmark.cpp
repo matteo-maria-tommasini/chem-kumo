@@ -1,3 +1,4 @@
+#include "molecule_test_access.hpp"
 #include "chem/kumo.hpp"
 
 #include <Eigen/Core>
@@ -61,7 +62,7 @@ SampleGrid make_grid(const std::vector<chem::kumo::Atom>& atoms, std::size_t req
 
 // Consume returned values so the compiler cannot discard the benchmark work.
 // The checksum is computed outside timed regions.
-double sample(const std::vector<chem::kumo::DensityDerivatives>& data) {
+double sample(const std::vector<chem::kumo::detail::DensityDerivatives>& data) {
     const auto& d = data.at(data.size() / 2);
     return d.value + d.gradient.squaredNorm() + d.hessian.squaredNorm() + d.laplacian + d.tau;
 }
@@ -164,17 +165,19 @@ int main(int argc, char** argv) {
         checksum += fused(0, 0);
 
         // Density-only reference uses the existing blocked Eigen implementation.
-        chem::kumo::Field density = mol.density(data.grid, chem::kumo::DensityComponent::Total);
+        chem::kumo::Field density =
+            kumo_test::Kernels::density(mol, data.grid, chem::kumo::DensityComponent::Total);
         const double density_only = measure(repeats, [&] {
-            density = mol.density(data.grid, chem::kumo::DensityComponent::Total);
+            density =
+                kumo_test::Kernels::density(mol, data.grid, chem::kumo::DensityComponent::Total);
         });
         checksum += density.values()[count / 2];
 
-        chem::kumo::DensityDerivatives pointwise;
+        chem::kumo::detail::DensityDerivatives pointwise;
         const double pointwise_time = measure(repeats, [&] {
             for (Eigen::Index i = 0; i < data.points.cols(); ++i)
-                pointwise = mol.density_derivatives(data.points.col(i),
-                                                    chem::kumo::DensityComponent::Total);
+                pointwise = kumo_test::Kernels::density_derivatives(
+                    mol, data.points.col(i), chem::kumo::DensityComponent::Total);
         });
         checksum += pointwise.value + pointwise.tau;
 
@@ -195,10 +198,10 @@ int main(int argc, char** argv) {
                   << "derivatives_over_density=" << pointwise_time / density_only << "\n";
 
         for (std::size_t block : {16u, 32u, 64u, 128u, 256u}) {
-            std::vector<chem::kumo::DensityDerivatives> result;
+            std::vector<chem::kumo::detail::DensityDerivatives> result;
             const double t = measure(repeats, [&] {
-                result = mol.density_derivatives_blocked(
-                    data.points, chem::kumo::DensityComponent::Total, block);
+                result = kumo_test::Kernels::density_derivatives_blocked(
+                    mol, data.points, chem::kumo::DensityComponent::Total, block);
             });
             checksum += sample(result);
             std::cout << "derivatives_block_" << block << "_s=" << t

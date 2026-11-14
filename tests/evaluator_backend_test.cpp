@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <array>
@@ -7,16 +8,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-namespace chem::kumo::detail {
-struct AoMoTestAccess {
-    static auto run(const Molecule& m,
-                    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-                    const std::vector<DensityComponent>& components, std::size_t block, int order) {
-        return m.density_derivatives_mo(points, components, block, order);
-    }
-};
-} // namespace chem::kumo::detail
 
 using namespace chem::kumo;
 
@@ -68,8 +59,8 @@ void run(const Molecule& m, const std::string& name) {
                     .evaluate(grid, req);
             kumo_test::check(automatic.backend_used() == Backend::AO_MO,
                              where + ": AUTO selects AO_MO for an eligible molecule");
-            const auto reference =
-                detail::AoMoTestAccess::run(m, points, {spins.begin(), spins.end()}, block, order);
+            const auto reference = kumo_test::Kernels::density_derivatives_mo(
+                m, points, {spins.begin(), spins.end()}, block, order);
             for (std::size_t c = 0; c < 4; ++c) {
                 const auto& ref = reference.at(spins[c]);
                 const std::string label = where + " component " + std::to_string(c) +

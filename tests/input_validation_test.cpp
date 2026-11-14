@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Core>
 #include <cmath>
@@ -25,13 +26,15 @@ int main(int argc, char** argv) {
         auto g = Grid::around(mol.atoms(), 2.0, 0.5);
         expect_invalid(
             [&] {
-                auto x = mol.densities_blocked(g, {DensityComponent::Total}, 0);
+                auto x =
+                    kumo_test::Kernels::densities_blocked(mol, g, {DensityComponent::Total}, 0);
                 (void)x;
             },
             "zero block");
         expect_invalid(
             [&] {
-                auto x = mol.densities_blocked(g, {DensityComponent::Total}, 65537);
+                auto x =
+                    kumo_test::Kernels::densities_blocked(mol, g, {DensityComponent::Total}, 65537);
                 (void)x;
             },
             "large block");
@@ -39,7 +42,7 @@ int main(int argc, char** argv) {
         bad.counts[0] = 0;
         expect_invalid(
             [&] {
-                auto x = mol.density(bad);
+                auto x = kumo_test::Kernels::density(mol, bad);
                 (void)x;
             },
             "zero grid");
@@ -47,7 +50,7 @@ int main(int argc, char** argv) {
         bad.origin[0] = std::numeric_limits<double>::quiet_NaN();
         expect_invalid(
             [&] {
-                auto x = mol.density(bad);
+                auto x = kumo_test::Kernels::density(mol, bad);
                 (void)x;
             },
             "NaN grid");
@@ -55,7 +58,7 @@ int main(int argc, char** argv) {
         bad.steps.setZero();
         expect_invalid(
             [&] {
-                auto x = mol.density(bad);
+                auto x = kumo_test::Kernels::density(mol, bad);
                 (void)x;
             },
             "singular grid");
@@ -71,9 +74,10 @@ int main(int argc, char** argv) {
                 (void)x;
             },
             "zero spacing");
-        auto empty = mol.densities(g, {});
+        auto empty = kumo_test::Kernels::densities_blocked(mol, g, {});
         if (!empty.empty()) throw std::runtime_error("empty request returned fields");
-        auto dedup = mol.densities(g, {DensityComponent::Total, DensityComponent::Total});
+        auto dedup = kumo_test::Kernels::densities_blocked(
+            mol, g, {DensityComponent::Total, DensityComponent::Total});
         if (dedup.size() != 1) throw std::runtime_error("duplicate request not deduplicated");
         std::cout << "input validation OK\n";
     } catch (const std::exception& e) {

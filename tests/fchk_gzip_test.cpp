@@ -1,5 +1,6 @@
 #include <chem/kumo.hpp>
 #include <chem/kumo/fchk.hpp>
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 
 #include <zlib.h>
@@ -66,8 +67,8 @@ void verify(const std::filesystem::path& zipped, const std::filesystem::path& di
     for (const auto spin :
          {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
           chem::kumo::DensityComponent::Beta, chem::kumo::DensityComponent::Difference}) {
-        const auto x = mol_a.density_derivatives(point, spin);
-        const auto y = mol_b.density_derivatives(point, spin);
+        const auto x = kumo_test::Kernels::density_derivatives(mol_a, point, spin);
+        const auto y = kumo_test::Kernels::density_derivatives(mol_b, point, spin);
         require(x.value == y.value && x.laplacian == y.laplacian && x.tau == y.tau &&
                     (x.gradient - y.gradient).norm() == 0.0 &&
                     (x.hessian - y.hessian).norm() == 0.0,

@@ -15,6 +15,7 @@
 //  - Ranges, AO_P / AO_MO agreement, the values where there is no density,
 //    invalid components, and an O-H bond critical point of water.
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
@@ -72,9 +73,9 @@ double elf_from(double d, double d0) {
 double pauli_from_orbitals(const Molecule& m, const Eigen::Vector3d& point, SpinChannel channel,
                            double& rho) {
     const auto n = m.occupied_count(channel);
-    std::vector<OrbitalDerivatives> mo;
+    std::vector<detail::OrbitalDerivatives> mo;
     for (std::size_t i = 1; i <= n; ++i)
-        mo.push_back(m.orbital_derivatives(point, i, channel));
+        mo.push_back(kumo_test::Kernels::orbital_derivatives(m, point, i, channel));
     rho = 0.0;
     double sum = 0.0;
     for (std::size_t i = 0; i < n; ++i) {

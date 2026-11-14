@@ -1,3 +1,4 @@
+#include "molecule_test_access.hpp"
 #include "chem/kumo.hpp"
 #include <chrono>
 #include <cstdlib>
@@ -29,16 +30,17 @@ int main(int argc, char** argv) {
     const double separate = measure([&] {
         for (auto s : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
                        DensityComponent::Difference}) {
-            auto f = molecule.density(grid, s);
+            auto f = kumo_test::Kernels::density(molecule, grid, s);
             sink = sink + f.values()[0];
         }
     });
     const double combined = measure([&] {
-        auto f = molecule.spin_densities(grid);
+        auto f = kumo_test::Kernels::spin_densities(molecule, grid);
         sink = sink + f.total.values()[0];
     });
     const double selective = measure([&] {
-        auto f = molecule.densities(grid, {DensityComponent::Total, DensityComponent::Difference});
+        auto f = kumo_test::Kernels::densities_blocked(
+            molecule, grid, {DensityComponent::Total, DensityComponent::Difference});
         sink = sink + f.at(DensityComponent::Total).values()[0];
     });
     std::cout << "basis=" << molecule.basis_size() << " grid="

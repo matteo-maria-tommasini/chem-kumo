@@ -1,3 +1,4 @@
+#include "molecule_test_access.hpp"
 #include "chem/kumo.hpp"
 #include <algorithm>
 #include <chrono>
@@ -30,9 +31,9 @@ int main(int argc, char** argv) {
     auto ref = measure([&] {
         std::map<DensityComponent, Field> result;
         result.emplace(DensityComponent::Total,
-                       mol.density_pointwise(grid, DensityComponent::Total));
-        result.emplace(DensityComponent::Difference,
-                       mol.density_pointwise(grid, DensityComponent::Difference));
+                       kumo_test::Kernels::density_pointwise(mol, grid, DensityComponent::Total));
+        result.emplace(DensityComponent::Difference, kumo_test::Kernels::density_pointwise(
+                                                         mol, grid, DensityComponent::Difference));
         return result;
     });
     std::cout << "basis=" << mol.basis_size() << " points="
@@ -41,8 +42,8 @@ int main(int argc, char** argv) {
     std::cout << "pointwise_s=" << ref << "\n";
     for (auto b : {16, 32, 64, 128, 256}) {
         auto t = measure([&] {
-            return mol.densities_blocked(
-                grid, {DensityComponent::Total, DensityComponent::Difference}, b);
+            return kumo_test::Kernels::densities_blocked(
+                mol, grid, {DensityComponent::Total, DensityComponent::Difference}, b);
         });
         std::cout << "block_" << b << "_s=" << t << " speedup=" << ref / t << "\n";
     }

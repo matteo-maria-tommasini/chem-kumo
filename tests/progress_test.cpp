@@ -3,6 +3,7 @@
 // the documented ones, results are bit-identical to an evaluation without a
 // callback, and an exception thrown by the callback reaches the caller.
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cstddef>
@@ -59,9 +60,9 @@ int main(int argc, char** argv) {
             Recorder density_progress;
             const auto all = {DensityComponent::Total, DensityComponent::Alpha,
                               DensityComponent::Beta, DensityComponent::Difference};
-            const auto densities = molecule.densities_blocked(
-                grid, all, 128, default_screening_threshold, density_progress.callback());
-            const auto reference = molecule.densities_blocked(grid, all);
+            const auto densities = kumo_test::Kernels::densities_blocked(
+                molecule, grid, all, 128, default_screening_threshold, density_progress.callback());
+            const auto reference = kumo_test::Kernels::densities_blocked(molecule, grid, all);
             density_progress.check(name + " densities_blocked", n);
             for (DensityComponent spin : all)
                 kumo_test::check(same(densities.at(spin).values(), reference.at(spin).values()),
@@ -70,9 +71,10 @@ int main(int argc, char** argv) {
             // Molecule::orbitals: one pass over the grid.
             Recorder orbital_progress;
             const std::vector<std::size_t> mos{1, 2};
-            const auto orbitals =
-                molecule.orbitals(grid, mos, SpinChannel::Alpha, orbital_progress.callback());
-            const auto orbital_reference = molecule.orbitals(grid, mos, SpinChannel::Alpha);
+            const auto orbitals = kumo_test::Kernels::orbitals(
+                molecule, grid, mos, SpinChannel::Alpha, orbital_progress.callback());
+            const auto orbital_reference =
+                kumo_test::Kernels::orbitals(molecule, grid, mos, SpinChannel::Alpha);
             orbital_progress.check(name + " orbitals", n);
             for (std::size_t i = 0; i < mos.size(); ++i)
                 kumo_test::check(same(orbitals[i].values(), orbital_reference[i].values()),
@@ -113,12 +115,15 @@ int main(int argc, char** argv) {
             };
             kumo_test::check_throws<std::runtime_error>(
                 [&] {
-                    (void)molecule.densities_blocked(grid, {DensityComponent::Total}, 128, 0.0,
-                                                     stop);
+                    (void)kumo_test::Kernels::densities_blocked(
+                        molecule, grid, {DensityComponent::Total}, 128, 0.0, stop);
                 },
                 name + ": a throwing progress callback aborts densities_blocked");
             kumo_test::check_throws<std::runtime_error>(
-                [&] { (void)molecule.orbitals(grid, {1}, SpinChannel::Alpha, stop); },
+                [&] {
+                    (void)kumo_test::Kernels::orbitals(molecule, grid, {1}, SpinChannel::Alpha,
+                                                       stop);
+                },
                 name + ": a throwing progress callback aborts orbitals");
             kumo_test::check_throws<std::runtime_error>(
                 [&] {

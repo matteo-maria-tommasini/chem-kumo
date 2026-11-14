@@ -33,12 +33,19 @@ struct SurfaceAccess {
     /// default atomic-orbital (AO) screening. Screening changes the density by
     /// about 1e-13 e/bohr^3, which moves the rho = 0.001 isosurface by about
     /// 1e-10 bohr.
-    static std::vector<DensityDerivatives>
+    static std::vector<detail::DensityDerivatives>
     total_density(const Molecule& molecule,
                   const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points) {
         return molecule
             .density_derivatives_shared(points, {DensityComponent::Total}, 128, 1,
                                         default_screening_threshold)
+            .at(DensityComponent::Total);
+    }
+
+    /// Total density on a grid from the FCHK density matrix (AO_P), with the
+    /// default block size and AO screening.
+    static Field total_density(const Molecule& molecule, const Grid& grid) {
+        return molecule.densities_blocked(grid, {DensityComponent::Total})
             .at(DensityComponent::Total);
     }
 
@@ -336,8 +343,7 @@ DensitySurface density_surface(const Molecule& molecule, double isovalue, double
     for (double margin = 4.0; margin <= 16.0; margin += 2.0) {
         const Grid grid = Grid::around(molecule.atoms(), margin, spacing);
         validated_point_count(grid);
-        const auto field =
-            molecule.densities_blocked(grid, {DensityComponent::Total}).at(DensityComponent::Total);
+        const auto field = SurfaceAccess::total_density(molecule, grid);
         if (isosurface_reaches_boundary(grid, field.values(), isovalue)) continue;
         return {extract_isosurface(grid, field.values(), isovalue, density), grid};
     }

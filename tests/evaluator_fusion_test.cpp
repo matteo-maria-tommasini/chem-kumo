@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <array>
@@ -63,9 +64,9 @@ void check(const Molecule& molecule, std::size_t block_size, bool reversed) {
     const auto fused = evaluator.evaluate(grid, combined);
     for (auto component : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
                            DensityComponent::Difference}) {
-        const auto reference =
-            molecule.density_derivatives_blocked(points, legacy_spin(component), block_size);
-        const auto scalar = molecule.density(grid, legacy_spin(component));
+        const auto reference = kumo_test::Kernels::density_derivatives_blocked(
+            molecule, points, legacy_spin(component), block_size);
+        const auto scalar = kumo_test::Kernels::density(molecule, grid, legacy_spin(component));
         for (const auto key : keys(component)) {
             Request individual;
             individual.add(key);

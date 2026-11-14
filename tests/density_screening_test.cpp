@@ -4,6 +4,7 @@
 // to rounding level, a large threshold really changes the result (so
 // screening is exercised), and invalid thresholds are rejected.
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -29,8 +30,8 @@ double max_magnitude(std::span<const double> a) {
     return result;
 }
 
-// All numbers of one DensityDerivatives, flattened for comparisons.
-std::vector<double> flatten(const chem::kumo::DensityDerivatives& d) {
+// All numbers of one detail::DensityDerivatives, flattened for comparisons.
+std::vector<double> flatten(const chem::kumo::detail::DensityDerivatives& d) {
     std::vector<double> out{d.value, d.laplacian, d.tau};
     for (int i = 0; i < 3; ++i)
         out.push_back(d.gradient[i]);
@@ -51,9 +52,10 @@ int main(int argc, char** argv) {
             const std::string file = argv[n];
             const auto molecule = Molecule::from_fchk(file);
             const auto grid = Grid::around(molecule.atoms(), 3.0, 0.8);
-            const auto exact = molecule.densities_blocked(grid, all, 128, 0.0);
-            const auto screened = molecule.densities_blocked(grid, all);
-            const auto coarse = molecule.densities_blocked(grid, all, 128, 1e-3);
+            const auto exact = kumo_test::Kernels::densities_blocked(molecule, grid, all, 128, 0.0);
+            const auto screened = kumo_test::Kernels::densities_blocked(molecule, grid, all);
+            const auto coarse =
+                kumo_test::Kernels::densities_blocked(molecule, grid, all, 128, 1e-3);
             double coarse_change = 0.0;
             for (DensityComponent spin : all) {
                 const auto label = file + " " + names[static_cast<int>(spin)];
@@ -93,7 +95,8 @@ int main(int argc, char** argv) {
             }
             const double exact_match =
                 max_difference(evaluated_exact.get(density::total.value()).component(),
-                               molecule.densities_blocked(grid, {DensityComponent::Total}, 128, 0.0)
+                               kumo_test::Kernels::densities_blocked(
+                                   molecule, grid, {DensityComponent::Total}, 128, 0.0)
                                    .at(DensityComponent::Total)
                                    .values());
             kumo_test::check(exact_match == 0.0,
@@ -164,10 +167,10 @@ int main(int argc, char** argv) {
                 grid.steps * (grid.counts.array() - 1).cast<double>().matrix();
             for (Eigen::Index j = 0; j < points.cols(); ++j)
                 points.col(j) = grid.origin + diagonal * (static_cast<double>(j) / 299.0);
-            const auto blocked_exact =
-                molecule.density_derivatives_blocked(points, DensityComponent::Total, 128, 0.0);
-            const auto blocked_screened =
-                molecule.density_derivatives_blocked(points, DensityComponent::Total);
+            const auto blocked_exact = kumo_test::Kernels::density_derivatives_blocked(
+                molecule, points, DensityComponent::Total, 128, 0.0);
+            const auto blocked_screened = kumo_test::Kernels::density_derivatives_blocked(
+                molecule, points, DensityComponent::Total);
             double blocked_error = 0.0, blocked_scale = 1.0;
             for (std::size_t j = 0; j < blocked_exact.size(); ++j) {
                 const auto a = flatten(blocked_exact[j]), b = flatten(blocked_screened[j]);
@@ -184,13 +187,14 @@ int main(int argc, char** argv) {
                                std::numeric_limits<double>::infinity()}) {
                 kumo_test::check_throws<std::invalid_argument>(
                     [&] {
-                        (void)molecule.densities_blocked(grid, {DensityComponent::Total}, 128, bad);
+                        (void)kumo_test::Kernels::densities_blocked(
+                            molecule, grid, {DensityComponent::Total}, 128, bad);
                     },
                     "densities_blocked rejects screening threshold " + kumo_test::num(bad));
                 kumo_test::check_throws<std::invalid_argument>(
                     [&] {
-                        (void)molecule.density_derivatives_blocked(points, DensityComponent::Total,
-                                                                   128, bad);
+                        (void)kumo_test::Kernels::density_derivatives_blocked(
+                            molecule, points, DensityComponent::Total, 128, bad);
                     },
                     "density_derivatives_blocked rejects screening threshold " +
                         kumo_test::num(bad));

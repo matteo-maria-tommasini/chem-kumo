@@ -28,7 +28,19 @@
 namespace chem::kumo {
 namespace {
 std::size_t channels(PropertyKind k) {
-    return k == PropertyKind::Gradient ? 3 : k == PropertyKind::Hessian ? 6 : 1;
+    switch (k) {
+    case PropertyKind::Gradient:
+    case PropertyKind::OrbitalGradient: return 3;
+    case PropertyKind::Hessian:
+    case PropertyKind::OrbitalHessian: return 6;
+    default: return 1;
+    }
+}
+
+// Properties of one molecular orbital: its amplitude and derivatives.
+bool is_orbital_property(PropertyKind k) {
+    return k == PropertyKind::Orbital || k == PropertyKind::OrbitalGradient ||
+           k == PropertyKind::OrbitalHessian;
 }
 
 constexpr DensityComponent all_components[] = {DensityComponent::Total, DensityComponent::Alpha,
@@ -69,7 +81,8 @@ bool uses_point_path(const detail::EvaluationPlan& plan, Backend backend, bool g
                        [&](const auto& c) { return uses_point_path(c, backend, grid); });
 }
 
-// Fields evaluated on the grid path: orbitals always, densities with AO-P
+// Fields evaluated on the grid path: orbital amplitudes (not their
+// derivatives) always, densities with AO-P
 // (`backend` is the resolved backend, AO_P or AO_MO).
 bool on_grid_path(const Property& key, Backend backend, bool grid) {
     return grid && (key.kind == PropertyKind::Orbital ||
@@ -85,7 +98,7 @@ bool is_orbital_energy_field(PropertyKind kind) {
 
 // Whether this field is computed and stored by the point path.
 bool from_point_path(const Property& key, Backend backend, bool grid) {
-    return !on_grid_path(key, backend, grid) && key.kind != PropertyKind::Orbital &&
+    return !on_grid_path(key, backend, grid) && !is_orbital_property(key.kind) &&
            key.kind != PropertyKind::ElectrostaticPotential && !is_orbital_energy_field(key.kind);
 }
 
@@ -103,12 +116,12 @@ const detail::ComponentPlan& plan_for(const detail::EvaluationPlan& plan, Densit
 // D = tau - |grad rho|^2 / (8 rho), D0 = (3/10) (3 pi^2)^(2/3) rho^(5/3).
 // Channels without density contribute nothing; with no density at all the
 // ELF is 0. The result is finite and in [0, 1] for any finite input.
-double elf(std::initializer_list<const DensityDerivatives*> channels) {
+double elf(std::initializer_list<const detail::DensityDerivatives*> channels) {
     constexpr double pi = std::numbers::pi;
     static const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
     double pauli = 0.0;
     double uniform = 0.0;
-    for (const DensityDerivatives* d : channels) {
+    for (const detail::DensityDerivatives* d : channels) {
         if (!(d->value > 0.0)) continue;
         pauli += d->tau - d->gradient.squaredNorm() / (8.0 * d->value);
         uniform += fermi * std::pow(d->value, 5.0 / 3.0);
@@ -121,7 +134,7 @@ double elf(std::initializer_list<const DensityDerivatives*> channels) {
 // Reduced density gradient s = |grad rho| / (2 (3 pi^2)^(1/3) rho^(4/3)),
 // capped at reduced_gradient_cap (also where rho <= 0 or rho^(4/3)
 // underflows, where s is undefined or infinite).
-double reduced_gradient(const DensityDerivatives& d) {
+double reduced_gradient(const detail::DensityDerivatives& d) {
     constexpr double pi = std::numbers::pi;
     static const double scale = 2.0 * std::cbrt(3.0 * pi * pi);
     if (!(d.value > 0.0)) return reduced_gradient_cap;
@@ -134,7 +147,7 @@ double reduced_gradient(const DensityDerivatives& d) {
 
 // sign(lambda2) * rho, with lambda1 <= lambda2 <= lambda3 the eigenvalues of
 // the density Hessian; lambda2 == 0 counts as positive.
-double sign_lambda2_density(const DensityDerivatives& d) {
+double sign_lambda2_density(const detail::DensityDerivatives& d) {
     const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(d.hessian, Eigen::EigenvaluesOnly);
     return solver.eigenvalues()[1] < 0.0 ? -d.value : d.value;
 }
@@ -144,11 +157,11 @@ double sign_lambda2_density(const DensityDerivatives& d) {
 // reference of ELF summed over the channels with positive density. As in
 // Multiwfn, 0 with no density; where tau = 0 and D0 > 0 (t infinite) it is
 // 1, the limit (Multiwfn returns 0 there).
-double lol(std::initializer_list<const DensityDerivatives*> channels) {
+double lol(std::initializer_list<const detail::DensityDerivatives*> channels) {
     constexpr double pi = std::numbers::pi;
     static const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
     double tau = 0.0, uniform = 0.0;
-    for (const DensityDerivatives* d : channels) {
+    for (const detail::DensityDerivatives* d : channels) {
         tau += d->tau;
         if (d->value > 0.0) uniform += fermi * std::pow(d->value, 5.0 / 3.0);
     }
@@ -159,7 +172,7 @@ double lol(std::initializer_list<const DensityDerivatives*> channels) {
 
 // Interaction region indicator (Lu and Chen 2021), |grad rho| / rho^1.1,
 // capped at interaction_region_indicator_cap (also where rho <= 0).
-double interaction_region_indicator(const DensityDerivatives& d) {
+double interaction_region_indicator(const detail::DensityDerivatives& d) {
     if (!(d.value > 0.0)) return interaction_region_indicator_cap;
     const double value = d.gradient.norm() / std::pow(d.value, 1.1);
     return value < interaction_region_indicator_cap ? value : interaction_region_indicator_cap;
@@ -172,7 +185,7 @@ double interaction_region_indicator(const DensityDerivatives& d) {
 //   theta = 4 |(H / rho) q - |q|^2 q|^2 / |q|^6.
 // At a critical point (q = 0) theta is infinite and DORI is 1, its limit;
 // where rho <= 0 it is 0, its limit far from the molecule.
-double density_overlap_regions_indicator(const DensityDerivatives& d) {
+double density_overlap_regions_indicator(const detail::DensityDerivatives& d) {
     if (!(d.value > 0.0)) return 0.0;
     const Eigen::Vector3d q = d.gradient / d.value;
     const double q2 = q.squaredNorm();
@@ -183,7 +196,7 @@ double density_overlap_regions_indicator(const DensityDerivatives& d) {
     return theta / (1.0 + theta);
 }
 
-using BlockDerivatives = std::map<DensityComponent, std::vector<DensityDerivatives>>;
+using BlockDerivatives = std::map<DensityComponent, std::vector<detail::DensityDerivatives>>;
 
 // Copy (or derive) one property from the density derivatives of a block of
 // `count` points into `output`, starting at point index `start`. Evaluator
@@ -485,8 +498,7 @@ public:
         const bool potential = plan_.needs_electrostatic_potential();
         passes_ = (point_path ? 1 : 0) + (potential ? 1 : 0) + (orbital_energies ? 1 : 0) +
                   (orbitals.empty() ? 0 : 1);
-        for (const auto& entry : result_.fields_)
-            passes_ += on_grid_path(entry.first, backend_, on_grid()) ? 1 : 0;
+        passes_ += grid_path_passes();
         if (options_.progress)
             pass_progress_ = [this](std::size_t done, std::size_t) {
                 options_.progress(completed_ + done, passes_ * set_.count);
@@ -503,18 +515,20 @@ public:
 private:
     [[nodiscard]] bool on_grid() const { return set_.grid != nullptr; }
 
-    // Check every requested orbital; return those evaluated at arbitrary
-    // points (on grids, orbitals take the grid path).
+    // Check every requested orbital property; return those evaluated by the
+    // orbital pass: all of them at arbitrary points, the derivatives on grids
+    // (orbital amplitudes on grids take the grid path).
     [[nodiscard]] std::vector<Property> checked_orbitals() const {
         std::vector<Property> orbitals;
         for (const auto& entry : result_.fields_)
-            if (entry.first.kind == PropertyKind::Orbital) {
+            if (is_orbital_property(entry.first.kind)) {
                 const auto& coefficients = molecule_.mo_coefficients(entry.first.channel);
                 if (coefficients.cols() == 0)
                     throw std::runtime_error("FCHK has no MO coefficients");
                 if (entry.first.orbital_index > static_cast<std::size_t>(coefficients.cols()))
                     throw std::out_of_range("MO index outside available coefficient range");
-                if (!on_grid()) orbitals.push_back(entry.first);
+                if (!on_grid_path(entry.first, backend_, on_grid()))
+                    orbitals.push_back(entry.first);
             }
         return orbitals;
     }
@@ -565,39 +579,96 @@ private:
             });
     }
 
+    // Orbital amplitudes and their derivatives on blocks of points. The
+    // amplitudes come from the AO values; the derivatives from the AO
+    // derivative panels (value, x, y, z, then the Hessian xx, xy, xz, yy, yz,
+    // zz), computed only if a derivative is requested.
     void orbital_pass(const std::vector<Property>& orbitals) {
         const auto& basis = molecule_.evaluator_;
+        const auto n = static_cast<Eigen::Index>(basis.basis_size());
+        int derivative_order = 0;
+        for (const Property& key : orbitals)
+            if (key.kind == PropertyKind::OrbitalGradient)
+                derivative_order = std::max(derivative_order, 1);
+            else if (key.kind == PropertyKind::OrbitalHessian)
+                derivative_order = 2;
         for_each_point_block(
             [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block, detail::PointBlock range) {
-                Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis.basis_size()),
-                                    static_cast<Eigen::Index>(range.size));
+                const auto b = static_cast<Eigen::Index>(range.size);
+                Eigen::MatrixXd phi(n, b);
                 basis.evaluate_batch(block, phi);
+                Eigen::MatrixXd panels;
+                if (derivative_order > 0) {
+                    panels.resize(n, BasisEvaluator::derivative_panel_count(derivative_order) * b);
+                    basis.evaluate_derivatives_batch(block, derivative_order, panels);
+                }
                 for (const Property& key : orbitals) {
-                    const auto& coefficients = molecule_.mo_coefficients(key.channel);
-                    const Eigen::VectorXd psi =
-                        phi.transpose() *
-                        coefficients.col(static_cast<Eigen::Index>(key.orbital_index - 1));
-                    auto& output = result_.fields_.at(key).components[0];
-                    for (std::size_t t = 0; t < range.size; ++t)
-                        output[range.start + t] = psi[static_cast<Eigen::Index>(t)];
+                    const auto c = molecule_.mo_coefficients(key.channel)
+                                       .col(static_cast<Eigen::Index>(key.orbital_index - 1));
+                    auto& output = result_.fields_.at(key);
+                    // Component `component` of the result from AO panel `panel`.
+                    const auto store = [&](const Eigen::Ref<const Eigen::MatrixXd>& ao,
+                                           std::size_t component) {
+                        const Eigen::VectorXd psi = ao.transpose() * c;
+                        for (std::size_t t = 0; t < range.size; ++t)
+                            output.components[component][range.start + t] =
+                                psi[static_cast<Eigen::Index>(t)];
+                    };
+                    if (key.kind == PropertyKind::Orbital)
+                        store(phi, 0);
+                    else if (key.kind == PropertyKind::OrbitalGradient)
+                        for (std::size_t a = 0; a < 3; ++a)
+                            store(panels.middleCols((1 + static_cast<Eigen::Index>(a)) * b, b), a);
+                    else
+                        for (std::size_t h = 0; h < 6; ++h)
+                            store(panels.middleCols((4 + static_cast<Eigen::Index>(h)) * b, b), h);
                 }
             });
     }
 
-    // Orbitals and AO-P densities on grids, one validated Molecule kernel call each.
+    // The grid-path fields of one kind: AO-P densities (one pass each) or
+    // the orbital amplitudes of one spin channel (one pass for all of them,
+    // sharing the AO values).
+    [[nodiscard]] std::vector<Property> grid_path_fields(PropertyKind kind,
+                                                         SpinChannel channel) const {
+        std::vector<Property> keys;
+        for (const auto& entry : result_.fields_)
+            if (on_grid_path(entry.first, backend_, on_grid()) && entry.first.kind == kind &&
+                (kind != PropertyKind::Orbital || entry.first.channel == channel))
+                keys.push_back(entry.first);
+        return keys;
+    }
+
+    [[nodiscard]] std::size_t grid_path_passes() const {
+        std::size_t passes = grid_path_fields(PropertyKind::Density, SpinChannel::Alpha).size();
+        for (const SpinChannel channel : {SpinChannel::Alpha, SpinChannel::Beta})
+            passes += grid_path_fields(PropertyKind::Orbital, channel).empty() ? 0 : 1;
+        return passes;
+    }
+
+    // AO-P densities and orbital amplitudes on grids, with the validated
+    // Molecule kernels.
     void grid_path() {
-        for (auto& [key, output] : result_.fields_) {
-            if (!on_grid_path(key, backend_, on_grid())) continue;
-            const Grid& grid = *set_.grid;
-            const Field field =
-                key.kind == PropertyKind::Density
-                    ? molecule_
-                          .densities_blocked(grid, {key.component}, options_.block_size,
+        const auto copy = [&](const Property& key, const Field& field) {
+            std::copy(field.values().begin(), field.values().end(),
+                      result_.fields_.at(key).components[0].begin());
+        };
+        for (const Property& key : grid_path_fields(PropertyKind::Density, SpinChannel::Alpha)) {
+            copy(key, molecule_
+                          .densities_blocked(*set_.grid, {key.component}, options_.block_size,
                                              options_.screening_threshold, pass_progress_)
-                          .at(key.component)
-                    : molecule_.orbitals(grid, {key.orbital_index}, key.channel, pass_progress_)
-                          .front();
-            std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
+                          .at(key.component));
+            completed_ += set_.count;
+        }
+        for (const SpinChannel channel : {SpinChannel::Alpha, SpinChannel::Beta}) {
+            const auto keys = grid_path_fields(PropertyKind::Orbital, channel);
+            if (keys.empty()) continue;
+            std::vector<std::size_t> indices;
+            for (const Property& key : keys)
+                indices.push_back(key.orbital_index);
+            const auto fields = molecule_.orbitals(*set_.grid, indices, channel, pass_progress_);
+            for (std::size_t i = 0; i < keys.size(); ++i)
+                copy(keys[i], fields[i]);
             completed_ += set_.count;
         }
     }
