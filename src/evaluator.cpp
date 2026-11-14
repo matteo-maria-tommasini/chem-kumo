@@ -705,6 +705,15 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
     return Run(*this, &grid, nullptr, n, request).execute();
 }
 
+Field Evaluator::field(const Grid& grid, Property property) const {
+    if (channels(property.kind) != 1)
+        throw std::invalid_argument(
+            "Evaluator::field needs a one-component property (not a gradient or Hessian)");
+    const auto results = evaluate(grid, Request().add(property));
+    const auto values = results.get(property).component();
+    return Field(grid, molecule_->atoms(), std::vector<double>(values.begin(), values.end()));
+}
+
 Results
 Evaluator::evaluate(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                     const Request& request) const {

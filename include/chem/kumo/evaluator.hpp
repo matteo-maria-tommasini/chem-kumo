@@ -406,6 +406,17 @@ public:
     evaluate(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
              const Request& request) const;
 
+    /// One one-component property on `grid`, as a Field with the atoms of
+    /// the molecule, ready to be written as a Cube file:
+    ///
+    ///   evaluator.field(grid, density::total.laplacian()).write_cube("lap.cube");
+    ///
+    /// Equivalent to evaluate(grid, Request().add(property)). Throws
+    /// std::invalid_argument for a property with several components
+    /// (Gradient, Hessian, OrbitalGradient, OrbitalHessian), and as
+    /// evaluate(Grid).
+    [[nodiscard]] Field field(const Grid& grid, Property property) const;
+
 private:
     /// One evaluation on a grid or at points (defined in evaluator.cpp).
     class Run;

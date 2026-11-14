@@ -9,11 +9,8 @@ int main(int argc, char** argv) {
     try {
         auto molecule = chem::kumo::Molecule::from_fchk(argv[1]);
         auto grid = chem::kumo::Grid::around(molecule.atoms(), 4.0, 0.25);
-        const auto density = chem::kumo::density::total.value();
-        const auto results =
-            chem::kumo::Evaluator(molecule).evaluate(grid, chem::kumo::Request().add(density));
-        const auto values = results.get(density).component();
-        chem::kumo::Field(grid, molecule.atoms(), {values.begin(), values.end()})
+        chem::kumo::Evaluator(molecule)
+            .field(grid, chem::kumo::density::total.value())
             .write_cube(argv[2]);
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';
