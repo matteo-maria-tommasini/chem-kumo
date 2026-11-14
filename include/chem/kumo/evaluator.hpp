@@ -12,8 +12,11 @@ namespace chem::kumo {
 enum class DensityComponent { Total, Alpha, Beta, Spin };
 
 /// Kind of property. Number of components in the result: Gradient 3 (x, y,
-/// z), Hessian 6 (xx, xy, xz, yy, yz, zz), all others 1. Orbital is a signed
-/// MO amplitude; the other kinds apply to a DensityComponent.
+/// z), Hessian 6 (xx, xy, xz, yy, yz, zz), all others 1. Orbital is the
+/// signed amplitude of a molecular orbital (MO); the other kinds are
+/// properties of a DensityComponent. Density, Gradient, Hessian, Laplacian
+/// and Tau (the positive kinetic-energy density tau, see DensityDerivatives)
+/// are defined for every component. Below, rho is the electron density.
 ///
 /// Derived kinds (see docs/API.md for the formulas and conventions):
 ///  - Elf: electron localization function, in [0, 1]. Total (spin-resolved
@@ -22,43 +25,52 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///    capped at reduced_gradient_cap. Total only.
 ///  - SignLambda2Density: sign(lambda2) * rho of the total density, where
 ///    lambda2 is the middle eigenvalue of its Hessian. Total only.
-///  - Lol: localized orbital locator t / (1 + t), t = D0 / tau, in [0, 1].
-///    Total (spin-resolved form, as Elf), Alpha or Beta; not Spin.
+///  - Lol: localized orbital locator t / (1 + t), with t = D0 / tau and D0
+///    the Thomas-Fermi kinetic-energy density of a uniform electron gas of
+///    the same density; in [0, 1]. Total (spin-resolved form, as Elf), Alpha
+///    or Beta; not Spin.
 ///  - InteractionRegionIndicator: IRI = |grad rho| / rho^1.1 of the total
 ///    density, capped at interaction_region_indicator_cap. Total only.
 ///  - DensityOverlapRegionsIndicator: DORI = theta / (1 + theta) of the
-///    total density, in [0, 1]. Total only.
+///    total density, with theta = |grad(|grad rho|^2 / rho^2)|^2 /
+///    (|grad rho|^2 / rho^2)^3; in [0, 1]. Total only.
 ///  - HamiltonianKineticEnergy: K = tau - laplacian / 4, the kinetic energy
-///    density -(1/2) sum_i psi_i lap psi_i (hartree/bohr^3). Any component.
-///  - PotentialEnergyDensity: V = laplacian / 4 - 2 tau (virial theorem).
-///    Total only.
-///  - EnergyDensity: H = tau + V = laplacian / 4 - tau = -K. Total only.
+///    density -(1/2) sum_i n_i psi_i lap psi_i over the occupied orbitals
+///    psi_i (lap = Laplacian), in hartree/bohr^3. Any component.
+///  - PotentialEnergyDensity: V = laplacian / 4 - 2 tau, from the local
+///    virial theorem, in hartree/bohr^3. Total only.
+///  - EnergyDensity: H = tau + V = laplacian / 4 - tau = -K, in
+///    hartree/bohr^3. Total only.
 ///  - SpinPolarization: (rho_alpha - rho_beta) / (rho_alpha + rho_beta), in
 ///    [-1, 1]; 0 where the total density is not positive. Spin only.
 ///  - ShannonEntropyDensity: -rho ln rho of the total density; 0 where rho is
 ///    not positive. Total only.
 ///  - FisherInformationDensity: |grad rho|^2 / rho of the total density; 0
 ///    where rho is not positive. Total only.
-///  - AverageLocalIonizationEnergy: ALIE sum_occ n_i |e_i| |phi_i|^2 / rho,
-///    hartree, over the occupied SCF orbitals. Total only.
-///  - LocalElectronAffinity: LEA -sum_vir e_i |phi_i|^2 / sum_vir |phi_i|^2,
-///    hartree, over all virtual orbitals. Total only.
-///  - LocalElectronAttachmentEnergy: LEAE sum_vir,e_i<0 n_i e_i |phi_i|^2 / rho,
-///    hartree, over the virtual orbitals with negative energy (0 everywhere
-///    if there are none). Total only.
+///  The next five use the SCF orbitals phi_i, with energies e_i, and are in
+///  hartree. n_i is 2 for an orbital of a restricted calculation (1 for a
+///  singly occupied one) and 1 in an unrestricted calculation, for occupied
+///  and virtual (unoccupied) orbitals alike.
+///  - AverageLocalIonizationEnergy: ALIE = sum_occ n_i |e_i| |phi_i|^2 / rho,
+///    over the occupied orbitals. Total only.
+///  - LocalElectronAffinity: LEA = -sum_vir e_i |phi_i|^2 / sum_vir |phi_i|^2,
+///    over all virtual orbitals. Total only.
+///  - LocalElectronAttachmentEnergy:
+///    LEAE = sum_vir n_i e_i |phi_i|^2 / rho over the virtual orbitals with
+///    e_i < 0 (0 everywhere if there are none). Total only.
 ///  - LocalElectronegativity, LocalHardness: (ALIE + LEA) / 2 and
-///    (ALIE - LEA) / 2, hartree. Total only.
-///    These five use the SCF orbitals and their energies, whatever the
-///    backend, and need orbitals that reproduce the FCHK density matrices;
-///    the last four also need virtual orbitals and are not defined for a
-///    restricted open-shell calculation. Each is 0 where its denominator
-///    vanishes.
-///  - ElectrostaticPotential: molecular electrostatic potential in hartree/e,
-///    nuclear plus electronic, from the nuclear charges and the total AO
-///    density matrix, within EvaluationOptions::potential_tolerance of the
-///    exact Coulomb integrals. At a grid point within
-///    1e-8 bohr of a nucleus, that nucleus's own singular term is left out
-///    (the potential at the nucleus). Total only.
+///    (ALIE - LEA) / 2. Total only.
+///    These five use the SCF orbitals and their energies whatever the
+///    Backend, and need orbitals that reproduce the density matrices of the
+///    FCHK (Gaussian formatted checkpoint file); the last four also need
+///    virtual orbitals and are not defined for a restricted open-shell
+///    calculation. Each is 0 where its denominator vanishes.
+///  - ElectrostaticPotential: molecular electrostatic potential (ESP) in
+///    hartree/e, nuclear plus electronic, from the nuclear charges and the
+///    total density matrix over atomic orbitals (AOs), within
+///    EvaluationOptions::potential_tolerance of the exact Coulomb integrals.
+///    At a point within 1e-8 bohr of a nucleus, that nucleus's own singular
+///    term is left out (the potential at the nucleus). Total only.
 /// Requesting a derived kind for a component it is not defined for makes
 /// Evaluator::evaluate() throw std::invalid_argument.
 enum class PropertyKind {
@@ -99,12 +111,14 @@ inline constexpr double reduced_gradient_cap = 100.0;
 /// as this value. IRI isovalues are about 1.
 inline constexpr double interaction_region_indicator_cap = 100.0;
 
-/// Edge of the cubes (bohr) that group arbitrary points for the
+/// Edge (bohr) of the cubes that group arbitrary points for the
 /// electrostatic potential in Evaluator::evaluate(points): the cubes are
-/// aligned with the Cartesian axes at multiples of this edge.
+/// aligned with the Cartesian axes, with corners at multiples of this edge,
+/// and the points in one cube share one far-field expansion.
 inline constexpr double potential_cluster_edge = 1.6;
 
-/// MO spin channel.
+/// Spin channel of an MO. A restricted calculation has one set of MOs,
+/// returned for both channels.
 enum class SpinChannel { Alpha, Beta };
 
 /// Key of one requested property. Build it with the density:: and orbital::
@@ -180,7 +194,7 @@ struct DensityDescriptor {
         return {PropertyKind::PotentialEnergyDensity, component};
     }
 
-    /// Electronic energy density H = G + V (Total only).
+    /// Electronic energy density H = tau + V (Total only).
     constexpr Property energy_density() const { return {PropertyKind::EnergyDensity, component}; }
 
     /// Spin polarization (rho_alpha - rho_beta) / rho (Spin only).
@@ -266,13 +280,17 @@ private:
     std::vector<Property> properties_;
 };
 
-/// How densities are contracted. AUTO (default) uses the occupied-MO
-/// contraction (AO_MO) when the orbitals were validated against the FCHK
-/// density matrices at load time, and the general density-matrix contraction
-/// (AO_P) otherwise. The choice is reported by Results::backend_used().
-/// AO_MO was faster in the tested workloads, but this is not guaranteed.
+/// How densities and their derivatives are computed from the AOs: AO_P sums
+/// over pairs of AOs with the FCHK density matrix P, which works for any
+/// density; AO_MO sums the squares of the occupied MOs, which requires MOs
+/// that reproduce P (checked when the FCHK is loaded, see
+/// ElectronicStructureInfo). AUTO (the default) uses AO_MO when that check
+/// passed and AO_P otherwise; the choice is reported by
+/// Results::backend_used(). AO_MO was faster in the tested workloads, but
+/// this is not guaranteed. The electrostatic potential always uses P.
 enum class Backend { AUTO, AO_P, AO_MO };
 
+/// Settings of an Evaluator.
 struct EvaluationOptions {
     /// Only 0 and 1 are accepted; larger values are rejected. The value does
     /// not currently change the number of threads: in OpenMP builds, set it
@@ -295,16 +313,21 @@ struct EvaluationOptions {
     /// (see docs/API.md). The default 1e-8 is below the six significant
     /// digits of Cube files wherever |V| >= 2e-3.
     double potential_tolerance = 1e-8;
-    /// Optional progress report (see ProgressCallback). `total` counts grid
-    /// points over all passes of one evaluate() call: the derivative and
-    /// AO-MO pass, if any, and one pass per AO-P density or orbital field.
+    /// Optional progress report (see ProgressCallback). One evaluate() call
+    /// makes several passes over all points, and `total` is the number of
+    /// points times the number of passes: one pass for the density
+    /// derivatives (and densities with AO_MO or at arbitrary points), one
+    /// for the electrostatic potential, one for the orbital-energy fields,
+    /// one for all orbitals at arbitrary points, and one per AO_P density or
+    /// orbital on a grid, each only if needed.
     ProgressCallback progress = {};
 };
 
-/// Values of one property at all grid points, as one array per component
-/// (structure of arrays): component(c)[point], points in Field order.
+/// Values of one property at all points, as one array per component:
+/// component(c)[point]. Grid points are in Field order (see Grid), arbitrary
+/// points in column order.
 struct PropertyField {
-    std::size_t points = 0;                      ///< grid points
+    std::size_t points = 0;                      ///< number of points
     std::vector<std::vector<double>> components; ///< components x points
 
     /// Values of component `index`; throws std::out_of_range if it does not exist.
@@ -331,8 +354,9 @@ private:
     Backend backend_used_ = Backend::AO_P;
 };
 
-/// Evaluates typed property requests (densities, their derivatives, MO
-/// amplitudes) for one molecule on regular grids.
+/// Evaluates the properties of a Request (densities, their derivatives, the
+/// derived kinds of PropertyKind and MO amplitudes) for one molecule, on a
+/// Grid or at arbitrary points.
 ///
 /// Lifetime: the Evaluator stores a pointer to `molecule`, not a copy. The
 /// Molecule must outlive the Evaluator and every call to evaluate().
@@ -346,24 +370,30 @@ private:
 class Evaluator {
 public:
     /// Throws std::invalid_argument for invalid options: block_size outside
-    /// 1 to max_block_size, threads < 0 or > 1, a negative or nonfinite screening_threshold or
-    /// potential_tolerance, an unknown backend, or AO_MO requested for a molecule whose orbitals
-    /// are not AO-MO eligible.
+    /// 1 to max_block_size, threads < 0 or > 1, a negative or nonfinite
+    /// screening_threshold or potential_tolerance, an unknown backend, or
+    /// AO_MO for a molecule whose MOs do not reproduce its density matrices
+    /// (ElectronicStructureInfo::ao_mo_eligible() is false).
     explicit Evaluator(const Molecule& molecule, EvaluationOptions options = {});
 
     /// Evaluate every property in `request` at all grid points, in Field
     /// order (third axis fastest). Throws std::invalid_argument for an invalid
-    /// grid (see Grid), an orbital index of 0 (indices are one-based), or a
-    /// derived property requested for a component it is not defined for.
+    /// grid (see Grid), an orbital index of 0 (indices are one-based), a
+    /// derived property requested for a component it is not defined for, or
+    /// an orbital-energy field (ALIE and the four after it) whose
+    /// requirements are not met; std::out_of_range for an orbital index past
+    /// the last MO; std::runtime_error for an orbital request when the FCHK
+    /// has no MOs.
     [[nodiscard]] Results evaluate(const Grid& grid, const Request& request) const;
 
     /// Evaluate every property in `request` at the columns of `points`
     /// (bohr), in column order. Values agree with grid evaluation at the same
-    /// points to rounding; the electrostatic potential is evaluated in
-    /// clusters of points within cubes of potential_cluster_edge bohr, fixed
-    /// in space, within the same potential_tolerance. Results do not depend
-    /// on the number of threads. Throws std::invalid_argument for a nonfinite
-    /// point, and as evaluate(Grid) for the request.
+    /// points to rounding, except the electrostatic potential: it is
+    /// evaluated in clusters of points within cubes of potential_cluster_edge
+    /// bohr, fixed in space, so its values can differ from grid values (both
+    /// are within potential_tolerance of the exact potential). Results do not
+    /// depend on the number of threads. Throws std::invalid_argument for a
+    /// nonfinite point, and as evaluate(Grid) for the request.
     [[nodiscard]] Results
     evaluate(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
              const Request& request) const;

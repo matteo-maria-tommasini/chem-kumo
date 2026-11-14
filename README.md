@@ -14,7 +14,7 @@ Cube files, including gzip-compressed Cube input.
 ## Requirements and build
 
 - C++20 compiler; Eigen 3.4 or 5 (both tested in CI); zlib; Meson (>= 0.63) and Ninja for building.
-- No Gaussian installation or external BLAS/LAPACK is needed to use KUMO.
+- No Gaussian installation or external BLAS/LAPACK is needed to use chem-kumo.
 
 ```sh
 ./build-and-test.sh --clean
@@ -53,7 +53,7 @@ On Linux, the default compiler (tested with GCC 14) is used. Manual Meson
 configuration is also supported with `-Dopenmp=true` or `-Dopenmp=false`.
 Requesting OpenMP without a suitable compiler/runtime fails at configuration.
 Set `OMP_NUM_THREADS` to control thread count, and optionally use
-`OMP_PROC_BIND`/`OMP_PLACES` for experiments with affinity; KUMO does not
+`OMP_PROC_BIND`/`OMP_PLACES` for experiments with affinity; chem-kumo does not
 impose a binding policy. See [OpenMP guide](docs/OPENMP.md).
 
 ## Command-line examples
@@ -90,6 +90,7 @@ kumo molecule.fchk --list-mo                     # energies and occupations
 kumo o2.fchk --list-mo --spin beta
 kumo molecule.fchk --spacing 0.15 --margin 5 --output myfield
 kumo --help
+kumo --version
 ```
 
 The default grid spacing is **0.20 bohr** and the margin around the atomic
@@ -413,7 +414,12 @@ quadrature; the electrostatic potential against closed forms, the multipole
 expansion of the analytic AO moments, the Poisson equation and Multiwfn,
 and its far-field approximations against their error bounds; molecular
 surfaces and their ESP and average local ionization energy statistics
-against closed forms, the orbital formula and Multiwfn;
+against closed forms, the orbital formula and Multiwfn; the orbital-energy
+fields (ALIE, LEA, LEAE, local electronegativity and hardness) against
+Multiwfn Cube files and surface statistics; evaluation at arbitrary points
+against grid evaluation, and the construction of lines and planes;
+fields mapped on surfaces and PLY output; end-to-end runs of the
+command-line program;
 scalar-field operations; and
 Cube and FCHK input. The Cube I/O tests exercise gzip equivalence and malformed
 input. Gaussian 09 Cubegen reference comparisons for signed MO amplitudes and
@@ -428,8 +434,10 @@ Validation is limited to the tested FCHK variants and basis shells; it is not
 a guarantee of support for every Gaussian basis or every electronic-structure
 method. The program evaluates the ground-state SCF data and MO coefficients
 actually stored in the FCHK. Gaussian itself is not linked or called.
+Restricted open-shell (ROHF/ROKS) files cannot be loaded yet, because they
+contain no beta MO coefficients.
 
-## Using KUMO as a Meson subproject
+## Using chem-kumo as a Meson subproject
 
 Put the project in `subprojects/chem-kumo` and add:
 
@@ -445,7 +453,7 @@ For a separate installation smoke test, run
 
 ### Compressed formatted checkpoints
 
-KUMO reads gzip-compressed FCHK files directly with zlib; the CLI and
+chem-kumo reads gzip-compressed FCHK files directly with zlib; the CLI and
 `chem::kumo::Molecule::from_fchk(path)` accept either plain `.fchk` or
 compressed `.fchk.gz` without temporary decompressed files. Compression is
 detected from the gzip header, not the filename. Corrupted gzip data and
@@ -462,7 +470,7 @@ gzip -t tests/data/o2.fchk.gz
 
 The test data include compressed Gaussian formatted checkpoints for O2,
 acrolein, HBC basis-set variants and additional molecular validation cases.
-The exact inventory is maintained under `tests/data/`. KUMO reads FCHK gzip
+The exact inventory is maintained under `tests/data/`. chem-kumo reads FCHK gzip
 files directly without temporary decompression; the `fchk-gzip` regression
 test compares compressed and plain-text inputs and rejects corrupted gzip
 trailers. The scalar Cube I/O tests separately validate compressed Cube input.

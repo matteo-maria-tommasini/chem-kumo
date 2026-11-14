@@ -7,18 +7,27 @@
 #include <string>
 
 namespace chem::kumo::detail {
-/// Per-component requirements of a Request: which properties are needed and,
-/// from them, the highest AO derivative order to evaluate (-1: none).
+/// What a Request needs for one density component (Total, Alpha, Beta or
+/// Spin): which properties are needed and, from them, the highest
+/// atomic-orbital (AO) derivative order to evaluate (-1: none).
 ///
-/// Derived properties are computed pointwise from density derivatives:
-/// ELF of a spin channel from its value, gradient and tau; the total ELF
-/// from both channels (so it marks Alpha and Beta with `elf_input` and needs
-/// no Total derivatives itself); the reduced gradient from the total value
-/// and gradient; sign(lambda2) rho from the total value and Hessian. LOL
-/// follows ELF (value and tau per channel, `lol_input`). IRI, the Shannon
-/// and Fisher densities need the total value and gradient, DORI also the
-/// Hessian, and K, V and H the Laplacian and tau of their component. The
-/// spin polarization needs the Total and Spin values (`value_input`).
+/// Derived properties are computed pointwise from density derivatives
+/// (tau is the kinetic-energy density):
+///  - the electron localization function (ELF) of a spin channel from its
+///    value, gradient and tau; the total ELF from both channels, so it marks
+///    Alpha and Beta with `elf_input` and needs no Total derivatives itself;
+///  - the localized orbital locator (LOL) like ELF, from the value and tau of
+///    each channel (`lol_input`);
+///  - the reduced density gradient from the total value and gradient;
+///  - sign(lambda2) rho from the total value and Hessian (lambda2 is the
+///    second eigenvalue of the density Hessian);
+///  - the interaction region indicator (IRI) and the Shannon entropy and
+///    Fisher information densities from the total value and gradient;
+///  - the density overlap regions indicator (DORI) from the total value,
+///    gradient and Hessian;
+///  - the kinetic (K), potential (V) and total (H) energy densities from the
+///    Laplacian and tau of their component;
+///  - the spin polarization from the Total and Spin values (`value_input`).
 struct ComponentPlan {
     bool density = false;
     bool gradient = false;
@@ -39,18 +48,19 @@ struct ComponentPlan {
     /// needs no AO values or derivatives.
     bool electrostatic_potential = false;
 
-    /// Whether this component's derivatives must be evaluated on points.
-    /// A total ELF alone does not need them (it uses Alpha and Beta).
+    /// Whether the density derivative pass must run for this component.
+    /// A total ELF or LOL alone does not need it (it uses Alpha and Beta).
     [[nodiscard]] bool derivatives() const noexcept {
         return gradient || hessian || laplacian || tau || elf_input || reduced_gradient ||
                sign_lambda2 || lol_input || gradient_input || hessian_input || energy_input ||
                value_input;
     }
 
+    /// Highest AO derivative order this component needs (-1: none).
     [[nodiscard]] int ao_order() const noexcept {
         if (hessian || laplacian || sign_lambda2 || hessian_input || energy_input) return 2;
-        // value_input needs only values, but the AO-P point kernel starts at
-        // first derivatives.
+        // value_input needs only values, but the density-matrix (AO-P)
+        // derivative kernel always computes at least first derivatives.
         if (gradient || tau || elf_input || reduced_gradient || lol_input || gradient_input ||
             value_input)
             return 1;
@@ -61,10 +71,13 @@ struct ComponentPlan {
 struct EvaluationPlan {
     std::array<ComponentPlan, 4> components{};
     bool orbitals = false;
-    /// ALIE, LEA, LEAE, local electronegativity or hardness requested: they
-    /// come from the SCF orbitals and energies by their own pass.
+    /// A field weighted by orbital energies is requested (average local
+    /// ionization energy, local electron affinity, local electron attachment
+    /// energy, local electronegativity or hardness); these come from the SCF
+    /// orbitals and energies in a pass of their own (orbital_energy_fields.hpp).
     bool orbital_energies = false;
-    bool virtual_orbitals = false; ///< also the virtual-orbital sums
+    bool virtual_orbitals = false; ///< the virtual-orbital sums are needed too
+    /// Highest AO derivative order over all components and orbitals (-1: none).
     int maximum_ao_order = -1;
 
     [[nodiscard]] bool needs_electrostatic_potential() const noexcept {
@@ -98,8 +111,9 @@ struct EvaluationPlan {
                                         " is defined only for the total density");
     }
 
-    // ELF and LOL: the total is built from the alpha and beta channels, a
-    // spin channel from itself; the spin difference has no such quantity.
+    // Mark the inputs of an ELF or LOL request: the total is built from the
+    // alpha and beta channels, a spin channel from itself; the spin
+    // difference has no such quantity and is rejected.
     void require_spin_inputs(const Property& property, bool ComponentPlan::* input,
                              const char* what) {
         if (property.component == DensityComponent::Spin)

@@ -198,7 +198,11 @@ BasisEvaluator::BasisEvaluator(BasisSet basis) : basis_(std::move(basis)) {
 }
 
 namespace {
-// Exact Cartesian Gaussian product moments; exponents and centers in bohr.
+// One-dimensional overlap integral of (x - A)^a exp(-alpha (x - A)^2) and
+// (x - B)^b exp(-beta (x - B)^2), evaluated exactly: the Gaussian product
+// theorem gives one Gaussian at the product centre, and the polynomial is
+// expanded binomially about that centre. Centres in bohr, exponents in
+// bohr^-2.
 double overlap_axis(int a, int b, double alpha, double beta, double A, double B) {
     const double p = alpha + beta;
     const double center = (alpha * A + beta * B) / p;
@@ -298,8 +302,10 @@ CartesianAOMoments BasisEvaluator::cartesian_moments() const {
                     for (std::size_t p = 0; p < A.exponents.size(); ++p) {
                         for (std::size_t q = 0; q < B.exponents.size(); ++q) {
                             const double alpha = A.exponents[p], beta = B.exponents[q];
-                            // The primitive moments are obtained by shifting the
-                            // angular momentum of the ket: r_i=(r_i-B_i)+B_i.
+                            // Moments about the global origin from overlaps in
+                            // which the power of the second (ket) function is
+                            // raised: x = (x - B_x) + B_x, so the x moment is
+                            // s1 + B_x s0 and the x^2 moment s2 + 2 B_x s1 + B_x^2 s0.
                             double v[3][3];
                             for (int d = 0; d < 3; ++d) {
                                 const double c = B.origin[d];
@@ -426,8 +432,9 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
         for (std::size_t p = 0; p < nprim; ++p) {
             radial_scratch[p] = std::exp(-block.exponents[p] * r2);
         }
-        // Reuse Cartesian powers across all functions in this shell.
-        // Preserve the original primitive summation order for reproducibility.
+        // Compute the powers x^n, y^n, z^n once and reuse them for all the
+        // Cartesian components of this shell. The primitives are summed in
+        // the same order as in evaluate_into_impl_reference().
         const int l = block.angular_momentum;
         double xp_stack[32], yp_stack[32], zp_stack[32];
         std::vector<double> xp_heap, yp_heap, zp_heap;
@@ -530,9 +537,10 @@ void BasisEvaluator::evaluate_derivatives_batch(
     // the batch, so a pure shell needs a single transform per batch. Only the
     // points within the shell cutoff radius are computed; the others get
     // exact zeros (see ao_cutoff).
-    // Differentiate the primitive Cartesian polynomial and its Gaussian factor
-    // analytically. The contraction and pure-shell transform are linear and
-    // therefore applied unchanged to every derivative component.
+    //
+    // The primitive Cartesian polynomial and its Gaussian factor are
+    // differentiated analytically. The contraction and the pure-shell
+    // transform are linear, so they apply unchanged to every derivative.
     for (const auto& block : blocks_) {
         const auto nc = static_cast<Eigen::Index>(block.powers.size());
         const auto nprim = block.exponents.size();

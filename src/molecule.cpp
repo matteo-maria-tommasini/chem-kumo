@@ -54,9 +54,11 @@ std::vector<Atom> read_atoms(const FormattedCheckpoint& f) {
         if (zs[i] <= 0 || zs[i] > 118 || !std::isfinite(xyz[3 * i]) ||
             !std::isfinite(xyz[3 * i + 1]) || !std::isfinite(xyz[3 * i + 2]))
             throw std::runtime_error("invalid FCHK atom or coordinates");
-        // FCHK atomic numbers identify the element. Use an explicit nuclear-charge
-        // record when present; otherwise retain the historical all-electron Z
-        // convention. An ECP-specific effective charge cannot be inferred here.
+        // FCHK atomic numbers identify the element. The nuclear charge comes from
+        // the "Nuclear charges" record when present (with an effective core
+        // potential, ECP, it holds the reduced charge); otherwise it is the
+        // atomic number Z, which is right for all-electron calculations. The
+        // effective charge of an ECP atom cannot be inferred from Z alone.
         const double charge =
             nuclear_charges == nullptr ? static_cast<double>(zs[i]) : (*nuclear_charges)[i];
         if (!std::isfinite(charge) || charge < 0.0)
@@ -99,9 +101,11 @@ std::vector<double> read_orbital_energies(const FormattedCheckpoint& f, const st
     return energies;
 }
 
-// Decide once, at load time, whether the occupied MOs reproduce the FCHK
-// density matrices (AO-MO eligible). Missing or too few MOs leave the status
-// Unavailable; an ineligible representation never prevents AO-P evaluation.
+// Decide once, at load time, whether the occupied molecular orbitals (MOs)
+// reproduce the FCHK density matrices, which makes the occupied-orbital
+// contraction (AO-MO) eligible. Missing or too few MOs leave the status
+// Unavailable. An ineligible representation never prevents evaluation with
+// the density-matrix contraction (AO-P).
 ElectronicStructureInfo assess_orbital_representation(const Eigen::MatrixXd& total,
                                                       const Eigen::MatrixXd& spin,
                                                       const Eigen::MatrixXd& alpha_mos,

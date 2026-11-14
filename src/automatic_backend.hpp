@@ -7,13 +7,16 @@
 
 namespace chem::kumo::detail {
 /**
- * Automatic density-contraction backend policy (chem-kumo 1.4.0).
+ * Choice of the density-contraction backend for an evaluation.
  *
- * Prefer AO_MO when the occupied molecular orbitals reproduce the FCHK
- * spin-resolved density matrices within the explicitly validated tolerances.
- * For integer occupations, P_alpha = C_alpha,occ C_alpha,occ^T and
- * P_beta = C_beta,occ C_beta,occ^T. Molecule validates this equivalence
- * once during FCHK loading and caches the eligibility decision.
+ * AO_P contracts atomic-orbital (AO) values with the FCHK AO density matrix
+ * P; AO_MO contracts them with the coefficients C of the occupied molecular
+ * orbitals (MOs). AUTO prefers AO_MO when the occupied MOs reproduce the
+ * FCHK spin-resolved density matrices within the tolerances checked by
+ * validate_orbital_backend() (backend_selection.hpp). For integer
+ * occupations, P_alpha = C_alpha,occ C_alpha,occ^T and
+ * P_beta = C_beta,occ C_beta,occ^T. Molecule checks this equivalence once
+ * while loading the FCHK file and caches the result as `eligible`.
  *
  * Across the tested systems and workloads, AO_MO was faster than AO_P;
  * this is empirical evidence, NOT a claim of universal superiority. We
@@ -26,8 +29,9 @@ namespace chem::kumo::detail {
  * Explicit AO_MO must fail for an ineligible representation, never silently
  * fall back. Explicit AO_P always uses the FCHK density matrix.
  *
- * Orbital-amplitude-only or empty requests do not involve a density
- * contraction; report AO_P as the neutral selection for those requests.
+ * Requests with no density component (only orbital amplitudes, or nothing
+ * at all) involve no density contraction; AUTO then reports AO_P as a
+ * neutral value.
  */
 inline Backend choose_backend(Backend requested, bool eligible, const EvaluationPlan& plan) {
     if (requested == Backend::AO_P) return Backend::AO_P;

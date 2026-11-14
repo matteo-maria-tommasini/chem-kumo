@@ -19,10 +19,15 @@ struct FieldSample {
     bool inside = false;
 };
 
-/// Trilinear interpolation on a general affine grid, returning zero outside.
-/// The referenced Field must outlive this sampler and remain unchanged.
+/// Trilinear interpolation of a Field at arbitrary points, on any grid with
+/// straight (possibly oblique) axes; points outside the grid give zero.
+/// The sampler keeps a reference to the Field, which must outlive it and
+/// must not change while it is used.
 class FieldSampler {
 public:
+    /// Throws std::invalid_argument if the grid has fewer than two points
+    /// along an axis, a nonfinite origin or step, a zero step, or axes that
+    /// are (nearly) linearly dependent.
     explicit FieldSampler(const Field& field) : field_(field) {
         const Grid& grid = field_.grid();
         if (!grid.origin.allFinite() || !grid.steps.allFinite())
@@ -45,6 +50,11 @@ public:
         if (!inverse_.allFinite()) throw std::invalid_argument("invalid inverse grid transform");
     }
 
+    /// Interpolated value at `point_bohr`, or {0, false} outside the grid (a
+    /// point on the boundary, to rounding, counts as inside). Throws
+    /// std::invalid_argument for a nonfinite point or a nonfinite sample at
+    /// the eight surrounding grid points, and std::overflow_error if the
+    /// interpolated value is not finite.
     [[nodiscard]] FieldSample sample(const Eigen::Vector3d& point_bohr) const {
         if (!point_bohr.allFinite()) throw std::invalid_argument("nonfinite sampling point");
         const Eigen::Vector3d delta = point_bohr - field_.grid().origin;

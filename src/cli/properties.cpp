@@ -8,7 +8,8 @@
 
 namespace kumo_cli {
 namespace {
-// Every --property, in the order of the help text and of error messages.
+// Every --property, in the order in which error messages list the valid
+// names.
 const std::vector<DensityProperty>& known_properties() {
     using D = chem::kumo::DensityDescriptor;
     using enum Components;

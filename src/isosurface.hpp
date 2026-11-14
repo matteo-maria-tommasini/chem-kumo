@@ -36,14 +36,15 @@ struct Isosurface {
 /// (from corner (0,0,0) to (1,1,1)); these tile space conformingly, so
 /// neighbouring cells share their faces and edges. Every tetrahedron edge
 /// whose ends lie on either side of the isovalue (by the samples) carries
-/// one vertex, shared by all tetrahedra around the edge; each tetrahedron
-/// contributes a triangle (one corner apart) or a quadrilateral (two and
-/// two), oriented outward (towards f < isovalue) and split along its
-/// shorter diagonal. The vertex is the root of f - isovalue on its edge,
+/// one vertex, shared by all tetrahedra around the edge. Each tetrahedron
+/// contributes a triangle (when one corner lies on one side of the isovalue
+/// and three on the other) or a quadrilateral (two corners on each side,
+/// split into two triangles along its shorter diagonal), oriented outward,
+/// towards f < isovalue. The vertex is the root of f - isovalue on its edge,
 /// found by Newton steps on f and its gradient, safeguarded by bisection,
 /// to 1e-10 bohr; the function is called on all unconverged vertices at
-/// once. Vertices are numbered in order of first appearance, cells with k
-/// fastest, so the mesh does not depend on threads.
+/// once. Vertices are numbered in order of first appearance, visiting cells
+/// with k fastest, so the mesh does not depend on the number of threads.
 ///
 /// Throws std::invalid_argument if the grid is invalid or has fewer than two
 /// points along an axis, `samples` has the wrong size or a nonfinite value,

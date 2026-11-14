@@ -514,7 +514,7 @@ error budget, not the arithmetic, limits the gain: with an absolute bound
 of 1e-8 for a molecule with 234 electrons, the far field must be resolved to
 about 1e-11 relative.
 
-The Boys function uses a seventh-order Taylor expansion about a table with
+The Boys function uses a sixth-degree (seven-term) Taylor expansion about a table with
 spacing 0.05 for T < 40 and the closed form of F_0 with upward recursion
 above, with downward recursion to the lower orders. It agrees with
 quadrature of its definition to 2.3e-15 relative for m <= 32.
@@ -647,9 +647,8 @@ Politzer is the orbital-energy average weighted by the orbital densities,
 
 over the occupied SCF orbitals phi_i with energies e_i (hartree) and
 occupations n_i: 2 for the doubly occupied orbitals of a restricted
-calculation, 1 otherwise (alpha and beta orbitals of an unrestricted one,
-singly occupied orbitals of a restricted open-shell one). This is
-Multiwfn's definition. Low values on the molecular surface mark the
+calculation, 1 otherwise (alpha and beta orbitals of an unrestricted one).
+This is Multiwfn's definition. Low values on the molecular surface mark the
 electrons that are easiest to remove, so the surface minima indicate sites
 of electrophilic attack.
 
@@ -784,7 +783,13 @@ options, properties requested for components they are not defined for, and
 out-of-range MO indices, invalid surface options or meshes, and FCHK
 files whose orbitals cannot give the average local ionization energy are
 reported with exceptions. The library does not
-infer absent MO coefficients or orbital energies. The reference data cover
+infer absent MO coefficients or orbital energies.
+
+Restricted open-shell files (ROHF, ROKS) cannot be loaded yet: Gaussian
+writes no beta MO coefficients for them, and `Molecule::from_fchk` rejects
+an open-shell file without beta coefficients ("open-shell FCHK lacks Beta
+MO coefficients"). The orbital-energy code already gives singly occupied
+restricted orbitals the weight 1, for a future loader. The reference data cover
 O2, acrolein and water (Gaussian 09 Cubegen and Multiwfn Cube files), and
 the HBC fixtures (6-31G(d,p) with Cartesian d and SP shells, def2-SVP,
 def2-TZVP with f shells) cover larger bases; shells beyond f and other FCHK

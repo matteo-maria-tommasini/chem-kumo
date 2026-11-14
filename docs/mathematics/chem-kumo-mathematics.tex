@@ -11,499 +11,852 @@
 \maketitle
 \tableofcontents
 
-\section{Scope and conventions}
-KUMO is a non-SCF evaluator of real ground-state electronic fields from
-Gaussian formatted checkpoint (FCHK) data. It neither determines the electronic
-state nor relaxes orbital coefficients. All derivatives below are with respect
-to the electronic Cartesian coordinate $\mathbf r$, with the molecular geometry
-and FCHK data fixed. No nuclear derivatives or electronic response equations
-are implemented. Atomic units are used: distances in bohr, energies in hartree.
-AO and MO values have dimensions $a_0^{-3/2}$, density $a_0^{-3}$,
-its gradient $a_0^{-4}$, Hessian and Laplacian $a_0^{-5}$, and the positive
-kinetic-energy density $E_h a_0^{-3}$ in atomic units.
+% ---------------------------------------------------------------------------
+\section{Scope, units and notation}
 
-\section{Gaussian atomic-orbital basis}
-A Cartesian primitive centered at $\mathbf A$ is
-\begin{equation}
- g_{\ell mn}(\mathbf r;\alpha)=N_{\ell mn}(\alpha)
- u^\ell v^m w^n\exp[-\alpha(u^2+v^2+w^2)],\qquad
- (u,v,w)=\mathbf r-\mathbf A.
-\end{equation}
-An AO is a contracted linear combination of primitives (with the appropriate
-normalization and contraction conventions):
-\begin{equation}
- \chi_\mu(\mathbf r)=\sum_p d_{\mu p}g_{\mu p}(\mathbf r).
-\end{equation}
-For pure spherical shells, a fixed Cartesian-to-real-spherical linear
-transformation maps primitive or contracted Cartesian components into the
-FCHK AO order. This same transformation is applied to all spatial derivatives.
-For combined SP shells, S and P contractions use their respective coefficients.
-The FCHK record for SP contraction coefficients need not exist when no SP
-shell is present. The AO ordering and normalization must agree with the
-coefficient and density matrices read from the same FCHK.
+chem-kumo is a C++ library (with the command-line program \texttt{kumo})
+that evaluates the electron density of a molecule, its spatial derivatives,
+its molecular orbitals and a set of fields derived from them, starting from
+a Gaussian formatted checkpoint (FCHK) file. The FCHK file supplies the
+geometry, the Gaussian basis set, the self-consistent-field (SCF) density
+matrices, the molecular-orbital (MO) coefficients and the orbital energies.
+chem-kumo does not solve any electronic-structure equation: it neither
+determines nor relaxes the electronic state, and it computes no derivative
+with respect to the nuclear positions. Every derivative in this document is
+taken with respect to the position $\mathbf r=(x,y,z)$ of an electron, with
+the molecule held fixed.
 
-\section{Analytic AO derivatives through second order}
-Define the polynomial factors
+\paragraph{Units.} Atomic units are used throughout: lengths in bohr
+($a_0$), energies in hartree ($E_h$), charges in units of the elementary
+charge $e$. Atomic and molecular orbitals have units of $a_0^{-3/2}$, the
+density $e\,a_0^{-3}$, its gradient $e\,a_0^{-4}$, its Hessian and
+Laplacian $e\,a_0^{-5}$, kinetic and energy densities $E_h\,a_0^{-3}$, and
+the electrostatic potential $E_h/e$.
+
+\paragraph{Notation.} Table~\ref{tab:notation} lists the symbols used in
+more than one section. Each symbol keeps one meaning in the whole document.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Symbol & Meaning\\
+\midrule
+$\mathbf r$ & point where a field is evaluated (bohr)\\
+$\mathbf R_A$, $Z_A$ & position and nuclear charge of atom $A$\\
+$\chi_\mu$, $\boldsymbol\chi$ & atomic orbital (AO) $\mu$; column vector of all AO values\\
+$N_{\mathrm{AO}}$ & number of AOs (basis functions)\\
+$\psi_i^\sigma$, $\varepsilon_i^\sigma$ & MO $i$ of spin channel $\sigma\in\{\alpha,\beta\}$ and its energy\\
+$\mathbf C^\sigma$ & MO coefficients: $\psi_i^\sigma=\sum_\mu C^\sigma_{\mu i}\chi_\mu$\\
+$n_i^\sigma$ & occupation of MO $i$ of channel $\sigma$\\
+$\mathbf P^{\mathrm t}$, $\mathbf P^{\mathrm s}$ & total and spin-difference AO density matrices\\
+$\mathbf P^\alpha$, $\mathbf P^\beta$ & spin density matrices, $\mathbf P^{\mathrm t}=\mathbf P^\alpha+\mathbf P^\beta$, $\mathbf P^{\mathrm s}=\mathbf P^\alpha-\mathbf P^\beta$\\
+$\rho$, $\rho_\alpha$, $\rho_\beta$ & total and spin densities\\
+$\partial_a$, $\partial_{ab}$ & $\partial/\partial r_a$ and $\partial^2/\partial r_a\partial r_b$, with $a,b\in\{x,y,z\}$\\
+$\mathbf H$ & Hessian matrix of the density, $H_{ab}=\partial_{ab}\rho$\\
+$\tau$ & positive kinetic-energy density (Section~\ref{sec:derivatives})\\
+$V(\mathbf r)$ & molecular electrostatic potential\\
+$h$ & grid spacing\\
+\bottomrule
+\end{tabular}
+\caption{Symbols used in more than one section.}
+\label{tab:notation}
+\end{table}
+
+% ---------------------------------------------------------------------------
+\section{Atomic orbitals and their derivatives}\label{sec:aos}
+
+\subsection{Gaussian basis functions}
+A Cartesian Gaussian primitive with exponent $\alpha$ centred at $\mathbf A$
+is the function
+\begin{equation}
+ g_{\ell mn}(\mathbf r;\alpha)=N_{\ell mn}(\alpha)\,
+ u^\ell v^m w^n\,e^{-\alpha(u^2+v^2+w^2)},\qquad
+ (u,v,w)=\mathbf r-\mathbf A,
+\end{equation}
+where $N_{\ell mn}(\alpha)$ is its normalization constant and
+$\ell+m+n$ is its angular momentum. An atomic orbital (a contracted
+basis function) is a fixed linear combination of primitives on the same
+centre, with contraction coefficients $d_{\mu p}$ read from the FCHK file:
+\begin{equation}
+ \chi_\mu(\mathbf r)=\sum_p d_{\mu p}\,g_{\mu p}(\mathbf r).
+\end{equation}
+Shells of pure (real spherical-harmonic) functions are obtained from the
+Cartesian functions of the same shell by a fixed linear transformation,
+which also puts them in the AO order of the FCHK file. Combined SP shells
+use separate contraction coefficients for their S and P functions. The AO
+order and normalization must be those of the MO coefficients and density
+matrices of the same file, since these are expressed in that basis.
+
+\subsection{Analytic derivatives up to second order}
+Every primitive is a product of one factor per Cartesian direction, for
+example $u^\ell e^{-\alpha u^2}$ along $x$. Its derivatives along $x$ are
+again polynomials times the same exponential:
 \begin{align}
- f_\ell(u)&=u^\ell,\\
- D_\ell(u;\alpha)&=\ell u^{\ell-1}-2\alpha u^{\ell+1},\\
- E_\ell(u;\alpha)&=\ell(\ell-1)u^{\ell-2}
- -2\alpha(2\ell+1)u^\ell+4\alpha^2u^{\ell+2}.
+ \frac{d}{du}\big(u^\ell e^{-\alpha u^2}\big)&=f'_\ell(u)\,e^{-\alpha u^2},&
+ f'_\ell(u)&=\ell u^{\ell-1}-2\alpha u^{\ell+1},\\
+ \frac{d^2}{du^2}\big(u^\ell e^{-\alpha u^2}\big)&=f''_\ell(u)\,e^{-\alpha u^2},&
+ f''_\ell(u)&=\ell(\ell-1)u^{\ell-2}-2\alpha(2\ell+1)u^\ell+4\alpha^2u^{\ell+2}.
 \end{align}
-Terms whose prefactors vanish are evaluated as zero, without forming
-negative powers at the origin. With $G=N_{\ell mn}\exp[-\alpha(u^2+v^2+w^2)]$,
+Terms with a zero prefactor (for example $\ell u^{\ell-1}$ with $\ell=0$)
+are left out rather than evaluated, so that no negative power of $u$ is
+formed at the centre. With
+$G=N_{\ell mn}e^{-\alpha(u^2+v^2+w^2)}$, the first and second derivatives
+of a primitive are
 \begin{align}
- \partial_x g_{\ell mn}&=G D_\ell(u;\alpha)f_m(v)f_n(w),\\
- \partial_{xx}g_{\ell mn}&=G E_\ell(u;\alpha)f_m(v)f_n(w),\\
- \partial_{xy}g_{\ell mn}&=G D_\ell(u;\alpha)D_m(v;\alpha)f_n(w).
+ \partial_x g_{\ell mn}&=G\,f'_\ell(u)\,v^m w^n,\\
+ \partial_{xx}g_{\ell mn}&=G\,f''_\ell(u)\,v^m w^n,\\
+ \partial_{xy}g_{\ell mn}&=G\,f'_\ell(u)\,f'_m(v)\,w^n,
 \end{align}
-The other Cartesian components follow by permutation. Derivation commutes
-with contraction and the Cartesian-to-pure transformation. The AO evaluator
-returns $\chi_\mu$, three first derivatives, and six unique second derivatives
-in the order $(xx,yy,zz,xy,xz,yz)$. This is the storage convention, not the
-matrix layout of the symmetric $3\times3$ Hessian.
+and the other components follow by exchanging the roles of $x,y,z$.
+Differentiation commutes with the contraction and with the
+Cartesian-to-pure transformation, so the derivatives of the AOs are
+obtained by applying both to the derivatives of the primitives. For each AO
+the evaluator returns the value, the three first derivatives and the six
+distinct second derivatives, stored in the order $xx,yy,zz,xy,xz,yz$.
 
-\section{Molecular orbitals}
-For real molecular orbitals in spin channel $\sigma\in\{\alpha,\beta\}$,
-\begin{align}
- \psi_i^\sigma(\mathbf r)&=\sum_\mu C_{\mu i}^\sigma\chi_\mu(\mathbf r),\\
- \partial_a\psi_i^\sigma&=\sum_\mu C_{\mu i}^\sigma\partial_a\chi_\mu,\\
- \partial_{ab}\psi_i^\sigma&=\sum_\mu C_{\mu i}^\sigma\partial_{ab}\chi_\mu.
-\end{align}
-These are derivatives of the signed orbital amplitude, not of its square.
-The public MO indices are one-based, whereas internal coefficient matrices
-use zero-based indexing. Alpha and beta select orbital channels, not total
-or spin-difference orbitals. No MO phase alignment is applied.
+\subsection{Screening of negligible AOs}\label{sec:screening}
+Gaussian functions decay quickly, so at any point most AOs of a large
+molecule are negligible. chem-kumo uses two independent tests.
 
-\section{Spin densities and the AO density matrix}
-Let $\boldsymbol\chi(\mathbf r)$ be the column vector of AO values and
-$P^\sigma$ a real symmetric spin density matrix. Then
+\emph{Shell cutoff (per point).} Each shell has a radius $r_{\mathrm{cut}}$
+beyond which a rigorous bound on all its AOs and on their first and second
+derivatives is below $10^{-14}$; at points farther than $r_{\mathrm{cut}}$
+from the centre the AOs of the shell are set to exact zeros. For
+$r=|\mathbf r-\mathbf A|\ge1$, every factor of the value and derivative
+formulas of a primitive with exponent $a_p$ and Cartesian degree $\ell$ is
+bounded by a multiple of $r^{\ell+2}e^{-a_pr^2}$, which gives
 \begin{equation}
- \rho_\sigma=\boldsymbol\chi^T P^\sigma\boldsymbol\chi
- =\sum_i n_{i\sigma}(\psi_i^\sigma)^2,
- \qquad P^\sigma=C^\sigma n^\sigma(C^\sigma)^T.
-\end{equation}
-Here $n^\sigma$ is diagonal and contains spin-orbital occupations. In the
-restricted closed-shell case the two spin matrices are equal and each
-contains half the total density. Define
-\begin{equation}
- P^{\mathrm{total}}=P^\alpha+P^\beta,\qquad
- P^{\mathrm{spin}}=P^\alpha-P^\beta.
-\end{equation}
-KUMO supports total, alpha, beta, and alpha-minus-beta components.
-The spin-difference field is signed and need not be nonnegative.
-
-\section{Spatial derivatives of the electron density}
-Write $\boldsymbol\chi_a=\partial_a\boldsymbol\chi$ and
-$\boldsymbol\chi_{ab}=\partial_a\partial_b\boldsymbol\chi$.
-For any of the symmetric matrices $P^s$ described above,
-\begin{align}
- \rho_s&=\boldsymbol\chi^T P^s\boldsymbol\chi,\\
- \partial_a\rho_s&=2\boldsymbol\chi_a^T P^s\boldsymbol\chi,\\
- \partial_{ab}\rho_s&=2\boldsymbol\chi_{ab}^T P^s\boldsymbol\chi
-       +2\boldsymbol\chi_a^T P^s\boldsymbol\chi_b,\\
- \nabla^2\rho_s&=\sum_{a=x,y,z}\partial_{aa}\rho_s
-                  =\operatorname{tr}H(\rho_s).
-\end{align}
-The full Hessian is symmetric; the off-diagonal components are evaluated
-analytically. The positive-definite kinetic-energy density for a physical
-spin channel is
-\begin{equation}
- \tau_\sigma(\mathbf r)=\frac12\sum_{a=x,y,z}
- \boldsymbol\chi_a^T P^\sigma\boldsymbol\chi_a
- =\frac12\sum_i n_{i\sigma}|\nabla\psi_i^\sigma|^2.
-\end{equation}
-The same linear formula applied to $P^{\mathrm{spin}}$ yields
-$\tau_\alpha-\tau_\beta$, which is not necessarily positive.
-The identity
-\begin{equation}
- \nabla^2\rho_s=2(\nabla^2\boldsymbol\chi)^TP^s\boldsymbol\chi
- +4\tau_s
-\end{equation}
-provides an additional algebraic consistency check.
-
-\section{Blocked dense contractions with Eigen}
-For $B$ spatial points, let $\Phi,\Phi_x,\Phi_y,\Phi_z$ be
-$N_{\mathrm{AO}}\times B$ panels of AO values and first derivatives.
-The implementation packs these into one column-major matrix
-\begin{equation}
- A=[\Phi\ \Phi_x\ \Phi_y\ \Phi_z]
- \in\mathbb R^{N_{\mathrm{AO}}\times4B}
-\end{equation}
-and applies the selected density matrix in one Eigen matrix product:
-\begin{equation}
- V=P^s A=[V_0\ V_x\ V_y\ V_z].
-\end{equation}
-For each point (column) $j$, the fields are obtained by vector products:
-\begin{align}
- \rho_{s,j}&=\Phi_j^T(V_0)_j,\\
- (\nabla\rho_s)_{a,j}&=2(\Phi_a)_j^T(V_0)_j,\\
- (H_s)_{ab,j}&=2(\Phi_{ab})_j^T(V_0)_j
-                  +2(\Phi_a)_j^T(V_b)_j,\\
- \tau_{s,j}&=\tfrac12\sum_a(\Phi_a)_j^T(V_a)_j.
-\end{align}
-Six second-derivative panels are retained for the linear reductions but
-\emph{are not} multiplied by $P^s$. Only the diagonal pointwise contractions
-are required; no $B\times B$ field matrix is formed. The AO derivatives
-are still evaluated point by point inside each block.
-
-The dense matrix product requires $O(4N_{\mathrm{AO}}^2B)$ arithmetic
-per block; AO derivative evaluation and reductions scale approximately
-linearly with $N_{\mathrm{AO}}$ for fixed basis structure. The fused product
-reduces separate Eigen calls and may improve reuse of $P^s$ in cache,
-but it does not change the asymptotic complexity or reduce the number of
-mathematical density-matrix applications. Section~\ref{sec:screening}
-describes how negligible AOs are left out of each block.
-
-For a full block, ten AO panels (one value, three gradients, six Hessians)
-and four product panels together require approximately
-$14N_{\mathrm{AO}}B$ doubles, excluding the density matrices, output and
-temporary storage. At $N_{\mathrm{AO}}=1410$, $B=128$, this is approximately
-20.2 MB of panel data. The public blocked API returns a vector of results,
-so its total output memory grows with the number of points even though AO
-scratch data are block-local.
-
-\section{AO screening and the shell cutoff}\label{sec:screening}
-Gaussian AOs decay quickly, so in a block of nearby grid points most of them
-are negligible at every point. For a block, an AO is \emph{screened} when
-its value, and for derivative requests all its first and second derivatives,
-are at most a threshold $\varepsilon_s$ (default $10^{-12}$) in absolute
-value at every point of the block. Screened AOs are removed from the panels
-and from the rows and columns of $P^s$ (or from the rows of the occupied MO
-coefficients in the AO--MO contraction), which replaces the
-$N_{\mathrm{AO}}\times N_{\mathrm{AO}}$ product by a much smaller one. The
-change in the density is at rounding level in the tested systems; a
-threshold of zero gives the exact contraction.
-
-Independently, each shell has a radius $r_c$ beyond which a rigorous bound
-on every AO of the shell and on its first and second derivatives is at most
-$10^{-14}$. For a primitive of exponent $a$ and Cartesian degree $\ell$,
-every factor of the value and derivative kernels is bounded for $r\ge1$ by
-a multiple of $r^{\ell+2}e^{-ar^2}$, so
-\begin{equation}
- |\chi|,\ |\partial\chi|,\ |\partial^2\chi|\le
+ |\chi|,\ |\partial_a\chi|,\ |\partial_{ab}\chi|\le
  T\sum_p W_p C_p\, r^{\ell+2}e^{-a_pr^2},\qquad
- C_p=1+\ell+\ell^2+2a_p(2\ell+2)+4a_p^2,
+ C_p=1+\ell+\ell^2+2a_p(2\ell+2)+4a_p^2.
 \end{equation}
-with $W_p$ the largest contraction weight of primitive $p$ and $T$ the
-largest absolute row sum of the pure transform (1 for Cartesian shells).
-Each term decreases beyond $\sqrt{(\ell+2)/(2a_p)}$, and $r_c$ is found by
-bisection. At points farther than $r_c$ the shell's AOs are returned as
-exact zeros.
+Here $W_p$ is the largest contraction weight of primitive $p$ (coefficient
+times normalization) and $T$ is the largest sum of absolute values in a row
+of the Cartesian-to-pure transformation ($T=1$ for Cartesian shells). Each
+term decreases for $r>\sqrt{(\ell+2)/(2a_p)}$, and $r_{\mathrm{cut}}$ is
+found by bisection.
 
-\section{Derived density descriptors}
-With $\tau_\sigma$ as above, the Pauli kinetic-energy density of a spin
-channel and its uniform-gas reference are
+\emph{AO screening (per block of points).} Fields are evaluated on blocks
+of nearby points (Section~\ref{sec:contraction}). In a block, an AO is
+\emph{screened} when its value, and its first and second derivatives if
+they are needed, are at most $\varepsilon_{\mathrm s}$ in absolute value at
+every point of the block (default $\varepsilon_{\mathrm s}=10^{-12}$).
+Screened AOs are removed from the block: their rows are deleted from the
+AO values, and their rows and columns from the density matrix (or their
+rows from the MO coefficients). The products described below then involve
+only the AOs that matter in that block. The resulting change of the density
+is at the level of rounding in the tested molecules, and a threshold of
+zero gives the exact contraction.
+
+% ---------------------------------------------------------------------------
+\section{Molecular orbitals and density matrices}\label{sec:mos}
+
+\subsection{Molecular orbitals}
+A molecular orbital of spin channel $\sigma$ and its derivatives are linear
+combinations of the AOs and of their derivatives:
+\begin{equation}
+ \psi_i^\sigma(\mathbf r)=\sum_\mu C_{\mu i}^\sigma\chi_\mu(\mathbf r),\qquad
+ \partial_a\psi_i^\sigma=\sum_\mu C_{\mu i}^\sigma\,\partial_a\chi_\mu,\qquad
+ \partial_{ab}\psi_i^\sigma=\sum_\mu C_{\mu i}^\sigma\,\partial_{ab}\chi_\mu.
+\end{equation}
+These are the signed orbital amplitudes (not their squares); their overall
+sign is that of the FCHK coefficients, with no phase convention applied.
+In a restricted calculation the $\alpha$ and $\beta$ channels share one
+set of spatial orbitals; in an unrestricted one each channel has its own.
+MO indices are 1-based in the public interfaces.
+
+\subsection{Density matrices and spin components}
+The density of channel $\sigma$ is a quadratic form in the AO values,
+\begin{equation}
+ \rho_\sigma(\mathbf r)=\boldsymbol\chi(\mathbf r)^{\mathsf T}\mathbf P^\sigma
+ \boldsymbol\chi(\mathbf r)=\sum_{\mu\nu}P^\sigma_{\mu\nu}\chi_\mu\chi_\nu,
+\end{equation}
+with a real symmetric density matrix $\mathbf P^\sigma$. For an SCF wave
+function with integer occupations,
+$\mathbf P^\sigma=\sum_i n_i^\sigma\,\mathbf C^\sigma_i(\mathbf C^\sigma_i)^{\mathsf T}$,
+where $\mathbf C^\sigma_i$ is the coefficient column of MO $i$, so that
+$\rho_\sigma=\sum_in_i^\sigma(\psi_i^\sigma)^2$.
+
+The FCHK file stores the \emph{total} matrix
+$\mathbf P^{\mathrm t}=\mathbf P^\alpha+\mathbf P^\beta$ and, for open
+shells, the \emph{spin-difference} matrix
+$\mathbf P^{\mathrm s}=\mathbf P^\alpha-\mathbf P^\beta$ (for closed shells
+$\mathbf P^{\mathrm s}=0$). These two matrices are the reference data of
+chem-kumo. The spin matrices are obtained from them as
+\begin{equation}
+ \mathbf P^\alpha=\tfrac12(\mathbf P^{\mathrm t}+\mathbf P^{\mathrm s}),\qquad
+ \mathbf P^\beta=\tfrac12(\mathbf P^{\mathrm t}-\mathbf P^{\mathrm s}),
+\end{equation}
+never from the MO occupations. Four density components can be requested:
+the total density $\rho=\rho_\alpha+\rho_\beta$, the spin densities
+$\rho_\alpha$ and $\rho_\beta$, and the spin-difference density
+$\rho_\alpha-\rho_\beta$, which can be negative.
+
+% ---------------------------------------------------------------------------
+\section{The density and its spatial derivatives}\label{sec:derivatives}
+
+Let $\mathbf P$ be any of the four matrices above. Write
+$\boldsymbol\chi_a=\partial_a\boldsymbol\chi$ and
+$\boldsymbol\chi_{ab}=\partial_{ab}\boldsymbol\chi$ for the vectors of AO
+derivatives. Differentiating the quadratic form and using the symmetry of
+$\mathbf P$ gives
+\begin{align}
+ \rho&=\boldsymbol\chi^{\mathsf T}\mathbf P\boldsymbol\chi,\\
+ \partial_a\rho&=2\,\boldsymbol\chi_a^{\mathsf T}\mathbf P\boldsymbol\chi,\\
+ \partial_{ab}\rho&=2\,\boldsymbol\chi_{ab}^{\mathsf T}\mathbf P\boldsymbol\chi
+       +2\,\boldsymbol\chi_a^{\mathsf T}\mathbf P\boldsymbol\chi_b,\\
+ \nabla^2\rho&=\partial_{xx}\rho+\partial_{yy}\rho+\partial_{zz}\rho
+ =\operatorname{tr}\mathbf H .
+\end{align}
+All nine Hessian components, off-diagonal ones included, are computed
+analytically. The positive kinetic-energy density of a spin channel is
+\begin{equation}
+ \tau_\sigma=\frac12\sum_{a}\boldsymbol\chi_a^{\mathsf T}\mathbf P^\sigma\boldsymbol\chi_a
+ =\frac12\sum_i n_i^\sigma\,|\nabla\psi_i^\sigma|^2\ \ge0,
+\end{equation}
+and $\tau=\tau_\alpha+\tau_\beta$. The same formula with
+$\mathbf P^{\mathrm s}$ gives $\tau_\alpha-\tau_\beta$, which can be
+negative. Since the Laplacian of the density can be written as
+\begin{equation}
+ \nabla^2\rho=2\,(\nabla^2\boldsymbol\chi)^{\mathsf T}\mathbf P\boldsymbol\chi+4\tau,
+\end{equation}
+the tests use this identity as an independent consistency check.
+
+% ---------------------------------------------------------------------------
+\section{Evaluating the density on many points}\label{sec:contraction}
+
+Fields are evaluated on blocks of $B$ points at a time (by default
+$B=128$; at most 65\,536). For a block, the values of all AOs form an
+$N_{\mathrm{AO}}\times B$ matrix $\Phi$ (one column per point), and their
+first derivatives the matrices $\Phi_x,\Phi_y,\Phi_z$; the second
+derivatives form six more matrices $\Phi_{ab}$. chem-kumo offers two
+equivalent ways of contracting them into densities: with the density matrix
+(AO-P) or with the occupied MOs (AO-MO).
+
+\subsection{Density-matrix contraction (AO-P)}
+The value and first-derivative matrices are placed side by side,
+$\mathbf A=[\Phi\ \Phi_x\ \Phi_y\ \Phi_z]$ of size
+$N_{\mathrm{AO}}\times4B$, and the density matrix is applied to all of them
+in a single matrix product,
+\begin{equation}
+ \mathbf W=\mathbf P\mathbf A=[\mathbf W_0\ \mathbf W_x\ \mathbf W_y\ \mathbf W_z].
+\end{equation}
+With $\mathbf v_j$ denoting column $j$ of a matrix $\mathbf v$, the fields
+at point $j$ of the block are then dot products of columns:
+\begin{align}
+ \rho_j&=\Phi_j^{\mathsf T}(\mathbf W_0)_j,\qquad
+ (\partial_a\rho)_j=2(\Phi_a)_j^{\mathsf T}(\mathbf W_0)_j,\\
+ (\partial_{ab}\rho)_j&=2(\Phi_{ab})_j^{\mathsf T}(\mathbf W_0)_j
+                  +2(\Phi_a)_j^{\mathsf T}(\mathbf W_b)_j,\qquad
+ \tau_j=\tfrac12\sum_a(\Phi_a)_j^{\mathsf T}(\mathbf W_a)_j.
+\end{align}
+The second-derivative matrices enter only these dot products and are never
+multiplied by $\mathbf P$. The product costs about $4N_{\mathrm{AO}}^2B$
+multiply--add operations per block (fewer after screening), which dominates
+the cost; the dot products cost $O(N_{\mathrm{AO}}B)$.
+
+When several spin components are requested, the total and spin-difference
+matrices are each applied once, and the $\alpha$ and $\beta$ fields are
+obtained from the results as $\frac12(\text{total}\pm\text{difference})$:
+every quantity above is linear in $\mathbf P$. For the density alone on a
+grid the roles are exchanged: if $\rho_\alpha$ or $\rho_\beta$ is
+requested, $\mathbf P^\alpha$ and $\mathbf P^\beta$ are applied and the
+total and difference densities are their sum and difference, so that no
+request needs more than two products.
+
+\subsection{Occupied-orbital contraction (AO-MO)}
+When the density comes from occupied orbitals with occupation one per spin
+orbital, the same fields follow from the occupied orbital amplitudes. Let
+$\mathbf C^\sigma_{\mathrm{occ}}$ be the $N_{\mathrm{AO}}\times N_\sigma$
+matrix of the coefficients of the $N_\sigma$ occupied orbitals of channel
+$\sigma$. One product per AO matrix gives the orbital amplitudes and their
+derivatives on the block,
+\begin{equation}
+ \Psi=(\mathbf C^\sigma_{\mathrm{occ}})^{\mathsf T}\Phi,\qquad
+ \Psi_a=(\mathbf C^\sigma_{\mathrm{occ}})^{\mathsf T}\Phi_a,\qquad
+ \Psi_{ab}=(\mathbf C^\sigma_{\mathrm{occ}})^{\mathsf T}\Phi_{ab},
+\end{equation}
+and, at point $j$,
+\begin{align}
+ \rho_{\sigma,j}&=|\Psi_j|^2,\qquad
+ (\partial_a\rho_\sigma)_j=2\,\Psi_j^{\mathsf T}(\Psi_a)_j,\\
+ (\partial_{ab}\rho_\sigma)_j&=2\,\Psi_j^{\mathsf T}(\Psi_{ab})_j
+   +2\,(\Psi_a)_j^{\mathsf T}(\Psi_b)_j,\qquad
+ \tau_{\sigma,j}=\tfrac12\sum_a|(\Psi_a)_j|^2 .
+\end{align}
+The total and spin-difference fields are the sum and difference of the two
+channels. For a restricted closed shell the $\beta$ orbitals are the
+$\alpha$ ones, and the $\beta$ channel is copied rather than recomputed.
+Each product costs $N_{\mathrm{AO}}N_\sigma B$ operations, usually much
+less than the AO-P product because $N_\sigma\ll N_{\mathrm{AO}}$.
+
+\paragraph{Eligibility check.} The two contractions agree only if the
+occupied orbitals reproduce the density matrices of the file, which is not
+the case, for example, for post-SCF (correlated) densities. When the file is
+loaded, chem-kumo rebuilds
+$\tilde{\mathbf P}^\sigma=\mathbf C^\sigma_{\mathrm{occ}}(\mathbf C^\sigma_{\mathrm{occ}})^{\mathsf T}$,
+$\tilde{\mathbf P}^{\mathrm t}=\tilde{\mathbf P}^\alpha+\tilde{\mathbf P}^\beta$ and
+$\tilde{\mathbf P}^{\mathrm s}=\tilde{\mathbf P}^\alpha-\tilde{\mathbf P}^\beta$
+and compares them with the stored matrices in the Frobenius norm. With the
+scales
+$S_{\mathrm t}=\max(\|\mathbf P^{\mathrm t}\|,\|\tilde{\mathbf P}^{\mathrm t}\|)$ and
+$S_{\mathrm s}=\max(\|\mathbf P^{\mathrm s}\|,\|\tilde{\mathbf P}^{\mathrm s}\|,S_{\mathrm t})$,
+the orbitals are accepted (AO-MO \emph{eligible}) when
+\begin{equation}
+ \|\mathbf P^{\mathrm t}-\tilde{\mathbf P}^{\mathrm t}\|\le
+ \epsilon_{\mathrm{abs}}+\epsilon_{\mathrm{rel}}S_{\mathrm t}
+ \quad\text{and}\quad
+ \|\mathbf P^{\mathrm s}-\tilde{\mathbf P}^{\mathrm s}\|\le
+ \epsilon_{\mathrm{abs}}+\epsilon_{\mathrm{rel}}S_{\mathrm s},
+\end{equation}
+with $\epsilon_{\mathrm{rel}}=10^{-8}$ and $\epsilon_{\mathrm{abs}}=10^{-10}$.
+The spin difference is measured on the scale of the total matrix because
+$\tilde{\mathbf P}^{\mathrm s}$ is a difference of two matrices of that
+size: the rounding of the stored coefficients (about nine significant
+digits) gives it an error proportional to $\|\mathbf P^{\mathrm t}\|$, which
+would fail a check relative to a small spin matrix (for example in a weakly
+spin-polarized broken-symmetry state).
+
+\paragraph{Choice of the contraction.} By default (\emph{automatic}
+backend) the AO-MO contraction is used when the file is eligible and the
+request involves a density; otherwise AO-P is used. AO-P can always be
+requested explicitly; an explicit AO-MO request for an ineligible file is
+an error, never silently replaced by AO-P.
+
+% ---------------------------------------------------------------------------
+\section{Grids, lines, planes and points}\label{sec:grids}
+
+\subsection{Grids}
+A grid is defined by an origin $\mathbf o$, three step vectors
+$\mathbf s_1,\mathbf s_2,\mathbf s_3$ (not necessarily orthogonal) and the
+point counts $n_1,n_2,n_3$. Its points are
+\begin{equation}
+ \mathbf r_{ijk}=\mathbf o+i\,\mathbf s_1+j\,\mathbf s_2+k\,\mathbf s_3,
+ \qquad 0\le i<n_1,\ 0\le j<n_2,\ 0\le k<n_3,
+\end{equation}
+stored with $k$ varying fastest, as in Gaussian Cube files (linear index
+$(i\,n_2+j)\,n_3+k$). A count of 1 along an axis is allowed, so lines and
+planes are grids too.
+
+\paragraph{Grid around the molecule.} Given a margin $m$ and a spacing $h$,
+the grid covers the smallest axis-aligned box containing the nuclei,
+enlarged by $m$ on every side. Along axis $a$, with $\ell_a$ the extent of
+the nuclei,
+\begin{equation}
+ n_a=\max\!\Big(2,\ \Big\lceil\frac{\ell_a+2m}{h}\Big\rceil+1\Big),\qquad
+ \mathbf s_a=h\,\mathbf e_a ,
+\end{equation}
+and the origin is the lowest corner of the enlarged box. The spacing is
+exactly $h$, so the grid may extend slightly beyond the margin on the upper
+side.
+
+\paragraph{Lines and planes.} A line from $\mathbf p$ to $\mathbf q$ (and a
+plane through three points) uses the fewest evenly spaced points whose
+spacing does not exceed $h$, with both ends included, so that the profile
+starts and ends exactly at the requested points. For a segment of length
+$L$ (including the margins) the number of points is
+\begin{equation}
+ n=\max\!\Big(2,\ \Big\lceil\frac{L}{h}(1-10^{-12})\Big\rceil+1\Big),
+ \qquad\text{spacing } L/(n-1)\le h .
+\end{equation}
+The factor $1-10^{-12}$ makes a length that is a multiple of $h$ up to
+rounding (for example $29.000000000000004\,h$) keep that multiple.
+
+For a line, $L=|\mathbf q-\mathbf p|+2m$ and the line starts at
+$\mathbf p-m\,\mathbf d$, with $\mathbf d$ the unit vector from $\mathbf p$
+to $\mathbf q$. The two other axes are unit vectors orthogonal to the line,
+each with one point.
+
+For a plane through $\mathbf a$, $\mathbf b$, $\mathbf c$, the in-plane
+axes are $\mathbf u=(\mathbf b-\mathbf a)/|\mathbf b-\mathbf a|$ and the unit
+vector $\mathbf v$ along the component of $\mathbf c-\mathbf a$ orthogonal
+to $\mathbf u$. In these coordinates the three points are $(0,0)$,
+$(|\mathbf b-\mathbf a|,0)$ and $(c_u,c_v)$ with $c_v>0$; the plane covers
+the rectangle $[\min(0,c_u)-m,\ \max(|\mathbf b-\mathbf a|,c_u)+m]\times
+[-m,\ c_v+m]$, with the point counts above along each side and one point
+along the normal. The three points must not be collinear:
+$|(\mathbf b-\mathbf a)\times(\mathbf c-\mathbf a)|$ must exceed
+$10^{-8}\,|\mathbf b-\mathbf a|\,|\mathbf c-\mathbf a|$.
+
+\subsection{Arbitrary points}
+Fields can also be evaluated at a list of points in any order. The points
+are processed in consecutive blocks of the list, with the same formulas as
+on grids; only the electrostatic potential groups them differently
+(Section~\ref{sec:esp-clusters}). The values agree with those of a grid
+evaluation at the same points to rounding.
+
+% ---------------------------------------------------------------------------
+\section{Fields derived from the density}\label{sec:descriptors}
+
+The fields of this section are computed at each point from the density,
+its gradient, its Hessian and $\tau$ (Section~\ref{sec:derivatives}).
+Several of them divide by the density; Table~\ref{tab:conventions} at the
+end of the section gives the value used where the density vanishes.
+
+\subsection{Electron localization function (ELF)}
+The ELF of Becke and Edgecombe compares the Pauli kinetic-energy density,
+the part of $\tau$ due to the Pauli principle, with its value in a uniform
+electron gas of the same density. For a spin channel,
 \begin{equation}
  D_\sigma=\tau_\sigma-\frac{|\nabla\rho_\sigma|^2}{8\rho_\sigma},\qquad
- D^0_\sigma=\frac{3}{10}(6\pi^2)^{2/3}\rho_\sigma^{5/3},
-\end{equation}
-and the electron localization function (Becke and Edgecombe) is
-\begin{equation}
+ D^0_\sigma=\frac{3}{10}(6\pi^2)^{2/3}\rho_\sigma^{5/3},\qquad
  \mathrm{ELF}=\frac{1}{1+(D/D^0)^2}.
 \end{equation}
-For a spin channel $D$ and $D^0$ are those of the channel; for the total ELF
-they are summed over $\alpha$ and $\beta$ (spin-polarized form), which for a
-closed shell reduces to $D=\tau-|\nabla\rho|^2/(8\rho)$ and
-$D^0=\frac{3}{10}(3\pi^2)^{2/3}\rho^{5/3}$. Channels without density are
-skipped, and $\mathrm{ELF}=0$ where there is no density. The Pauli term
-equals the cancellation-free orbital (Lagrange) form
+For the ELF of a spin channel, $D$ and $D^0$ are those of the channel; for
+the total ELF they are the sums over $\alpha$ and $\beta$ (the
+spin-polarized form). For a closed shell this reduces to the familiar
+$D=\tau-|\nabla\rho|^2/(8\rho)$ and $D^0=\frac{3}{10}(3\pi^2)^{2/3}\rho^{5/3}$.
+Channels without density are left out of the sums. The Pauli term equals
+the orbital form
 \begin{equation}
  D_\sigma=\frac{1}{2\rho_\sigma}\sum_{i<j}
- n_in_j\,|\psi_i\nabla\psi_j-\psi_j\nabla\psi_i|^2,
+ n_i^\sigma n_j^\sigma\,|\psi_i^\sigma\nabla\psi_j^\sigma-\psi_j^\sigma\nabla\psi_i^\sigma|^2,
 \end{equation}
-which the tests use as an independent check.
+which is free of cancellation and is used in the tests as an independent
+check.
 
-The reduced density gradient of the total density is
+\subsection{Localized orbital locator (LOL)}
+The LOL of Schmider and Becke uses the same ingredients:
+\begin{equation}
+ \mathrm{LOL}=\frac{t}{1+t},\qquad t=\frac{D^0}{\tau},
+\end{equation}
+with $\tau$ and $D^0$ summed over the two channels for the total LOL.
+
+\subsection{Non-covalent interactions}
+The reduced density gradient of the total density,
 \begin{equation}
  s=\frac{|\nabla\rho|}{2(3\pi^2)^{1/3}\rho^{4/3}},
 \end{equation}
-reported as at most 100 (also where $\rho\le0$, where it is undefined), so
-that Cube files stay finite. For the non-covalent interaction analysis,
-$\operatorname{sign}(\lambda_2)\rho$ uses the middle eigenvalue
-$\lambda_1\le\lambda_2\le\lambda_3$ of the density Hessian, with
-$\lambda_2=0$ counted as positive.
+is small where the density varies slowly, for example between weakly
+interacting fragments. The sign of the middle eigenvalue $\lambda_2$ of the
+Hessian ($\lambda_1\le\lambda_2\le\lambda_3$) distinguishes attractive
+($\lambda_2<0$) from repulsive ($\lambda_2>0$) interactions; the field
+$\operatorname{sign}(\lambda_2)\rho$ counts $\lambda_2=0$ as positive.
 
-The localized orbital locator uses the same ingredients as ELF,
+The interaction region indicator of Lu and Chen is
+$\mathrm{IRI}=|\nabla\rho|/\rho^{1.1}$. The density overlap regions
+indicator of de Silva and Corminboeuf is
+$\mathrm{DORI}=\theta/(1+\theta)$, with
 \begin{equation}
- \mathrm{LOL}=\frac{t}{1+t},\qquad t=\frac{D_0}{\tau},
+ \theta=\frac{|\nabla f|^2}{f^3},\qquad f=\frac{|\nabla\rho|^2}{\rho^2}.
 \end{equation}
-with $\tau$ and $D_0$ summed over the spin channels for the total LOL. The
-interaction region indicator is $|\nabla\rho|/\rho^{1.1}$, and the density
-overlap regions indicator is $\theta/(1+\theta)$ with
+With $\mathbf q=\nabla\rho/\rho$ this becomes
 \begin{equation}
- \theta=\frac{|\nabla f|^2}{f^3},\quad f=\frac{|\nabla\rho|^2}{\rho^2},
- \qquad\text{so}\qquad
- \theta=\frac{4\,|(\mathbf H/\rho)\mathbf q-|\mathbf q|^2\mathbf q|^2}{|\mathbf q|^6},
- \quad\mathbf q=\frac{\nabla\rho}\rho,
+ \theta=\frac{4\,|(\mathbf H/\rho)\,\mathbf q-|\mathbf q|^2\mathbf q|^2}{|\mathbf q|^6},
 \end{equation}
-where $\mathbf H$ is the density Hessian; the second form does not depend on
-the scale of $\rho$. The kinetic energy density
-$K=-\tfrac12\sum_i\psi_i\nabla^2\psi_i=\tau-\nabla^2\rho/4$, the
-potential energy density $V=\nabla^2\rho/4-2\tau$ (local virial theorem)
-and the energy density $H=\tau+V=-K$ follow from the Laplacian and $\tau$.
-The spin polarization is $(\rho_\alpha-\rho_\beta)/\rho$, and the Shannon
-and Fisher information densities are $-\rho\ln\rho$ and
+which is the form computed: it involves only ratios of derivatives to the
+density, so it does not overflow or underflow where the density is very
+small or very large.
+
+\subsection{Energy densities and information densities}
+Three energy densities follow from $\tau$ and the Laplacian. The Hamiltonian
+kinetic-energy density $\mathcal K$, the potential energy density
+$\mathcal V$ (from the local virial theorem) and the energy density
+$\mathcal H$ are
+\begin{equation}
+ \mathcal K=-\frac12\sum_in_i\psi_i\nabla^2\psi_i=\tau-\frac{\nabla^2\rho}{4},\qquad
+ \mathcal V=\frac{\nabla^2\rho}{4}-2\tau,\qquad
+ \mathcal H=\tau+\mathcal V=-\mathcal K .
+\end{equation}
+The spin polarization is $(\rho_\alpha-\rho_\beta)/\rho$. The Shannon
+entropy density is $-\rho\ln\rho$ and the Fisher information density is
 $|\nabla\rho|^2/\rho$.
 
-\section{Molecular electrostatic potential}
-The electrostatic potential, in hartree per elementary charge, is
-\begin{equation}
- V(\mathbf C)=\sum_A\frac{Z_A}{|\mathbf C-\mathbf R_A|}
- -\sum_{\mu\nu}P_{\mu\nu}\int\frac{\chi_\mu(\mathbf r)\chi_\nu(\mathbf r)}
- {|\mathbf r-\mathbf C|}\,d\mathbf r,
-\end{equation}
-with the nuclear charges $Z_A$ of the FCHK (effective charges with ECPs)
-and the total density matrix $P$. At a point within $10^{-8}$ bohr of a
-nucleus that nucleus's singular term is omitted, which gives the potential
-at the nucleus due to the electrons and the other nuclei.
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}ll@{}}
+\toprule
+Field & Value where it is undefined or very large\\
+\midrule
+ELF & 0 where there is no density\\
+LOL & 0 where there is no density;\\
+    & 1 where $\tau=0<D^0$ (the limit $t\to\infty$)\\
+$s$ & capped at 100, also where $\rho\le0$\\
+IRI & capped at 100, also where $\rho\le0$\\
+DORI & 1 at critical points of $\rho$ ($\mathbf q=0$, the limit);\\
+     & 0 where $\rho\le0$\\
+spin polarization & 0 where $\rho\le0$\\
+Shannon and Fisher densities & 0 where $\rho\le0$\\
+\bottomrule
+\end{tabular}
+\caption{Values used where a field divides by a vanishing quantity. The
+caps keep Cube files finite.}
+\label{tab:conventions}
+\end{table}
 
-\subsection{Hermite expansion}
-Pure shells are handled by transforming $P$ to Cartesian components. The
-product of Cartesian primitives with exponents $\alpha,\beta$ at
-$\mathbf A,\mathbf B$ is a Gaussian at
-$\mathbf P=(\alpha\mathbf A+\beta\mathbf B)/p$, $p=\alpha+\beta$, times
-$K=\exp(-\alpha\beta|\mathbf A-\mathbf B|^2/p)$, expanded in Hermite
-Gaussians $\Lambda_{tuv}=\partial^t_{P_x}\partial^u_{P_y}\partial^v_{P_z}
-e^{-p|\mathbf r-\mathbf P|^2}$ with the McMurchie--Davidson coefficients
+% ---------------------------------------------------------------------------
+\section{Fields of the orbital energies}\label{sec:orbital-energies}
+
+These fields weight the orbital densities $|\psi_i(\mathbf r)|^2$ by the
+orbital energies $\varepsilon_i$. Sums over $i$ run over the MOs of both
+spin channels (for a restricted calculation, over the spatial orbitals
+with the occupations given below). The definitions are those of Multiwfn.
+
+\paragraph{Average local ionization energy.} The average local ionization
+energy of Sj\"oberg, Murray, Brinck and Politzer is
 \begin{equation}
- E^{i+1,j}_t=\frac{1}{2p}E^{ij}_{t-1}+X_{PA}E^{ij}_t+(t+1)E^{ij}_{t+1},
+ \bar I(\mathbf r)=\frac{\sum_{i\in\mathrm{occ}}n_i|\varepsilon_i|\,|\psi_i(\mathbf r)|^2}
+ {\sum_{i\in\mathrm{occ}}n_i|\psi_i(\mathbf r)|^2},
+\end{equation}
+over the occupied orbitals, with $n_i=2$ for the doubly occupied orbitals of
+a restricted calculation and $n_i=1$ otherwise. It is a weighted average of
+the $|\varepsilon_i|$, so it lies between the smallest and the largest of
+them, and low values mark the electrons that are easiest to remove. The
+denominator is the total density only if the occupied orbitals reproduce
+the density matrices, so the file must be AO-MO eligible
+(Section~\ref{sec:contraction}); other files are rejected.
+
+\paragraph{Fields of the virtual orbitals.} The local electron affinity,
+the local electron attachment energy, and the local electronegativity and
+hardness are
+\begin{gather}
+ \mathrm{EA}_L(\mathbf r)=-\frac{\sum_{i\in\mathrm{vir}}\varepsilon_i|\psi_i(\mathbf r)|^2}
+ {\sum_{i\in\mathrm{vir}}|\psi_i(\mathbf r)|^2},\qquad
+ E_{\mathrm{att}}(\mathbf r)=\frac{\sum_{i\in\mathrm{vir},\,\varepsilon_i<0}
+ w\,\varepsilon_i|\psi_i(\mathbf r)|^2}{\rho(\mathbf r)},\\
+ \chi_L=\tfrac12(\bar I+\mathrm{EA}_L),\qquad \eta_L=\tfrac12(\bar I-\mathrm{EA}_L),
+\end{gather}
+where the virtual orbitals are the MOs of the file above the occupied ones
+in each channel. The virtual orbitals are empty, so the weight $w$ is not
+an occupation: it counts the spin orbitals of a spatial orbital, $w=2$ for
+a restricted and $w=1$ for an unrestricted calculation (such a weight would
+cancel in $\mathrm{EA}_L$).
+$\chi_L$ and $\eta_L$ are local analogues of Mulliken's electronegativity
+$(I+A)/2$ and of the chemical hardness $(I-A)/2$.
+
+\paragraph{Evaluation.} The four orbital sums (occupied density and
+energy, virtual density and energy) and the attachment sum are accumulated
+on blocks of points from the orbital amplitudes
+$(\mathbf C_{\mathrm{occ}})^{\mathsf T}\Phi$ and
+$(\mathbf C_{\mathrm{vir}})^{\mathsf T}\Phi$, without AO screening. Each
+field is set to 0 where its denominator vanishes.
+
+\paragraph{Restricted open shells.} The occupations above include the case
+of a restricted open-shell calculation (singly occupied orbitals with
+$n_i=1$), but chem-kumo cannot load such files yet: Gaussian writes no
+$\beta$ MO coefficients for them, and the loader rejects open-shell files
+without $\beta$ coefficients.
+
+% ---------------------------------------------------------------------------
+\section{Molecular electrostatic potential}\label{sec:esp}
+
+The electrostatic potential at $\mathbf r$ is the potential of the nuclei
+minus that of the electron density:
+\begin{equation}
+ V(\mathbf r)=\sum_A\frac{Z_A}{|\mathbf r-\mathbf R_A|}
+ -\sum_{\mu\nu}P^{\mathrm t}_{\mu\nu}\int\frac{\chi_\mu(\mathbf r')\chi_\nu(\mathbf r')}
+ {|\mathbf r'-\mathbf r|}\,d\mathbf r'.
+\end{equation}
+The nuclear charges $Z_A$ are those of the file (the effective charges when
+effective core potentials are used). At a point within $10^{-8}$ bohr of a
+nucleus, the singular term of that nucleus is left out, which gives the
+potential at the nucleus due to the electrons and the other nuclei.
+
+\subsection{Electron integrals by Hermite expansion}
+Pure shells are handled by transforming $\mathbf P^{\mathrm t}$ to the
+Cartesian functions. The product of two Cartesian primitives with exponents
+$\alpha$ and $\beta$ centred at $\mathbf A$ and $\mathbf B$ is a Gaussian
+with exponent $p=\alpha+\beta$, centred at
+$\mathbf Q=(\alpha\mathbf A+\beta\mathbf B)/p$, times the constant
+$\kappa=\exp(-\alpha\beta|\mathbf A-\mathbf B|^2/p)$ and a polynomial. In
+the McMurchie--Davidson scheme the polynomial is expanded in the Hermite
+Gaussians
+$\Lambda_{tuv}=\partial^t_{Q_x}\partial^u_{Q_y}\partial^v_{Q_z}e^{-p|\mathbf r-\mathbf Q|^2}$;
+along $x$, the expansion coefficients of $x_A^ix_B^j$ (with
+$x_A=x-A_x$, $x_B=x-B_x$) obey
+\begin{equation}
+ E^{i+1,j}_t=\frac{1}{2p}E^{ij}_{t-1}+(Q_x-A_x)E^{ij}_t+(t+1)E^{ij}_{t+1},
  \qquad E^{00}_0=1,
 \end{equation}
-and likewise for $j$ with $X_{PB}$. Contracting $P$ with these coefficients
-once per evaluation gives, for every primitive pair, coefficients $c_{tuv}$
-such that its contribution to the electronic potential is
-$-\sum_{tuv}c_{tuv}R_{tuv}(p,\mathbf P-\mathbf C)$, with
+and likewise for $j$ with $Q_x-B_x$. The Coulomb integral of a Hermite
+Gaussian is
+$\int\Lambda_{tuv}(\mathbf r')/|\mathbf r'-\mathbf r|\,d\mathbf r'
+=\frac{2\pi}{p}R_{tuv}(p,\mathbf Q-\mathbf r)$, with the auxiliary
+integrals
 \begin{align}
- R^n_{000}&=(-2p)^nF_n(p|\mathbf P-\mathbf C|^2),\\
- R^n_{t+1,u,v}&=t\,R^{n+1}_{t-1,u,v}+X_{PC}R^{n+1}_{tuv}
+ R^n_{000}&=(-2p)^nF_n\big(p|\mathbf Q-\mathbf r|^2\big),\\
+ R^n_{t+1,u,v}&=t\,R^{n+1}_{t-1,u,v}+(Q_x-r_x)\,R^{n+1}_{tuv}
 \end{align}
-(and likewise for $u$, $v$), $R_{tuv}=R^0_{tuv}$; the factor $2\pi/p$ of
-$\int\Lambda_{tuv}/|\mathbf r-\mathbf C|=\frac{2\pi}{p}R_{tuv}$ is included
-in $c_{tuv}$.
+(and likewise for $u$ and $v$), $R_{tuv}=R^0_{tuv}$, and $F_n$ the Boys
+function below. The density matrix is contracted with the Hermite
+coefficients once, when the potential is set up: each primitive pair then
+has coefficients $c_{tuv}$ (including $\kappa$, the contraction and
+normalization factors and $2\pi/p$) such that its contribution to the
+electronic potential is $-\sum_{tuv}c_{tuv}R_{tuv}(p,\mathbf Q-\mathbf r)$.
 
 \subsection{Boys function}
-$F_m(T)=\int_0^1t^{2m}e^{-Tt^2}dt$ for $m\le32$. For $T<40$ the highest
-order needed comes from a seventh-order Taylor expansion about the nearest
-point of a table with spacing 0.05, using $dF_m/dT=-F_{m+1}$; the table is
-built from the positive series
-$F_M(T)=e^{-T}\sum_k(2T)^k/[(2M+1)(2M+3)\cdots(2M+2k+1)]$. Lower orders
-follow from the stable downward recursion
-$F_{m-1}=(2TF_m+e^{-T})/(2m-1)$. For $T\ge40$,
-$F_0=\frac12\sqrt{\pi/T}$ (the error function differs from 1 by less than
-$10^{-18}$) and the upward recursion
+The Boys function $F_m(T)=\int_0^1t^{2m}e^{-Tt^2}\,dt$ is needed for
+$m\le32$. For $T<40$ the highest order needed is computed by a Taylor
+polynomial of degree six (seven terms) about the nearest point of a table with
+spacing 0.05, using $dF_m/dT=-F_{m+1}$; the table is built from the series
+of positive terms
+$F_M(T)=e^{-T}\sum_{k\ge0}(2T)^k/[(2M+1)(2M+3)\cdots(2M+2k+1)]$. Lower
+orders follow from the downward recursion
+$F_{m-1}=(2TF_m+e^{-T})/(2m-1)$, which is numerically stable. For
+$T\ge40$, $F_0=\frac12\sqrt{\pi/T}$ to double precision (the error function
+differs from 1 by less than $10^{-18}$), and the upward recursion
 $F_{m+1}=[(2m+1)F_m-e^{-T}]/(2T)$ is stable. The result agrees with
-quadrature of the definition to $2.3\times10^{-15}$ relative.
+numerical quadrature of the definition to $2.3\times10^{-15}$ relative.
 
-\subsection{Far field}
-The Evaluator processes the grid in clusters of $8\times8\times8$ points,
-with centre $\mathbf b$ and radius $\rho$. The potential of one pair splits
-into a point-multipole part and an erfc part:
+\subsection{Far-field approximations}\label{sec:far-field}
+Computing every primitive pair exactly at every point is expensive for
+large grids, so pairs far from a group of nearby evaluation points are
+represented by expansions about the centre of the group. The evaluation
+points are grouped into \emph{target clusters} (Section~\ref{sec:esp-clusters}),
+each with a centre $\mathbf c$ and a radius $r_{\mathrm t}$ that contains
+all its points. The expansions are chosen so that the error at every point
+is at most a tolerance $\varepsilon$ (default $10^{-8}$\,$E_h/e$;
+$\varepsilon=0$ gives the exact sum).
+
+\paragraph{Splitting a pair.} With $\mathbf X=\mathbf Q-\mathbf r$ and
+$X=|\mathbf X|$, the identity
+$F_0(pX^2)=\frac{\sqrt\pi}{2\sqrt p\,X}\operatorname{erf}(\sqrt pX)$ splits
+the potential of a pair into a point-multipole part and a short-range part:
 \begin{equation}
- \sum_kc_kR_{\alpha_k}(p,\mathbf P-\mathbf C)
- =\sum_ke_k\,\partial^{\alpha_k}\frac1R
- -\sum_ke_k\,\partial^{\alpha_k}\frac{\operatorname{erfc}(\sqrt pR)}{R},
+ \sum_kc_kR_{\alpha_k}(p,\mathbf X)
+ =\sum_ke_k\,\partial^{\alpha_k}\frac1X
+ -\sum_ke_k\,\partial^{\alpha_k}\frac{\operatorname{erfc}(\sqrt pX)}{X},
  \qquad e_k=\frac{c_k}{2}\sqrt{\frac\pi p},
 \end{equation}
-with $R=|\mathbf P-\mathbf C|$. Two bounds are used. Every derivative of
-order $m$ of $1/|\mathbf x|$, as a symmetric multilinear form, has norm at
-most $m!/|\mathbf x|^{m+1}$ (Legendre polynomials are bounded by 1, and by
-Banach's theorem the norm of a symmetric form on a Hilbert space equals that
-of its diagonal). Every derivative of order $m$ of
-$\operatorname{erfc}(\sqrt pR)/R=\frac{2}{\sqrt\pi}\int_{\sqrt p}^\infty
-e^{-s^2R^2}ds$ at $R\ge r$ is bounded, through Cram\'er's inequality
-$|H_n(x)|e^{-x^2/2}\le k\sqrt{2^nn!}$ ($k<1.0865$) for each Cartesian
-factor, by
+where $k$ runs over the Hermite terms $\alpha_k=(t,u,v)$ of the pair. The
+short-range part decays like $e^{-pX^2}$.
+
+\paragraph{Two derivative bounds.} The errors below are bounded with two
+results. (i) Every derivative of order $m$ of $1/|\mathbf x|$, viewed as a
+symmetric multilinear form, has norm at most $m!/|\mathbf x|^{m+1}$: the
+directional derivatives are Legendre polynomials, bounded by 1, and the
+norm of a symmetric form on a Hilbert space equals the maximum of its
+values on the diagonal (Banach's theorem). (ii) Every derivative of order
+$m$ of
+$\operatorname{erfc}(\sqrt pX)/X=\frac{2}{\sqrt\pi}\int_{\sqrt p}^\infty
+e^{-s^2X^2}ds$ at $X\ge r$ is bounded by
 \begin{equation}
- G_m(r)=\frac{2}{\sqrt\pi}k^3\sqrt{2^mm!}
- \int_{\sqrt p}^\infty s^me^{-s^2r^2/2}ds,
+ G_m(r)=\frac{2}{\sqrt\pi}\,c_{\mathrm C}^3\sqrt{2^mm!}
+ \int_{\sqrt p}^\infty s^me^{-s^2r^2/2}\,ds,
 \end{equation}
-evaluated with upper incomplete gamma functions.
+obtained by applying Cram\'er's inequality
+$|H_n(x)|e^{-x^2/2}\le c_{\mathrm C}\sqrt{2^nn!}$ ($c_{\mathrm C}<1.0865$)
+to each Cartesian factor of the derivative; $G_m$ is evaluated with upper
+incomplete gamma functions.
 
-\emph{Pair expansions.} A pair at distance $d=|\mathbf P-\mathbf b|>\rho$
-can be represented on the cluster by the Taylor polynomial of order $K=6$
-of its exact potential about $\mathbf b$, whose coefficients are
-$(-1)^{|\beta|}R_{\alpha+\beta}(p,\mathbf P-\mathbf b)/\beta!$. With $W_L$
-the sum of $|e_k|$ over the terms of order $L$, the error on the cluster is
-at most
+\paragraph{Expansion of single pairs.} A pair whose centre is at distance
+$d=|\mathbf Q-\mathbf c|>r_{\mathrm t}$ from the cluster centre can be
+replaced, on the whole cluster, by the Taylor polynomial of order $K=6$ of
+its exact potential about $\mathbf c$, whose coefficients are
+$(-1)^{|\beta|}R_{\alpha+\beta}(p,\mathbf Q-\mathbf c)/\beta!$ for the
+multi-indices $\beta$ with $|\beta|\le K$. Let $W_L$ be the sum of $|e_k|$
+over the Hermite terms of order $L=t+u+v$. The error on the cluster is at
+most
 \begin{equation}
- \sum_LW_L\Big[\sum_{n>K}\frac{(n+L)!}{n!}\frac{\rho^n}{d^{n+L+1}}
- +G_L(d-\rho)+\sum_{n\le K}\frac{(\sqrt3\rho)^n}{n!}G_{L+n}(d)\Big].
+ \sum_LW_L\Big[\sum_{n>K}\frac{(n+L)!}{n!}\frac{r_{\mathrm t}^n}{d^{n+L+1}}
+ +G_L(d-r_{\mathrm t})+\sum_{n\le K}\frac{(\sqrt3\,r_{\mathrm t})^n}{n!}G_{L+n}(d)\Big]:
 \end{equation}
+the first term is the Taylor remainder of the point multipoles, the second
+the neglected short-range part at the points, and the third the
+short-range part included in the Taylor coefficients.
 
-\emph{Source clusters.} Pairs are grouped by the 2-bohr cell of their
-centre and by exponent. For a group with centre $\mathbf c$ and radius $a$,
-write $\mathbf P-\mathbf C=\mathbf X_0+\mathbf z$ with
-$\mathbf X_0=\mathbf c-\mathbf b$ and
-$\mathbf z=(\mathbf P-\mathbf c)-(\mathbf C-\mathbf b)$, $|\mathbf z|\le
-a+\rho$. Expanding the point-multipole terms in $\mathbf z$ about
-$\mathbf X_0$ to total order $N=10$ and splitting $\mathbf z^\gamma$
-binomially gives a multipole-to-local translation of moments computed once
-per group; its error is bounded by the same Taylor remainder with radius
-$a+\rho$ and distance $|\mathbf X_0|$. The erfc terms are omitted and
-bounded by $G_L$ for the smallest exponent of the group at distance
-$|\mathbf X_0|-a-\rho$.
+\paragraph{Source clusters.} Pairs are also grouped into \emph{source
+clusters}: pairs whose centres lie in the same cube of edge 2 bohr (aligned
+with the axes) and whose exponents lie in the same interval
+$[4^k,4^{k+1})$. For a source cluster with centre $\mathbf s$ and radius
+$r_{\mathrm s}$, write
+$\mathbf Q-\mathbf r=\mathbf X_0+\mathbf z$ with $\mathbf X_0=\mathbf s-\mathbf c$
+and $\mathbf z=(\mathbf Q-\mathbf s)-(\mathbf r-\mathbf c)$, so that
+$|\mathbf z|\le r_{\mathrm s}+r_{\mathrm t}$. Expanding the point-multipole
+terms in $\mathbf z$ about $\mathbf X_0$ to total order $N=10$, and
+splitting $\mathbf z^\gamma$ by the binomial theorem into powers of
+$\mathbf Q-\mathbf s$ and $\mathbf r-\mathbf c$, gives a
+multipole-to-local translation: the multipole moments of the source cluster
+are computed once, and one translation per target cluster gives a local
+polynomial about $\mathbf c$. Its error is bounded by the same Taylor
+remainder with radius $r_{\mathrm s}+r_{\mathrm t}$ and distance
+$|\mathbf X_0|$. The short-range terms are left out and bounded by $G_L$
+for the smallest exponent of the cluster at distance
+$|\mathbf X_0|-r_{\mathrm s}-r_{\mathrm t}$.
 
-\emph{Error budget.} Half of the tolerance $\varepsilon$ is shared equally
-by the groups (a quarter for truncation, a quarter for erfc terms); the
-other half by the individually expanded pairs. Their bounds are tabulated
-at levels $10^{-j/2}\varepsilon/2$, and in each cluster the pairs with the
-smallest bounds are expanded while the sum fits in the budget; the others
-are evaluated exactly. The error at every point is therefore at most
-$\varepsilon$ (default $10^{-8}$ hartree/e; $\varepsilon=0$ is exact).
+\paragraph{Error budget.} Half of the tolerance $\varepsilon$ is divided
+equally among the source clusters (a quarter for the truncation of the
+expansion, a quarter for the neglected short-range terms); the other half
+is for the individually expanded pairs. Their bounds are tabulated, as
+functions of the distance, at the levels $10^{-j/2}\varepsilon/2$
+($j=0,\dots,32$). In each target cluster, the pairs with the smallest
+bounds are expanded as long as the sum of their bounds fits in the budget;
+the remaining pairs are computed exactly. The error at every point is
+therefore at most $\varepsilon$.
 
-\section{Electrostatic potential on a molecular surface}\label{sec:surface}
+\subsection{Target clusters}\label{sec:esp-clusters}
+The points are grouped into target clusters in three ways, depending on
+where they come from; in each case one far-field plan, built for the
+largest cluster radius, serves all clusters.
+\begin{itemize}
+\item \emph{Grids:} tiles of $8\times8\times8$ grid points (smaller at the
+ upper edges of the grid), centred at the centre of their index box; the
+ radius is the largest distance from the centre of the largest tile to its
+ corners.
+\item \emph{Isosurface vertices} (Section~\ref{sec:surfaces}): each vertex
+ lies on a grid edge, and the vertices are grouped by the block of
+ $8\times8\times8$ grid cells that contains the lower end of their edge.
+ Such a vertex lies in the index box $[8T,8T+8]$ along each axis (block
+ $T$), so the centre is at index $8T+4$ and the radius is half the diagonal
+ of a box of 8 steps.
+\item \emph{Arbitrary points:} the points are grouped by the cube of edge
+ 1.6 bohr, aligned with the axes at multiples of the edge, that contains
+ them; the centre is the centre of the cube and the radius half its
+ diagonal, $\frac{\sqrt3}{2}\times1.6$ bohr.
+\end{itemize}
+The radius is enlarged by a relative $10^{-10}$ plus $10^{-12}$ bohr to
+cover the rounding of the point coordinates. Clusters depend only on the
+points, and each value only on its point, its cluster centre and the plan,
+so the results do not depend on the order in which the clusters are
+processed or on the number of threads.
+
+% ---------------------------------------------------------------------------
+\section{Molecular surfaces}\label{sec:surfaces}
+
 The molecular surface is the isosurface $\rho(\mathbf r)=\rho_0$ of the
-total density (default $\rho_0=10^{-3}$\,e/bohr$^3$), the region
-$\rho\ge\rho_0$ inside.
+total density (by default $\rho_0=10^{-3}\,e\,a_0^{-3}$), with the region
+$\rho\ge\rho_0$ inside. Any one-component field can be evaluated at its
+vertices and summarized by area-weighted statistics.
 
-\subsection{Isosurface}
-The density is sampled on an axis-aligned grid of spacing $h$ (default
-$0.25$\,bohr) whose boundary lies outside the isosurface. Each cell, with
-corners $\mathbf g+\mathbf b$, $\mathbf b\in\{0,1\}^3$ in grid units, is
-split into the six tetrahedra
-$\{\mathbf 0,\mathbf e_a,\mathbf e_a+\mathbf e_b,\mathbf 1\}$ for the
-permutations $(a,b,c)$ of the axes (the Kuhn triangulation). Their edges
-join $\mathbf u$ to $\mathbf u+\mathbf m$ with
-$\mathbf m\in\{0,1\}^3\setminus\{\mathbf 0\}$, the same in every cell, so
-the tetrahedra tile space conformingly. An edge whose ends lie on either
-side of $\rho_0$ carries one vertex, shared by all tetrahedra around it;
-a tetrahedron with one corner on one side contributes a triangle, one with
-two corners on each side a quadrilateral, split along its shorter
-diagonal. Each polygon is oriented by its edge midpoints so that its normal
-points from the inside corners to the outside ones; the orientation is
-therefore combinatorial and consistent between neighbours, and the mesh is
-a closed oriented surface. Its enclosed volume follows from the divergence
-theorem, $V=\frac16\sum_T(\mathbf x_0-\mathbf c)\cdot
-[(\mathbf x_1-\mathbf c)\times(\mathbf x_2-\mathbf c)]$ for any point
-$\mathbf c$.
+\subsection{Triangulation}
+The density is sampled on a grid around the molecule with spacing $h$
+(default $0.25$ bohr) whose outer faces lie entirely outside the
+isosurface; if the default margin of 4 bohr is not enough, it is increased
+in steps of 2 bohr up to 16 bohr. Each grid cell, with corners at the
+integer offsets $\mathbf b\in\{0,1\}^3$ from its lowest corner, is split
+into six tetrahedra $\{\mathbf 0,\mathbf e_a,\mathbf e_a+\mathbf e_b,\mathbf 1\}$,
+one for each ordering $(a,b,c)$ of the three axes (the Kuhn
+triangulation). The edges of these tetrahedra join a grid point
+$\mathbf u$ to $\mathbf u+\mathbf m$ with $\mathbf m\in\{0,1\}^3\setminus\{\mathbf 0\}$,
+the same in every cell, so the tetrahedra of neighbouring cells share their
+faces and edges.
 
-The vertex on the edge from an inside point $\mathbf a$ to an outside point
-$\mathbf b$ is the root of
-$f(t)=\rho(\mathbf a+t(\mathbf b-\mathbf a))-\rho_0$ in $[0,1]$, started at
-the linear interpolation of the samples. Newton steps
-$t\leftarrow t-f(t)/f'(t)$, with $f'(t)=\nabla\rho\cdot(\mathbf b-\mathbf a)$
-from the analytic gradient, are kept inside the bracket $[t_-,t_+]$ with
-$f(t_-)\ge0>f(t_+)$, and replaced by bisection when they leave it, until
-the step or the bracket is below $10^{-10}$\,bohr. The vertices therefore
-lie on the isosurface of the analytic density (with the default AO
-screening, which changes $\rho$ by about $10^{-13}$\,e/bohr$^3$, or
-$10^{-10}$\,bohr in position at $\rho_0=10^{-3}$); the remaining
-discretization error is that of the flat triangles, of order $h^2$.
+An edge whose two ends lie on different sides of $\rho_0$ carries one
+vertex of the surface, shared by all tetrahedra around that edge. A
+tetrahedron with one corner on one side and three on the other contributes
+a triangle; one with two corners on each side contributes a quadrilateral,
+split into two triangles along its shorter diagonal. Each polygon is
+oriented so that its normal points from the inside corners to the outside
+ones, using the midpoints of its edges; the orientation depends only on
+which corners are inside, so neighbouring polygons agree and the mesh is a
+closed oriented surface. Its enclosed volume follows from the divergence
+theorem,
+$\Omega=\frac16\sum_{\text{triangles}}(\mathbf x_0-\mathbf p)\cdot
+[(\mathbf x_1-\mathbf p)\times(\mathbf x_2-\mathbf p)]$ for any point
+$\mathbf p$, with $\mathbf x_0,\mathbf x_1,\mathbf x_2$ the corners of a
+triangle in counter-clockwise order seen from outside.
 
-\subsection{Statistics}
-With $V$ the potential at the vertices, the statistics use its
-piecewise-linear interpolation, integrated exactly. On a triangle of area
-$A$ with corner values $w_i$,
+\subsection{Placing the vertices on the isosurface}
+The vertex on the edge from an inside grid point $\mathbf a$ to an outside
+grid point $\mathbf b$ is the root in $[0,1]$ of
+$f(t)=\rho(\mathbf a+t(\mathbf b-\mathbf a))-\rho_0$. The search starts at
+the linear interpolation of the two samples and uses Newton steps
+$t\leftarrow t-f(t)/f'(t)$, with
+$f'(t)=\nabla\rho\cdot(\mathbf b-\mathbf a)$ from the analytic gradient. A
+bracket $[t_-,t_+]$ with $f(t_-)\ge0>f(t_+)$ is kept, and a Newton step
+that leaves the bracket is replaced by bisection. The iteration stops when
+the step or the bracket is shorter than $10^{-10}$ bohr. The vertices
+therefore lie on the isosurface of the analytic density; the default AO
+screening changes $\rho$ by about $10^{-13}\,e\,a_0^{-3}$, which moves the
+isosurface $\rho_0=10^{-3}$ by about $10^{-10}$ bohr. The remaining error
+is that of representing a curved surface by flat triangles, of order
+$h^2$.
+
+\subsection{Surface statistics}
+Let $w$ be the values of a field at the vertices, interpolated linearly on
+each triangle; all integrals below are exact for this interpolation. On a
+triangle of area $A_T$ with corner values $w_1,w_2,w_3$,
 \begin{equation}
- \int V\,dA=\frac A3\sum_iw_i,\qquad
- \int (V-s)^2\,dA=\frac A6\Big[\sum_i(w_i-s)^2+\sum_{i<j}(w_i-s)(w_j-s)\Big].
+ \int_T w\,dA=\frac{A_T}3\sum_iw_i,\qquad
+ \int_T (w-c)^2\,dA=\frac{A_T}6\Big[\sum_i(w_i-c)^2+\sum_{i<j}(w_i-c)(w_j-c)\Big].
 \end{equation}
-A region $V\ge c$ or $V<c$ is clipped from each triangle along the line
-$V=c$ of the interpolation (a triangle or a quadrilateral, split into
-triangles). With $A_\pm$ the areas where $V\ge0$ and $V<0$,
-$\overline V_\pm=A_\pm^{-1}\int_\pm V\,dA$ and
-$\overline V=A^{-1}\int V\,dA$, the descriptors of Politzer and Murray are
+The part of a triangle where $w\ge c$ (or $w<c$) is cut along the line
+$w=c$ of the interpolation (a triangle or a quadrilateral, split into
+triangles). With $A$ the total area, $A_\pm$ the areas where $w\ge0$ and
+$w<0$, and $\overline w=A^{-1}\int w\,dA$,
+$\overline w_\pm=A_\pm^{-1}\int_\pm w\,dA$ the averages, the descriptors of
+Politzer and Murray are
 \begin{gather}
- \sigma_\pm^2=\frac1{A_\pm}\int_\pm(V-\overline V_\pm)^2\,dA,\qquad
+ \sigma_\pm^2=\frac1{A_\pm}\int_\pm(w-\overline w_\pm)^2\,dA,\qquad
  \sigma_{\mathrm{tot}}^2=\sigma_+^2+\sigma_-^2,\qquad
  \nu=\frac{\sigma_+^2\sigma_-^2}{(\sigma_{\mathrm{tot}}^2)^2},\\
- \Pi=\frac1A\int|V-\overline V|\,dA,\qquad
- \mathrm{MPI}=\frac1A\int|V|\,dA,
+ \Pi=\frac1A\int|w-\overline w|\,dA,\qquad
+ \mathrm{MPI}=\frac1A\int|w|\,dA .
 \end{gather}
-and the nonpolar area is that where $|V|\le10$\,kcal/mol. Surface extrema
-are vertices whose value is below (above) that of their neighbours and
-of the neighbours of those, as in Multiwfn. The potential at the vertices
-uses the far-field approximations of the previous section, with clusters of
-the vertices on the edges of blocks of $8\times8\times8$ cells.
+For the electrostatic potential ($w=V$) the nonpolar area, where
+$|V|\le10$ kcal/mol, is reported too. Local minima (maxima) on the surface
+are vertices whose value is below (above) the values of their neighbours
+and of the neighbours of those, as in Multiwfn.
 
+For a field that is positive everywhere, such as $\bar I$, the whole
+surface counts as positive. Multiwfn evaluates the local electron
+attachment energy on the isosurface $\rho=0.004$ by default rather than
+$0.001$; with chem-kumo the isovalue must be chosen explicitly.
+
+\subsection{Comparison with Multiwfn}
 Multiwfn's quantitative surface analysis (Lu and Chen, J.\ Mol.\ Graph.\
-Model.\ 38, 314 (2012)) also triangulates by marching tetrahedra, but
-places vertices by three bisections and linear interpolation, merges
-vertices closer than $h/2$, and assigns each triangle the mean of its
-vertex values; both discretizations converge to the same limit, and at
-$h=0.05$\,bohr they agree to about $3\times10^{-5}$ relative on water.
+Model.\ 38, 314 (2012)) also triangulates by marching tetrahedra, but it
+places the vertices by three bisections and a linear interpolation, merges
+vertices closer than $h/2$, and gives each triangle the mean of its vertex
+values. Both discretizations converge to the same limit as $h\to0$: at
+$h=0.05$ bohr the statistics of water agree to about $3\times10^{-5}$
+relative.
 
-\subsection{Average local ionization energy}
-The average local ionization energy of Sj\"oberg, Murray, Brinck and
-Politzer is
-\begin{equation}
- \bar I(\mathbf r)=\frac{\sum_in_i|\varepsilon_i|\,|\phi_i(\mathbf r)|^2}
- {\sum_in_i|\phi_i(\mathbf r)|^2},
-\end{equation}
-summed over the occupied SCF orbitals with energies $\varepsilon_i$ and
-occupations $n_i$ (2 for the doubly occupied orbitals of a restricted
-calculation, 1 otherwise), as in Multiwfn. It is a weighted average of the
-$|\varepsilon_i|$, so it lies between the smallest and the largest of them.
-The denominator equals the total density only when the occupied orbitals
-reproduce the SCF density matrices, which is checked when the FCHK is
-loaded; files that fail the check (for example post-SCF densities) are
-rejected. At each vertex the occupied orbitals are
-contracted with the AO values of a block of 128 vertices, without AO
-screening; the statistics are those above, with the whole surface positive.
+% ---------------------------------------------------------------------------
+\section{Validation}\label{sec:validation}
 
-\subsection{Fields of the virtual orbitals}
-The local electron affinity, the local electron attachment energy and the
-local electronegativity and hardness follow Multiwfn:
-\begin{equation}
- \mathrm{EA}_L(\mathbf r)=-\frac{\sum_{i\in\mathrm{vir}}\varepsilon_i|\phi_i(\mathbf r)|^2}
- {\sum_{i\in\mathrm{vir}}|\phi_i(\mathbf r)|^2},\qquad
- E_{\mathrm{att}}(\mathbf r)=\frac{\sum_{i\in\mathrm{vir},\,\varepsilon_i<0}
- n_i\varepsilon_i|\phi_i(\mathbf r)|^2}{\rho(\mathbf r)},
-\end{equation}
-\begin{equation}
- \chi_L=\tfrac12(\bar I+\mathrm{EA}_L),\qquad \eta_L=\tfrac12(\bar I-\mathrm{EA}_L),
-\end{equation}
-with $n_i=2$ for a restricted and $1$ for an unrestricted calculation (the
-weight cancels in $\mathrm{EA}_L$). The virtual orbitals are the MOs of the
-FCHK above the occupied ones in each spin channel. The same orbital sums,
-on blocks of points, give all four fields and $\bar I$; each field is set
-to $0$ where its denominator vanishes. As fields of the Evaluator they can
-be evaluated on grids, at points and on surfaces.
+The test suite checks each part of the mathematics above by an independent
+route; it establishes agreement on the tested FCHK files, not support for
+every Gaussian basis or method.
+\begin{itemize}
+\item \emph{Derivatives.} AO, MO and density derivatives are compared with
+ centred finite differences of independently computed values and
+ gradients. Finite differences are used only in tests.
+\item \emph{Contractions.} AO-P results are compared with sums over the
+ occupied orbitals (density, gradient, Hessian and $\tau$), AO-MO with
+ AO-P, blocked with pointwise evaluation, screened with exact
+ contractions, and the shell cutoff with its bound.
+\item \emph{Gaussian.} Densities and signed orbital amplitudes are compared
+ with Cube files written by Gaussian~09 \texttt{cubegen}.
+\item \emph{Multiwfn.} Reference Cube files of Multiwfn are used for ELF,
+ LOL, $s$, $\operatorname{sign}(\lambda_2)\rho$, IRI, DORI, the spin
+ polarization, the energy and information densities, the electrostatic
+ potential, $\bar I$, $\mathrm{EA}_L$, $E_{\mathrm{att}}$, $\chi_L$ and
+ $\eta_L$, for closed- and open-shell molecules; the surface statistics are
+ compared with Multiwfn for the electrostatic potential, $\bar I$,
+ $\mathrm{EA}_L$ and $E_{\mathrm{att}}$.
+\item \emph{Electrostatic potential.} Besides Multiwfn, it is checked
+ against the closed form for densities of s functions, against the
+ multipole expansion of the analytic AO moments far from the molecule,
+ against Poisson's equation $\nabla^2V_{\mathrm{el}}=4\pi\rho$ by finite
+ differences, and its far-field approximations against their error bounds.
+ The Boys function is checked against quadrature.
+\item \emph{Formulas.} The derived fields are checked against their
+ definitions, the Pauli term against its orbital form, and $\bar I$ and the
+ virtual-orbital fields against their orbital sums.
+\item \emph{Surfaces.} Triangulation and statistics are checked on a
+ sphere and an octahedron with closed-form answers.
+\item \emph{Grids and points.} Lines and planes are checked against their
+ construction rules, and evaluation at arbitrary points against grid
+ evaluation at the same points.
+\item \emph{Threads.} Results with several OpenMP threads are required to
+ be identical, bit for bit, to those with one thread.
+\end{itemize}
 
-\subsection{Any field on the surface}
-Any one-component field of the Evaluator can be evaluated at the vertices
-of the isosurface, with the statistics above (the nonpolar area excepted).
-At arbitrary points the electrostatic potential groups the points by
-cubes of edge $1.6$~bohr fixed in space, each expanded about its centre
-with the far-field bounds of the grid evaluation, so the values do not
-depend on the order of the points or on the number of threads.
+The optional benchmark programs time AO evaluation, the contractions and
+the field evaluations. Each timing is the minimum of repeated wall-clock
+times after a warm-up run; timings are measurements, never pass or fail
+criteria.
 
-\section{Validation and benchmark methodology}
-AO, MO, and density spatial derivatives are checked against centered finite
-differences of independent value/gradient evaluations. Finite differences
-are used only for testing, never to compute production derivatives.
-Density-matrix results are also checked against independent occupied-MO
-sums for density, gradient, Hessian, and $\tau$, and blocked results are
-compared with the pointwise reference. The regression suite includes Gaussian
-09 reference Cube comparisons for density and signed orbital amplitudes, and
-Multiwfn reference Cube files for ELF, the reduced gradient,
-$\operatorname{sign}(\lambda_2)\rho$ and the electrostatic potential. The
-electrostatic potential is also checked against the erf closed form for
-s-function densities, against the multipole expansion of the analytic AO
-moments far from the molecule, and against the Poisson equation
-$\nabla^2V_{\mathrm{el}}=4\pi\rho$ by finite differences. The surface
-construction and statistics are checked on a sphere and an octahedron with
-closed-form answers, and the surface statistics of three molecules against
-Multiwfn, for the electrostatic potential and the average local ionization
-energy, which is also checked against its orbital formula.
-These tests establish agreement on the tested FCHK cases, not universal
-support for every Gaussian basis or method.
-
-The optional \texttt{kumo-spatial-benchmark} executable times AO values,
-AO derivatives, representative dense contractions, density-only evaluation,
-and pointwise/blocked density derivatives. The timer uses one warm-up and
-the minimum of repeated wall-clock times. Representative contraction timings
-are not additive components of end-to-end timings; the full methods have
-different setup and allocation costs. Benchmark times are performance
-measurements, never pass/fail correctness thresholds.
-
+% ---------------------------------------------------------------------------
 \section{Limits and intended use}
-KUMO evaluates the real electronic fields defined by the supplied FCHK.
-It does not perform SCF, orbital optimization, response theory, or nuclear
-coordinate differentiation. The blocked derivative evaluator uses dense
-matrices on the AOs that survive screening in fixed-size blocks, without
-streaming output of derivative fields. Its mathematical derivatives are analytic
-with respect to the supplied finite Gaussian representation; grid sampling
-and floating-point arithmetic introduce their usual numerical limitations.
+chem-kumo evaluates the fields defined by the density matrices and orbitals
+of the supplied FCHK file. It performs no SCF calculation, orbital
+optimization, response calculation or differentiation with respect to the
+nuclear positions. Its derivatives are analytic for the given Gaussian
+basis; sampling on grids and floating-point arithmetic bring their usual
+limitations. The blocked evaluators hold the AOs that survive screening in
+dense matrices of fixed-size blocks, while the results for all points are
+kept in memory.
 \end{document}

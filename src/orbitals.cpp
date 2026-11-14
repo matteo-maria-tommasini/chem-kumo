@@ -13,8 +13,9 @@
 
 namespace chem::kumo {
 
-// The MO amplitude is a linear contraction of FCHK coefficients with AO
-// values. Keep the signed result: squaring would destroy nodal information.
+// A molecular-orbital (MO) amplitude is the sum of atomic-orbital (AO) values
+// weighted by the FCHK MO coefficients. The signed value is returned:
+// squaring it would lose the nodal structure of the orbital.
 
 namespace {
 void check_channel(Spin s) {
@@ -78,8 +79,9 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     const auto c = coeff.col(static_cast<Eigen::Index>(index - 1));
     const auto n = static_cast<Eigen::Index>(basis_size());
     const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
-    // Each worker reuses its AO panels: value, x, y, z, xx, yy, zz, xy, xz,
-    // yz (one column per point each).
+    // Each worker reuses one matrix of ten AO panels side by side (values;
+    // x, y, z first derivatives; xx, yy, zz, xy, xz, yz second derivatives),
+    // each panel with one column per point.
     detail::for_each_point_block_with_workspace(
         count, block_size, "too many orbital derivative blocks for parallel evaluation",
         [&] { return Eigen::MatrixXd(n, 10 * capacity); },

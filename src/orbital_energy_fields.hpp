@@ -13,24 +13,31 @@
 
 namespace chem::kumo::detail {
 /// Orbital sums behind the fields weighted by SCF orbital energies, at the
-/// columns of a block of points. With phi_i the MOs, e_i their energies and
-/// n_i the occupations (2 for the doubly occupied orbitals of a restricted
-/// calculation, otherwise 1):
+/// columns of a block of points. With phi_i the molecular orbitals (MOs), e_i
+/// their energies and n_i the occupations (2 for the doubly occupied orbitals
+/// of a restricted calculation, otherwise 1):
 ///
 ///   occupied_density   = sum_occ n_i |phi_i|^2              (the SCF density)
 ///   occupied_energy    = sum_occ n_i |e_i| |phi_i|^2
 ///   virtual_density    = sum_vir |phi_i|^2
 ///   virtual_energy     = sum_vir e_i |phi_i|^2
-///   attachment_energy  = sum_vir, e_i < 0 n_i e_i |phi_i|^2  (n_i = 2 or 1)
+///   attachment_energy  = sum_(vir, e_i < 0) w e_i |phi_i|^2
 ///
-/// from which (Multiwfn's definitions, user functions 27, -27, 28 and 29):
+/// where w = 2 in a restricted calculation (each spatial orbital counts for
+/// both spins) and 1 in an unrestricted one. From these sums (Multiwfn's
+/// definitions, user functions 27, -27, 28 and 29):
 ///
-///   ALIE  I(r)     = occupied_energy / occupied_density   (Sjoberg et al.)
-///   LEA   EA_L(r)  = -virtual_energy / virtual_density    (Brinck et al.)
-///   LEAE  E_att(r) = attachment_energy / occupied_density (Brinck et al. 2016)
-///   chi_L = (I + EA_L) / 2, eta_L = (I - EA_L) / 2.
+///   average local ionization energy (ALIE)
+///     I(r)     = occupied_energy / occupied_density   (Sjoberg et al.)
+///   local electron affinity (LEA)
+///     EA_L(r)  = -virtual_energy / virtual_density    (Brinck et al.)
+///   local electron attachment energy (LEAE)
+///     E_att(r) = attachment_energy / occupied_density (Brinck et al. 2016)
+///   local electronegativity chi_L = (I + EA_L) / 2 and
+///   local hardness eta_L = (I - EA_L) / 2.
 ///
-/// The orbitals are evaluated exactly (no AO screening). Virtual orbitals are
+/// The orbitals are evaluated exactly (no atomic-orbital screening). Virtual
+/// orbitals are
 /// those above the occupied ones in each channel, among the MOs of the FCHK
 /// (fewer than the basis functions if Gaussian removed linear dependencies).
 struct OrbitalEnergySums {
@@ -40,17 +47,20 @@ struct OrbitalEnergySums {
 
 class OrbitalEnergyFields {
 public:
-    /// `virtuals`: whether the virtual sums are needed. Throws
+    /// `alpha` and `beta` are the MO coefficients (one MO per column);
+    /// `virtuals` says whether the virtual sums are needed. Throws
     /// std::invalid_argument if the orbitals do not reproduce the FCHK density
     /// matrices or the orbital energies are missing; with `virtuals`, also for
-    /// a restricted open-shell calculation (as in Multiwfn) or no virtual MOs.
-    /// `what` names the quantity in the messages.
+    /// a restricted open-shell calculation (where, as in Multiwfn, the
+    /// virtual-orbital fields are not defined) or if there are no virtual
+    /// MOs. `what` names the quantity in the error messages.
     OrbitalEnergyFields(const Molecule& molecule, const BasisEvaluator& basis,
                         const Eigen::MatrixXd& alpha, const Eigen::MatrixXd& beta, bool virtuals,
                         const std::string& what)
         : basis_(&basis), virtuals_(virtuals) {
         // Molecule::from_fchk() already rejects open-shell files without beta
-        // MOs; this guards the definition (as in Multiwfn) all the same.
+        // MOs, so this cannot happen today; the check keeps the restriction
+        // explicit here in case that changes.
         if (virtuals && !molecule.unrestricted() &&
             molecule.occupied_count(Spin::Alpha) != molecule.occupied_count(Spin::Beta))
             throw std::invalid_argument(what +
@@ -70,7 +80,9 @@ public:
             beta_energies.size() < static_cast<std::size_t>(nbeta))
             throw std::invalid_argument(what + " needs the FCHK orbital energies");
 
-        // Columns scaled by sqrt(n_i), so that squared amplitudes carry n_i.
+        // Append one MO column and its energy. The callers scale the column by
+        // sqrt(n_i) (or sqrt(w)), so that its squared amplitude carries the
+        // occupation weight.
         const auto add = [](Eigen::MatrixXd& columns, Eigen::VectorXd& energies, Eigen::Index& n,
                             const Eigen::VectorXd& column, double energy) {
             columns.col(n) = column;
@@ -104,8 +116,8 @@ public:
             channel(alpha, alpha_energies, nalpha, 0, 1.0);
             channel(beta, beta_energies, nbeta, 0, 1.0);
         } else {
-            // Restricted: doubly occupied below min(nalpha, nbeta), singly
-            // occupied up to max(nalpha, nbeta).
+            // Restricted: the first min(nalpha, nbeta) orbitals are doubly
+            // occupied, the rest up to max(nalpha, nbeta) singly occupied.
             channel(alpha, alpha_energies, std::max(nalpha, nbeta), std::min(nalpha, nbeta), 2.0);
         }
         occupied_.conservativeResize(Eigen::NoChange, o);

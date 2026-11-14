@@ -2,38 +2,48 @@
 
 ## Scope and design
 
-OpenMP is opt-in (`-Dopenmp=true`; default `false`). Independent spatial
-blocks are assigned with `schedule(dynamic)` in the blocked density,
-density-derivative, orbital amplitude and blocked orbital-derivative paths.
-With AO screening, blocks in the empty outer region of a grid cost much
-less than blocks near the molecule, so a static assignment of contiguous
-block ranges leaves threads idle; each block is still computed on its own,
-so results do not depend on the schedule or the thread count.
-Input basis data, density matrices and MO coefficients are shared read-only;
-per-block Eigen temporaries are private. Each block writes disjoint output
-indices. Exceptions are captured inside worker loops and rethrown after the
-parallel region. `EIGEN_DONT_PARALLELIZE` prevents nested Eigen threading.
-The `Evaluator` point path (all density derivatives, and AO_MO densities)
-runs its blocks of `block_size` grid points on worker threads with
-`schedule(dynamic)`; each block is passed to the serial block kernel on its
-own, so block boundaries and results do not depend on the thread count.
-The derived properties (ELF, reduced gradient, sign(lambda2) rho; 1.8.0)
-are computed in the same point path from each block's derivatives. The
-electrostatic potential (1.9.0) has its own pass over clusters of
-8 x 8 x 8 grid points, also scheduled with `schedule(dynamic)`; cluster
-boundaries depend only on the grid and each value only on its point, its
-cluster and the far-field plan, so the results do not depend on the thread
-count either. The electrostatic potential on a molecular surface (1.10.0)
-evaluates the surface vertices in clusters (those on the edges of a block of
-8 x 8 x 8 grid cells) in the same way; the mesh itself is built serially,
-and its vertices are placed on the isosurface with the blocked density
-path, so the results do not depend on the thread count. The average local
-ionization energy on the surface evaluates the vertices in fixed blocks of
-128 with `schedule(dynamic)`, each value depending only on its point, so it
-does not depend on the thread count either. The pointwise
-derivative APIs remain serial. AO screening
-(1.5.0) is decided per block of grid points and the AO shell cutoff (1.6.0)
-per point, so neither depends on the thread count; see [API.md](API.md).
+OpenMP is opt-in (`-Dopenmp=true`; default `false`). Without it the same
+code runs on one thread.
+
+**How the work is split.** Every parallel loop divides the points into
+independent pieces (blocks of consecutive points, or clusters of nearby
+points) and gives the pieces to the threads with `schedule(dynamic)`.
+Dynamic scheduling matters because the pieces have very different costs:
+with AO screening, a block in the empty region far from the molecule is
+much cheaper than one near the nuclei, and a static assignment of
+contiguous ranges would leave threads idle.
+
+**Why the results do not depend on the threads.** The pieces are fixed by
+the input alone (the block size, the grid or the point list), never by the
+number of threads; each piece is computed on its own and writes its own
+output entries. The arithmetic of every value is therefore the same for any
+number of threads, and results are identical bit for bit. Basis data,
+density matrices and MO coefficients are shared read-only; each thread owns
+its temporary matrices. An exception thrown on a thread is caught there and
+rethrown on the calling thread after the loop. `EIGEN_DONT_PARALLELIZE`
+prevents Eigen from starting threads of its own inside these loops.
+
+**Parallel loops.**
+
+| Computation | Pieces |
+|---|---|
+| Densities on grids (`densities_blocked`), orbital amplitudes on grids | blocks of grid points |
+| Density derivatives and AO-MO densities (`Evaluator` point path), with ELF, LOL, the reduced gradient and the other derived fields | blocks of `block_size` points |
+| Blocked density and orbital derivatives (`density_derivatives_blocked`, `orbital_derivatives_blocked`) | blocks of points |
+| Orbital-energy fields (ALIE, LEA, LEAE, local electronegativity and hardness) and orbitals at arbitrary points (1.13.0) | blocks of `block_size` points |
+| Electrostatic potential on grids (1.9.0) | tiles of 8 x 8 x 8 grid points |
+| Electrostatic potential on isosurface vertices (1.10.0) | vertices on the edges of a block of 8 x 8 x 8 grid cells |
+| Electrostatic potential at arbitrary points (1.13.0) | points in the same cube of 1.6 bohr |
+| ALIE on a surface (`local_ionization_energy_surface`) | blocks of 128 vertices |
+
+The isosurface mesh is built serially, and its vertices are placed on the
+surface with the blocked density path. Mapping fields on a surface
+(`map_on_density_isosurface`, 1.13.0) evaluates the vertices with the
+`Evaluator` at points, so it uses the loops above. The pointwise derivative
+functions (`density_derivatives`, `orbital_derivatives` at one point) are
+serial. AO screening is decided per block of points and the AO shell
+cutoff per point, so neither depends on the number of threads; see
+[API.md](API.md).
 
 ## Building and testing
 

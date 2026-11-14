@@ -63,12 +63,13 @@ struct PointSet {
     }
 };
 
-// Evaluation paths:
-//  - point path: shared AO derivative evaluation on explicit point blocks,
-//    used for all density derivatives and, with AO-MO or at arbitrary
-//    points, also for densities;
-//  - grid path (grids only): the validated Molecule::density /
-//    Molecule::orbital kernels, used for AO-P densities and for orbitals;
+// Evaluation paths (AO = atomic orbital; the AO-P backend contracts AO values
+// with the density matrix, AO-MO with the occupied molecular orbitals):
+//  - point path: one shared evaluation of AO values and derivatives on
+//    explicit blocks of points, used for all density derivatives and, with
+//    AO-MO or at arbitrary points, also for densities;
+//  - grid path (grids only): the validated Molecule::densities_blocked and
+//    Molecule::orbitals kernels, used for AO-P densities and for orbitals;
 //  - at arbitrary points, orbitals come from their own pass;
 //  - the electrostatic potential and the orbital-energy fields come from
 //    their own passes.
@@ -95,7 +96,7 @@ bool is_orbital_energy_field(PropertyKind kind) {
            kind == PropertyKind::LocalElectronegativity || kind == PropertyKind::LocalHardness;
 }
 
-// Fields that the point path stores.
+// Whether this field is computed and stored by the point path.
 bool from_point_path(const Property& key, Backend backend, bool grid) {
     return !on_grid_path(key, backend, grid) && key.kind != PropertyKind::Orbital &&
            key.kind != PropertyKind::ElectrostaticPotential && !is_orbital_energy_field(key.kind);
@@ -197,9 +198,9 @@ double density_overlap_regions_indicator(const DensityDerivatives& d) {
 
 using BlockDerivatives = std::map<Spin, std::vector<DensityDerivatives>>;
 
-// Copy (or derive) one property of block results, starting at grid point
-// `start`. Evaluator Hessians use row-major upper-triangle order: xx, xy, xz,
-// yy, yz, zz.
+// Copy (or derive) one property from the density derivatives of a block of
+// `count` points into `output`, starting at point index `start`. Evaluator
+// Hessians use row-major upper-triangle order: xx, xy, xz, yy, yz, zz.
 void store_block(PropertyField& output, const Property& key, const BlockDerivatives& block,
                  std::size_t count, std::size_t start) {
     if ((key.kind == PropertyKind::Elf || key.kind == PropertyKind::Lol) &&
@@ -272,7 +273,7 @@ void store_block(PropertyField& output, const Property& key, const BlockDerivati
     }
 }
 
-// Point path. Grid points are processed in blocks of at most block_size, so
+// Point path. Points are processed in blocks of at most block_size, so
 // coordinate and derivative temporaries stay bounded. `evaluate_block`
 // returns the derivatives of the requested spin components on one block.
 //
@@ -302,15 +303,18 @@ void evaluate_point_path(const PointSet& set, std::size_t block_size,
             for (auto& [key, output] : fields)
                 if (from_point_path(key, backend, grid))
                     store_block(output, key, block, range.size, range.start);
-            // Serialized and monotonic; a throwing callback is captured
-            // like any other block error.
+            // Progress reports are serialized and never decrease; an
+            // exception thrown by the callback is captured like any other
+            // block error.
             report.advance(range.size);
         });
 }
 
-// Electrostatic potential pass. The grid is split into clusters of up to
-// cluster_side^3 points (index boxes), each evaluated around its own centre
-// with one far-field plan whose radius covers the largest cluster. Cluster
+// Electrostatic potential pass on a grid. The grid is split into tiles of up
+// to cluster_side^3 points (boxes of grid indices), each evaluated as one
+// target cluster around the centre of its box, with one far-field plan whose
+// radius covers the largest tile (see 'Target clusters' in
+// docs/mathematics/chem-kumo-mathematics.tex). Cluster
 // boundaries depend only on the grid, and each value only on its point, its
 // cluster and the plan, so the result does not depend on the number of
 // threads or on the block size.
@@ -396,8 +400,10 @@ void evaluate_electrostatic_potential(
     detail::evaluate_in_clusters(potential, plan, clusters.size(), gather, output, n, progress);
 }
 
-// ALIE, LEA, LEAE, local electronegativity and hardness from the orbital
-// sums (see detail::OrbitalEnergyFields), 0 where a denominator vanishes.
+// Average local ionization energy (ALIE), local electron affinity (LEA),
+// local electron attachment energy (LEAE), local electronegativity and
+// hardness from the orbital sums (see detail::OrbitalEnergySums), 0 where a
+// denominator vanishes.
 void store_orbital_energy_block(std::map<Property, PropertyField>& fields,
                                 const detail::OrbitalEnergySums& sums, std::size_t count,
                                 std::size_t start) {
@@ -462,7 +468,8 @@ public:
         const Request& request)
         : molecule_(*evaluator.molecule_), options_(evaluator.options_), set_{grid, points, n},
           plan_(detail::EvaluationPlan::from(request)) {
-        // Plan the requested properties before resolving the electronic backend.
+        // The backend choice depends on the plan (built above): AUTO picks
+        // AO_MO only if some property needs a density or its derivatives.
         backend_ = detail::choose_backend(
             options_.backend, molecule_.electronic_structure_info().ao_mo_eligible(), plan_);
         result_.backend_used_ = backend_;
@@ -527,8 +534,9 @@ private:
     }
 
     void point_pass() {
-        // At arbitrary points densities come from this path, and the AO-P
-        // kernel starts at first derivatives.
+        // At arbitrary points densities come from this path too, and the AO-P
+        // kernel always computes at least first derivatives, so ask for
+        // order 1 or more.
         const int ao_order =
             on_grid() ? plan_.maximum_ao_order : std::max(1, plan_.maximum_ao_order);
         const auto evaluate_block = [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block,
@@ -547,8 +555,9 @@ private:
     }
 
     void potential_pass() {
-        // The density matrix is that of the FCHK with either backend; with
-        // AO-MO it reproduces the orbital density (checked at load time).
+        // The potential always uses the FCHK total density matrix, whatever
+        // the backend; when AO-MO is in use, that matrix was checked at load
+        // time to agree with the occupied orbitals.
         const detail::ElectrostaticPotential potential(
             molecule_.evaluator_.basis(), molecule_.density_matrix(Spin::Total), molecule_.atoms());
         auto& output = result_.fields_.at(density::total.electrostatic_potential()).components[0];
@@ -607,8 +616,9 @@ private:
         }
     }
 
-    // One pass over blocks of points, body(points, range): each block writes
-    // its own range, so the result does not depend on the number of threads.
+    // One pass over blocks of points, calling body(points, range) for each
+    // block. Each block writes only its own range of points, so the result
+    // does not depend on the number of threads.
     template <typename Body> void for_each_point_block(const Body& body) {
         detail::Progress report(pass_progress_, set_.count);
         detail::for_each_point_block(set_.count, options_.block_size,

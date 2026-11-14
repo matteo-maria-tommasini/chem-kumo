@@ -1,7 +1,7 @@
 #pragma once
 
-// Helpers shared by the block-parallel evaluation loops. Grid points are split
-// into independent blocks; with OpenMP the blocks run on worker threads, and
+// Helpers shared by the block-parallel evaluation loops. Points (of a grid or
+// a list) are split into independent blocks; with OpenMP the blocks run on worker threads, and
 // in serial builds the same loop runs on the calling thread.
 
 #include <algorithm>
@@ -73,7 +73,7 @@ public:
     Progress(const std::function<void(std::size_t, std::size_t)>& callback, std::size_t total)
         : callback_(callback), total_(total) {}
 
-    /// Record that `points` more grid points are done.
+    /// Record that `points` more points are done and report the new total.
     void advance(std::size_t points) {
         if (!callback_) return;
         std::exception_ptr error;
