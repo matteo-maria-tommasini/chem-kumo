@@ -1,6 +1,7 @@
 #pragma once
 // Progress messages of the kumo command-line program (--verbose).
 #include "chem/kumo/density.hpp"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdio>

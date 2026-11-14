@@ -3,6 +3,7 @@
 #include "chem/kumo/surface.hpp"
 
 #include <Eigen/Core>
+
 #include <functional>
 #include <span>
 #include <vector>

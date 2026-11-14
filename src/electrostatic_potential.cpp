@@ -1,7 +1,9 @@
 #include "electrostatic_potential.hpp"
+
 #include "basis_math.hpp"
 #include "boys_function.hpp"
 #include "chem/kumo/basis_evaluator.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>

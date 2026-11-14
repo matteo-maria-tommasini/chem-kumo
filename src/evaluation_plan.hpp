@@ -1,7 +1,8 @@
 #pragma once
 #include "chem/kumo/evaluator.hpp"
-#include <array>
+
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <string>
 
@@ -97,6 +98,21 @@ struct EvaluationPlan {
                                         " is defined only for the total density");
     }
 
+    // ELF and LOL: the total is built from the alpha and beta channels, a
+    // spin channel from itself; the spin difference has no such quantity.
+    void require_spin_inputs(const Property& property, bool ComponentPlan::* input,
+                             const char* what) {
+        if (property.component == DensityComponent::Spin)
+            throw std::invalid_argument(std::string(what) +
+                                        " is not defined for the spin-difference density");
+        if (property.component == DensityComponent::Total) {
+            components[index(DensityComponent::Alpha)].*input = true;
+            components[index(DensityComponent::Beta)].*input = true;
+        } else {
+            components[index(property.component)].*input = true;
+        }
+    }
+
     [[nodiscard]] static EvaluationPlan from(const Request& request) {
         EvaluationPlan plan;
         for (const Property& property : request.properties()) {
@@ -116,45 +132,23 @@ struct EvaluationPlan {
             case PropertyKind::Tau: c.tau = true; break;
             case PropertyKind::Elf:
                 c.elf = true;
-                if (property.component == DensityComponent::Spin)
-                    throw std::invalid_argument(
-                        "ELF is not defined for the spin-difference density");
-                if (property.component == DensityComponent::Total) {
-                    plan.components[index(DensityComponent::Alpha)].elf_input = true;
-                    plan.components[index(DensityComponent::Beta)].elf_input = true;
-                } else {
-                    c.elf_input = true;
-                }
+                plan.require_spin_inputs(property, &ComponentPlan::elf_input, "ELF");
                 break;
             case PropertyKind::ReducedGradient:
-                if (property.component != DensityComponent::Total)
-                    throw std::invalid_argument(
-                        "the reduced density gradient is defined only for the total density");
+                require_total(property, "the reduced density gradient");
                 c.reduced_gradient = true;
                 break;
             case PropertyKind::SignLambda2Density:
-                if (property.component != DensityComponent::Total)
-                    throw std::invalid_argument(
-                        "sign(lambda2) rho is defined only for the total density");
+                require_total(property, "sign(lambda2) rho");
                 c.sign_lambda2 = true;
                 break;
             case PropertyKind::ElectrostaticPotential:
-                if (property.component != DensityComponent::Total)
-                    throw std::invalid_argument(
-                        "the electrostatic potential is defined only for the total density");
+                require_total(property, "the electrostatic potential");
                 c.electrostatic_potential = true;
                 break;
             case PropertyKind::Lol:
                 c.lol = true;
-                if (property.component == DensityComponent::Spin)
-                    throw std::invalid_argument(
-                        "LOL is not defined for the spin-difference density");
-                if (property.component == DensityComponent::Total) {
-                    plan.components[index(DensityComponent::Alpha)].lol_input = true;
-                    plan.components[index(DensityComponent::Beta)].lol_input = true;
-                } else {
-                    c.lol_input = true;
-                }
+                plan.require_spin_inputs(property, &ComponentPlan::lol_input, "LOL");
                 break;
             case PropertyKind::InteractionRegionIndicator:
                 require_total(property, "the interaction region indicator");

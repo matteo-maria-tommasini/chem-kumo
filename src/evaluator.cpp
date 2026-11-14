@@ -1,17 +1,21 @@
 #include "chem/kumo/evaluator.hpp"
-#include "evaluation_plan.hpp"
+
+#include "ao_screening.hpp"
 #include "automatic_backend.hpp"
 #include "electrostatic_potential.hpp"
-#include "ao_screening.hpp"
+#include "evaluation_plan.hpp"
 #include "grid_geometry.hpp"
 #include "orbital_energy_fields.hpp"
 #include "parallel_blocks.hpp"
+#include "potential_clusters.hpp"
+
 #include <Eigen/Eigenvalues>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <initializer_list>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <numbers>
@@ -291,21 +295,17 @@ void evaluate_point_path(const PointSet& set, std::size_t block_size,
         if (uses_point_path(plan_for(plan, component), backend, grid))
             needed.push_back(spin_of(component));
 
-    const std::size_t nblocks =
-        detail::parallel_block_count(n, block_size, "too many point blocks for evaluation");
     detail::Progress report(progress, n);
-    detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t index) {
-        const std::size_t start = static_cast<std::size_t>(index) * block_size;
-        const std::size_t count = std::min(block_size, n - start);
-        const auto points = set.block(start, count);
-        const auto block = evaluate_block(points, needed);
-
-        for (auto& [key, output] : fields)
-            if (from_point_path(key, backend, grid)) store_block(output, key, block, count, start);
-        // Serialized and monotonic; a throwing callback is captured
-        // like any other block error.
-        report.advance(count);
-    });
+    detail::for_each_point_block(
+        n, block_size, "too many point blocks for evaluation", [&](detail::PointBlock range) {
+            const auto block = evaluate_block(set.block(range.start, range.size), needed);
+            for (auto& [key, output] : fields)
+                if (from_point_path(key, backend, grid))
+                    store_block(output, key, block, range.size, range.start);
+            // Serialized and monotonic; a throwing callback is captured
+            // like any other block error.
+            report.advance(range.size);
+        });
 }
 
 // Electrostatic potential pass. The grid is split into clusters of up to
@@ -320,27 +320,18 @@ void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double to
                                       const detail::ElectrostaticPotential& potential,
                                       std::vector<double>& output,
                                       const ProgressCallback& progress) {
-    Eigen::Vector3i tiles, extent;
+    Eigen::Vector3i tiles;
+    Eigen::Vector3d edges; // of the largest tile, in grid steps
     for (int a = 0; a < 3; ++a) {
-        extent[a] = std::min(cluster_side, grid.counts[a]);
+        edges[a] = std::min(cluster_side, grid.counts[a]) - 1;
         tiles[a] = (grid.counts[a] + cluster_side - 1) / cluster_side;
     }
-    // Largest distance from a cluster centre to its points: a corner of the
-    // largest index box.
-    double radius = 0.0;
-    for (int corner = 0; corner < 8; ++corner) {
-        Eigen::Vector3d offset;
-        for (int a = 0; a < 3; ++a)
-            offset[a] = ((corner >> a) & 1 ? 0.5 : -0.5) * (extent[a] - 1);
-        radius = std::max(radius, (grid.steps * offset).norm());
-    }
-    // Slightly enlarged to cover rounding in the point coordinates.
-    const auto plan = potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);
-
+    const auto plan =
+        detail::cluster_plan(potential, detail::grid_box_radius(grid.steps, edges), tolerance);
     const auto ntiles = static_cast<std::size_t>(tiles[0]) * static_cast<std::size_t>(tiles[1]) *
                         static_cast<std::size_t>(tiles[2]);
-    detail::Progress report(progress, n);
-    detail::for_each_block<detail::Schedule::Dynamic>(ntiles, [&](std::size_t index) {
+    const auto gather = [&](std::size_t index, Eigen::Matrix<double, 3, Eigen::Dynamic>& points,
+                            std::vector<std::size_t>& targets) {
         const auto per_plane = static_cast<std::size_t>(tiles[1] * tiles[2]);
         const Eigen::Vector3i tile(static_cast<int>(index / per_plane),
                                    static_cast<int>((index / static_cast<std::size_t>(tiles[2])) %
@@ -351,10 +342,9 @@ void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double to
             begin[a] = tile[a] * cluster_side;
             end[a] = std::min(begin[a] + cluster_side, grid.counts[a]);
         }
-        const Eigen::Vector3i size = end - begin;
-        const auto count = static_cast<std::size_t>(size.prod());
-        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, static_cast<Eigen::Index>(count));
-        std::vector<std::size_t> targets(count);
+        const auto count = static_cast<std::size_t>((end - begin).prod());
+        points.resize(3, static_cast<Eigen::Index>(count));
+        targets.resize(count);
         std::size_t local = 0;
         for (int i = begin[0]; i < end[0]; ++i)
             for (int j = begin[1]; j < end[1]; ++j)
@@ -363,22 +353,17 @@ void evaluate_electrostatic_potential(const Grid& grid, std::size_t n, double to
                         grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
                     targets[local] = detail::grid_index(grid, i, j, k);
                 }
-        const Eigen::Vector3d center =
-            grid.origin +
-            grid.steps * (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>());
-        std::vector<double> values(count);
-        potential.evaluate_cluster(points, center, plan, values);
-        for (std::size_t p = 0; p < count; ++p)
-            output[targets[p]] = values[p];
-        report.advance(count);
-    });
+        return Eigen::Vector3d(grid.origin +
+                               grid.steps *
+                                   (0.5 * (begin + end - Eigen::Vector3i::Ones()).cast<double>()));
+    };
+    detail::evaluate_in_clusters(potential, plan, ntiles, gather, output, n, progress);
 }
 
 // Electrostatic potential at arbitrary points: points are grouped by the
 // cube of edge potential_cluster_edge, aligned with the axes at multiples of
 // the edge, that contains them, and each group is evaluated around its cube
-// centre with one far-field plan covering a cube. Groups depend only on the
-// points, so the result does not depend on the number of threads.
+// centre with one far-field plan covering a cube.
 void evaluate_electrostatic_potential(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, double tolerance,
     const detail::ElectrostaticPotential& potential, std::vector<double>& output,
@@ -394,37 +379,21 @@ void evaluate_electrostatic_potential(
                 throw std::invalid_argument("point too far for the electrostatic potential");
             cells[p][static_cast<std::size_t>(a)] = static_cast<std::int64_t>(index);
         }
-    std::vector<std::size_t> order(n);
-    for (std::size_t p = 0; p < n; ++p)
-        order[p] = p;
-    std::stable_sort(order.begin(), order.end(),
-                     [&](std::size_t a, std::size_t b) { return cells[a] < cells[b]; });
-    std::vector<std::size_t> starts;
-    for (std::size_t p = 0; p < n; ++p)
-        if (p == 0 || cells[order[p]] != cells[order[p - 1]]) starts.push_back(p);
-    starts.push_back(n);
-    // Half the cube diagonal, slightly enlarged to cover rounding.
-    const double radius = 0.5 * std::sqrt(3.0) * potential_cluster_edge;
-    const auto plan = potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, tolerance);
-
-    detail::Progress report(progress, n);
-    detail::for_each_block<detail::Schedule::Dynamic>(starts.size() - 1, [&](std::size_t g) {
-        const std::size_t begin = starts[g], end = starts[g + 1];
-        const auto count = static_cast<Eigen::Index>(end - begin);
-        Eigen::Matrix<double, 3, Eigen::Dynamic> cluster(3, count);
-        for (Eigen::Index p = 0; p < count; ++p)
-            cluster.col(p) =
-                points.col(static_cast<Eigen::Index>(order[begin + static_cast<std::size_t>(p)]));
-        const Cell& cell = cells[order[begin]];
-        const Eigen::Vector3d center((static_cast<double>(cell[0]) + 0.5) * potential_cluster_edge,
-                                     (static_cast<double>(cell[1]) + 0.5) * potential_cluster_edge,
-                                     (static_cast<double>(cell[2]) + 0.5) * potential_cluster_edge);
-        std::vector<double> values(static_cast<std::size_t>(count));
-        potential.evaluate_cluster(cluster, center, plan, values);
-        for (std::size_t p = 0; p < values.size(); ++p)
-            output[order[begin + p]] = values[p];
-        report.advance(values.size());
-    });
+    const auto clusters = detail::cluster_by(n, [&](std::size_t p) { return cells[p]; });
+    // Half the cube diagonal.
+    const auto plan =
+        detail::cluster_plan(potential, 0.5 * std::sqrt(3.0) * potential_cluster_edge, tolerance);
+    const auto gather = [&](std::size_t c, Eigen::Matrix<double, 3, Eigen::Dynamic>& cluster,
+                            std::vector<std::size_t>& targets) {
+        detail::gather_cluster(
+            clusters, c, [&](std::size_t p) { return points.col(static_cast<Eigen::Index>(p)); },
+            cluster, targets);
+        const Cell& cell = cells[targets.front()];
+        return Eigen::Vector3d((static_cast<double>(cell[0]) + 0.5) * potential_cluster_edge,
+                               (static_cast<double>(cell[1]) + 0.5) * potential_cluster_edge,
+                               (static_cast<double>(cell[2]) + 0.5) * potential_cluster_edge);
+    };
+    detail::evaluate_in_clusters(potential, plan, clusters.size(), gather, output, n, progress);
 }
 
 // ALIE, LEA, LEAE, local electronegativity and hardness from the orbital
@@ -477,165 +446,202 @@ Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
             "explicit multi-thread control is not implemented in the API adapter");
 }
 
+// One evaluation: the points, the plan of the request, the backend, the
+// output fields and the progress over all passes. The passes are
+//  - the point path (if any): density derivatives and, with AO-MO or at
+//    arbitrary points, densities;
+//  - the electrostatic potential;
+//  - the orbital-energy fields;
+//  - the orbitals at arbitrary points;
+//  - the grid path: one pass per AO-P density or orbital on a grid.
+// Progress is reported over all of them, in this order.
+class Evaluator::Run {
+public:
+    Run(const Evaluator& evaluator, const Grid* grid,
+        const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>* points, std::size_t n,
+        const Request& request)
+        : molecule_(*evaluator.molecule_), options_(evaluator.options_), set_{grid, points, n},
+          plan_(detail::EvaluationPlan::from(request)) {
+        // Plan the requested properties before resolving the electronic backend.
+        backend_ = detail::choose_backend(
+            options_.backend, molecule_.electronic_structure_info().ao_mo_eligible(), plan_);
+        result_.backend_used_ = backend_;
+        for (auto key : request.properties())
+            result_.fields_.try_emplace(
+                key, PropertyField{n, std::vector<std::vector<double>>(channels(key.kind),
+                                                                       std::vector<double>(n))});
+    }
+
+    Run(const Run&) = delete;
+    Run& operator=(const Run&) = delete;
+
+    Results execute() {
+        // Check the orbitals (and the orbital indices) before any pass.
+        std::optional<detail::OrbitalEnergyFields> orbital_energies;
+        if (plan_.orbital_energies) {
+            const char* what = plan_.virtual_orbitals
+                                   ? "the local electron affinity and related fields"
+                                   : "the average local ionization energy";
+            orbital_energies.emplace(
+                molecule_, molecule_.evaluator_, molecule_.mo_coefficients(Spin::Alpha),
+                molecule_.mo_coefficients(Spin::Beta), plan_.virtual_orbitals, what);
+        }
+        const auto orbitals = checked_orbitals();
+
+        const bool point_path = uses_point_path(plan_, backend_, on_grid());
+        const bool potential = plan_.needs_electrostatic_potential();
+        passes_ = (point_path ? 1 : 0) + (potential ? 1 : 0) + (orbital_energies ? 1 : 0) +
+                  (orbitals.empty() ? 0 : 1);
+        for (const auto& entry : result_.fields_)
+            passes_ += on_grid_path(entry.first, backend_, on_grid()) ? 1 : 0;
+        if (options_.progress)
+            pass_progress_ = [this](std::size_t done, std::size_t) {
+                options_.progress(completed_ + done, passes_ * set_.count);
+            };
+
+        if (point_path) point_pass();
+        if (potential) potential_pass();
+        if (orbital_energies) orbital_energy_pass(*orbital_energies);
+        if (!orbitals.empty()) orbital_pass(orbitals);
+        grid_path();
+        return std::move(result_);
+    }
+
+private:
+    [[nodiscard]] bool on_grid() const { return set_.grid != nullptr; }
+
+    // Check every requested orbital; return those evaluated at arbitrary
+    // points (on grids, orbitals take the grid path).
+    [[nodiscard]] std::vector<Property> checked_orbitals() const {
+        std::vector<Property> orbitals;
+        for (const auto& entry : result_.fields_)
+            if (entry.first.kind == PropertyKind::Orbital) {
+                const auto& coefficients = molecule_.mo_coefficients(spin_of(entry.first.channel));
+                if (coefficients.cols() == 0)
+                    throw std::runtime_error("FCHK has no MO coefficients");
+                if (entry.first.orbital_index > static_cast<std::size_t>(coefficients.cols()))
+                    throw std::out_of_range("MO index outside available coefficient range");
+                if (!on_grid()) orbitals.push_back(entry.first);
+            }
+        return orbitals;
+    }
+
+    void point_pass() {
+        // At arbitrary points densities come from this path, and the AO-P
+        // kernel starts at first derivatives.
+        const int ao_order =
+            on_grid() ? plan_.maximum_ao_order : std::max(1, plan_.maximum_ao_order);
+        const auto evaluate_block = [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block,
+                                        const std::vector<Spin>& needed) {
+            return backend_ == Backend::AO_MO
+                       ? molecule_.density_derivatives_mo(block, needed, options_.block_size,
+                                                          std::max(0, ao_order),
+                                                          options_.screening_threshold)
+                       : molecule_.density_derivatives_shared(block, needed, options_.block_size,
+                                                              ao_order,
+                                                              options_.screening_threshold);
+        };
+        evaluate_point_path(set_, options_.block_size, plan_, backend_, evaluate_block,
+                            result_.fields_, pass_progress_);
+        completed_ += set_.count;
+    }
+
+    void potential_pass() {
+        // The density matrix is that of the FCHK with either backend; with
+        // AO-MO it reproduces the orbital density (checked at load time).
+        const detail::ElectrostaticPotential potential(
+            molecule_.evaluator_.basis(), molecule_.density_matrix(Spin::Total), molecule_.atoms());
+        auto& output = result_.fields_.at(density::total.electrostatic_potential()).components[0];
+        if (on_grid())
+            evaluate_electrostatic_potential(*set_.grid, set_.count, options_.potential_tolerance,
+                                             potential, output, pass_progress_);
+        else
+            evaluate_electrostatic_potential(*set_.columns, options_.potential_tolerance, potential,
+                                             output, pass_progress_);
+        completed_ += set_.count;
+    }
+
+    void orbital_energy_pass(const detail::OrbitalEnergyFields& fields) {
+        for_each_point_block(
+            [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block, detail::PointBlock range) {
+                store_orbital_energy_block(result_.fields_, fields.evaluate(block), range.size,
+                                           range.start);
+            });
+    }
+
+    void orbital_pass(const std::vector<Property>& orbitals) {
+        const auto& basis = molecule_.evaluator_;
+        for_each_point_block(
+            [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block, detail::PointBlock range) {
+                Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis.basis_size()),
+                                    static_cast<Eigen::Index>(range.size));
+                basis.evaluate_batch(block, phi);
+                for (const Property& key : orbitals) {
+                    const auto& coefficients = molecule_.mo_coefficients(spin_of(key.channel));
+                    const Eigen::VectorXd psi =
+                        phi.transpose() *
+                        coefficients.col(static_cast<Eigen::Index>(key.orbital_index - 1));
+                    auto& output = result_.fields_.at(key).components[0];
+                    for (std::size_t t = 0; t < range.size; ++t)
+                        output[range.start + t] = psi[static_cast<Eigen::Index>(t)];
+                }
+            });
+    }
+
+    // Orbitals and AO-P densities on grids, one validated Molecule kernel call each.
+    void grid_path() {
+        for (auto& [key, output] : result_.fields_) {
+            if (!on_grid_path(key, backend_, on_grid())) continue;
+            const Grid& grid = *set_.grid;
+            const Field field =
+                key.kind == PropertyKind::Density
+                    ? molecule_
+                          .densities_blocked(grid, {spin_of(key.component)}, options_.block_size,
+                                             options_.screening_threshold, pass_progress_)
+                          .at(spin_of(key.component))
+                    : molecule_
+                          .orbitals(grid, {key.orbital_index}, spin_of(key.channel), pass_progress_)
+                          .front();
+            std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
+            completed_ += set_.count;
+        }
+    }
+
+    // One pass over blocks of points, body(points, range): each block writes
+    // its own range, so the result does not depend on the number of threads.
+    template <typename Body> void for_each_point_block(const Body& body) {
+        detail::Progress report(pass_progress_, set_.count);
+        detail::for_each_point_block(set_.count, options_.block_size,
+                                     "too many point blocks for evaluation",
+                                     [&](detail::PointBlock range) {
+                                         body(set_.block(range.start, range.size), range);
+                                         report.advance(range.size);
+                                     });
+        completed_ += set_.count;
+    }
+
+    const Molecule& molecule_;
+    const EvaluationOptions& options_;
+    const PointSet set_;
+    const detail::EvaluationPlan plan_;
+    Backend backend_ = Backend::AO_P;
+    Results result_;
+    std::size_t passes_ = 0;
+    std::size_t completed_ = 0; // points of the passes already finished
+    ProgressCallback pass_progress_;
+};
+
 Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
-    // Validate the grid up front: the derivative paths below evaluate on
-    // explicit points and would otherwise accept a degenerate geometry.
+    // Validate the grid up front: the derivative paths evaluate on explicit
+    // points and would otherwise accept a degenerate geometry.
     const std::size_t n = detail::validated_point_count(grid);
-    return evaluate_at(&grid, nullptr, n, request);
+    return Run(*this, &grid, nullptr, n, request).execute();
 }
 
 Results
 Evaluator::evaluate(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                     const Request& request) const {
     if (!points.allFinite()) throw std::invalid_argument("evaluation points must be finite");
-    return evaluate_at(nullptr, &points, static_cast<std::size_t>(points.cols()), request);
-}
-
-Results
-Evaluator::evaluate_at(const Grid* grid,
-                       const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>* points,
-                       std::size_t n, const Request& request) const {
-    const PointSet set{grid, points, n};
-    const bool on_grid = grid != nullptr;
-    // Plan the requested properties before resolving the electronic backend.
-    const auto plan = detail::EvaluationPlan::from(request);
-    const auto& info = molecule_->electronic_structure_info();
-    const Backend backend = detail::choose_backend(options_.backend, info.ao_mo_eligible(), plan);
-    Results result;
-    result.backend_used_ = backend;
-    for (auto key : request.properties()) {
-        result.fields_.try_emplace(
-            key, PropertyField{n, std::vector<std::vector<double>>(channels(key.kind),
-                                                                   std::vector<double>(n))});
-    }
-    // Check the orbitals (and the orbital indices) before any pass.
-    std::optional<detail::OrbitalEnergyFields> orbital_energies;
-    if (plan.orbital_energies) {
-        const char* what = plan.virtual_orbitals ? "the local electron affinity and related fields"
-                                                 : "the average local ionization energy";
-        orbital_energies.emplace(
-            *molecule_, molecule_->evaluator_, molecule_->mo_coefficients(Spin::Alpha),
-            molecule_->mo_coefficients(Spin::Beta), plan.virtual_orbitals, what);
-    }
-    std::vector<Property> orbitals; // at arbitrary points: their own pass
-    for (const auto& entry : result.fields_)
-        if (entry.first.kind == PropertyKind::Orbital) {
-            const auto& coefficients = molecule_->mo_coefficients(spin_of(entry.first.channel));
-            if (coefficients.cols() == 0) throw std::runtime_error("FCHK has no MO coefficients");
-            if (entry.first.orbital_index > static_cast<std::size_t>(coefficients.cols()))
-                throw std::out_of_range("MO index outside available coefficient range");
-            if (!on_grid) orbitals.push_back(entry.first);
-        }
-
-    // Progress is reported over all passes: the point path (if any), the
-    // potential, the orbital-energy fields and the orbitals at arbitrary
-    // points, then one pass per field evaluated on the grid path.
-    const bool point_pass = uses_point_path(plan, backend, on_grid);
-    const bool potential_pass = plan.needs_electrostatic_potential();
-    std::size_t passes = (point_pass ? 1 : 0) + (potential_pass ? 1 : 0) +
-                         (orbital_energies ? 1 : 0) + (orbitals.empty() ? 0 : 1);
-    for (const auto& entry : result.fields_)
-        passes += on_grid_path(entry.first, backend, on_grid) ? 1 : 0;
-    std::size_t completed = 0; // points of the passes already finished
-    ProgressCallback pass_progress;
-    if (options_.progress)
-        pass_progress = [&](std::size_t done, std::size_t) {
-            options_.progress(completed + done, passes * n);
-        };
-
-    if (point_pass) {
-        // The AO-MO and AO-P block kernels are private to Molecule; Evaluator
-        // is a friend, so the call is wrapped here and passed to the helper.
-        // At arbitrary points densities come from this path, and the AO-P
-        // kernel starts at first derivatives.
-        const int ao_order = on_grid ? plan.maximum_ao_order : std::max(1, plan.maximum_ao_order);
-        const auto evaluate_block = [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block,
-                                        const std::vector<Spin>& needed) {
-            return backend == Backend::AO_MO
-                       ? molecule_->density_derivatives_mo(block, needed, options_.block_size,
-                                                           std::max(0, ao_order),
-                                                           options_.screening_threshold)
-                       : molecule_->density_derivatives_shared(block, needed, options_.block_size,
-                                                               ao_order,
-                                                               options_.screening_threshold);
-        };
-        evaluate_point_path(set, options_.block_size, plan, backend, evaluate_block, result.fields_,
-                            pass_progress);
-        completed += n;
-    }
-
-    if (potential_pass) {
-        // The density matrix is that of the FCHK with either backend; with
-        // AO-MO it reproduces the orbital density (checked at load time).
-        const detail::ElectrostaticPotential potential(molecule_->evaluator_.basis(),
-                                                       molecule_->density_matrix(Spin::Total),
-                                                       molecule_->atoms());
-        auto& output = result.fields_.at(density::total.electrostatic_potential()).components[0];
-        if (on_grid)
-            evaluate_electrostatic_potential(*grid, n, options_.potential_tolerance, potential,
-                                             output, pass_progress);
-        else
-            evaluate_electrostatic_potential(*points, options_.potential_tolerance, potential,
-                                             output, pass_progress);
-        completed += n;
-    }
-
-    // Blocks of points for the orbital passes: each block writes its own
-    // range, so the result does not depend on the number of threads.
-    const auto for_each_point_block = [&](const auto& body) {
-        const std::size_t size = options_.block_size;
-        const std::size_t nblocks =
-            detail::parallel_block_count(n, size, "too many point blocks for evaluation");
-        detail::Progress report(pass_progress, n);
-        detail::for_each_block<detail::Schedule::Dynamic>(nblocks, [&](std::size_t index) {
-            const std::size_t start = index * size;
-            const std::size_t count = std::min(size, n - start);
-            body(set.block(start, count), start, count);
-            report.advance(count);
-        });
-        completed += n;
-    };
-
-    if (orbital_energies)
-        for_each_point_block([&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block,
-                                 std::size_t start, std::size_t count) {
-            store_orbital_energy_block(result.fields_, orbital_energies->evaluate(block), count,
-                                       start);
-        });
-
-    if (!orbitals.empty())
-        for_each_point_block([&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block,
-                                 std::size_t start, std::size_t count) {
-            const auto& basis = molecule_->evaluator_;
-            Eigen::MatrixXd phi(static_cast<Eigen::Index>(basis.basis_size()),
-                                static_cast<Eigen::Index>(count));
-            basis.evaluate_batch(block, phi);
-            for (const Property& key : orbitals) {
-                const auto& coefficients = molecule_->mo_coefficients(spin_of(key.channel));
-                const Eigen::VectorXd psi =
-                    phi.transpose() *
-                    coefficients.col(static_cast<Eigen::Index>(key.orbital_index - 1));
-                auto& output = result.fields_.at(key).components[0];
-                for (std::size_t t = 0; t < count; ++t)
-                    output[start + t] = psi[static_cast<Eigen::Index>(t)];
-            }
-        });
-
-    // Grid path: orbitals and AO-P densities on grids.
-    for (auto& [key, output] : result.fields_) {
-        if (!on_grid_path(key, backend, on_grid)) continue;
-        const Field field =
-            key.kind == PropertyKind::Density
-                ? molecule_
-                      ->densities_blocked(*grid, {spin_of(key.component)}, options_.block_size,
-                                          options_.screening_threshold, pass_progress)
-                      .at(spin_of(key.component))
-                : molecule_
-                      ->orbitals(*grid, {key.orbital_index}, spin_of(key.channel), pass_progress)
-                      .front();
-        std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
-        completed += n;
-    }
-    return result;
+    return Run(*this, nullptr, &points, static_cast<std::size_t>(points.cols()), request).execute();
 }
 } // namespace chem::kumo

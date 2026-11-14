@@ -1,5 +1,6 @@
 #pragma once
 #include "chem/kumo/density.hpp"
+
 #include <cstddef>
 #include <map>
 #include <span>
@@ -368,12 +369,8 @@ public:
              const Request& request) const;
 
 private:
-    /// Shared implementation: exactly one of `grid` (validated) and `points`
-    /// is given; `count` is the number of points.
-    [[nodiscard]] Results
-    evaluate_at(const Grid* grid,
-                const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>* points,
-                std::size_t count, const Request& request) const;
+    /// One evaluation on a grid or at points (defined in evaluator.cpp).
+    class Run;
 
     const Molecule* molecule_;
     EvaluationOptions options_;

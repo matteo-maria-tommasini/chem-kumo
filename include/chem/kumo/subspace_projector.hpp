@@ -1,8 +1,9 @@
 #pragma once
 
-#include <Eigen/Core>
 #include <Eigen/Cholesky>
+#include <Eigen/Core>
 #include <Eigen/Eigenvalues>
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

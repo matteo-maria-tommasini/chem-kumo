@@ -35,6 +35,8 @@ kumo_lib = library(
         'src/boys_function.cpp',
         'src/electrostatic_potential.cpp',
         'src/surface.cpp',
+        'src/grid.cpp',
+        'src/molecule.cpp',
         'src/density.cpp',
         'src/cube.cpp',
         'src/orbitals.cpp',

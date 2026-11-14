@@ -1,4 +1,5 @@
 #include "cli/properties.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <iterator>

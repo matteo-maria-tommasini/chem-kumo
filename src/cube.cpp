@@ -1,4 +1,11 @@
+// Gaussian Cube input and output. Two writers serve two purposes:
+// Field::write_cube() and write_orbital_cube() write the fixed-width format
+// of Gaussian cubegen (5 significant digits), for visualization programs;
+// write_cube(CubeData) writes 12 significant digits and the original
+// metadata, so that read_cube() reproduces the field.
+
 #include "chem/kumo/cube.hpp"
+
 #include "gzip_input.hpp"
 
 #include <algorithm>
@@ -12,9 +19,6 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <array>
-#include <memory>
-#include <streambuf>
 
 namespace chem::kumo {
 namespace {
@@ -58,6 +62,50 @@ void check_comments(const CubeMetadata& metadata) {
 }
 
 CubeData parse_cube(std::istream& input);
+
+// Write a Gaussian Cube file. With an orbital index, follow the Gaussian MO
+// convention: negative atom count, then a line with NMO = 1 and the MO label.
+void write_field_cube(const std::filesystem::path& path, const std::string& comment,
+                      const Grid& grid, const std::vector<Atom>& atoms,
+                      const std::vector<double>& values, std::size_t orbital_index = 0) {
+    const bool orbital = orbital_index != 0;
+    // Fail closed: Cube readers, read_cube() included, reject such values.
+    if (!std::all_of(values.begin(), values.end(), [](double v) { return std::isfinite(v); }))
+        throw std::invalid_argument("nonfinite Cube sample");
+    std::ofstream out(path);
+    if (!out)
+        throw std::runtime_error(orbital ? "cannot open orbital cube output"
+                                         : "cannot open cube output");
+    out << "chem-kumo " CHEM_KUMO_VERSION "\n"
+        << comment << "\n"
+        << std::fixed << std::setprecision(6);
+    const auto natoms = static_cast<long long>(atoms.size());
+    out << std::setw(5) << (orbital ? -natoms : natoms);
+    for (int k = 0; k < 3; ++k)
+        out << std::setw(13) << grid.origin[k];
+    out << '\n';
+    for (int a = 0; a < 3; ++a) {
+        out << std::setw(5) << grid.counts[a];
+        for (int k = 0; k < 3; ++k)
+            out << std::setw(13) << grid.steps(k, a);
+        out << '\n';
+    }
+    for (const auto& a : atoms) {
+        out << std::setw(5) << a.atomic_number << std::setw(13) << a.nuclear_charge;
+        for (int k = 0; k < 3; ++k)
+            out << std::setw(13) << a.position[k];
+        out << '\n';
+    }
+    if (orbital) out << std::setw(5) << 1 << std::setw(5) << orbital_index << '\n';
+    // Six values per line, and a new line at the end of every k column.
+    out << std::scientific << std::setprecision(5);
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        out << std::setw(13) << values[i];
+        if ((i + 1) % 6 == 0 || (i + 1) % static_cast<std::size_t>(grid.counts[2]) == 0)
+            out << '\n';
+    }
+    if (!out) throw std::runtime_error(orbital ? "orbital cube write failed" : "cube write failed");
+}
 } // namespace
 
 CubeData read_cube(const std::filesystem::path& path) {
@@ -195,5 +243,16 @@ void write_cube(const CubeData& cube, const std::filesystem::path& path) {
     if (values.size() % 6 != 0) output << '\n';
     output.flush();
     if (!output) throw std::runtime_error("Cube output write failed");
+}
+
+void Field::write_cube(const std::filesystem::path& path, const std::string& comment) const {
+    write_field_cube(path, comment, grid_, atoms_, values_);
+}
+
+void Field::write_orbital_cube(const std::filesystem::path& path, std::size_t orbital_index,
+                               const std::string& comment) const {
+    if (orbital_index == 0 || orbital_index > 9999)
+        throw std::invalid_argument("invalid orbital index for Cube");
+    write_field_cube(path, comment, grid_, atoms_, values_, orbital_index);
 }
 } // namespace chem::kumo
