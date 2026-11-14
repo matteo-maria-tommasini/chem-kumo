@@ -135,10 +135,11 @@ void for_each_point_block(std::size_t count, std::size_t block_size, const char*
 }
 
 /// As for_each_point_block, with a workspace per OpenMP worker (the calling
-/// thread in serial builds): make_workspace() is called once per worker and
-/// body(PointBlock, workspace&) reuses it for all the blocks of that worker.
-/// If make_workspace() throws, that worker skips its blocks and the
-/// exception is rethrown after the loop.
+/// thread in serial builds) that body(PointBlock, workspace&) reuses for all
+/// the blocks of that worker. make_workspace() is called by a worker when it
+/// gets its first block, so workers without blocks (more threads than
+/// blocks) allocate nothing. If make_workspace() throws, that block fails
+/// with its exception, which is rethrown after the loop like any other.
 template <typename MakeWorkspace, typename Body>
 void for_each_point_block_with_workspace(std::size_t count, std::size_t block_size,
                                          const char* what, const MakeWorkspace& make_workspace,
@@ -150,17 +151,12 @@ void for_each_point_block_with_workspace(std::size_t count, std::size_t block_si
 #endif
     {
         std::optional<decltype(make_workspace())> workspace;
-        try {
-            workspace.emplace(make_workspace());
-        } catch (...) {
-            errors.capture();
-        }
 #ifdef _OPENMP
 #pragma omp for schedule(dynamic)
 #endif
         for (std::int64_t block = 0; block < static_cast<std::int64_t>(nblocks); ++block) {
-            if (!workspace) continue;
             try {
+                if (!workspace) workspace.emplace(make_workspace());
                 const std::size_t start = static_cast<std::size_t>(block) * block_size;
                 body(PointBlock{start, std::min(block_size, count - start)}, *workspace);
             } catch (...) {
