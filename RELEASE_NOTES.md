@@ -1,3 +1,65 @@
+# chem-kumo 2.0.0 — release notes
+
+A new major version with a cleaner public API. libkumo had no external
+users yet, so this was the time to remove the inconsistencies that had
+accumulated over the 1.x series. The numerical results are those of 1.13.1:
+apart from the version in the first line of Cube files, every CLI output is
+byte-identical (checked on 529 output files, in serial and OpenMP builds),
+and the `kumo` command line is unchanged.
+
+Programs written for 1.x need changes; [docs/API.md](docs/API.md) opens
+with a migration table from each 1.x function to its replacement.
+
+Breaking changes:
+
+- **Spin enumerations.** The four enumerations become two, in the new
+  public header `<chem/kumo/spin.hpp>`: `DensityComponent {Total, Alpha,
+  Beta, Difference}` selects a density, and `SpinChannel {Alpha, Beta}`
+  selects the molecular orbitals (MOs) of one spin. `Spin` and
+  `OrbitalSpin` are removed; `DensityComponent::Spin` is renamed
+  `Difference` and `density::spin` is renamed `density::difference`.
+  Asking for a "total" orbital no longer compiles.
+- **One Hessian order.** Every six-component Hessian of the API lists the
+  upper triangle row by row, `xx, xy, xz, yy, yz, zz`, as the Evaluator
+  results always did. `AODerivatives::hessian`, the second-derivative
+  panels of `BasisEvaluator::evaluate_derivatives_batch()` and
+  `CartesianAOMoments::second` change (they were `xx, yy, zz, xy, xz,
+  yz`); the values are the same, only their columns move.
+- **Molecule holds the data; the Evaluator evaluates.** `Molecule` keeps
+  loading and data: atoms, density matrices, MO coefficients
+  (`mo_coefficients()` is now public), orbital energies and counts, and the
+  orbital check. Its evaluation functions are removed from the public API:
+  `density()`, `densities()`, `densities_blocked()`, `spin_densities()`,
+  `density_pointwise()`, `density_derivatives()`,
+  `density_derivatives_blocked()`, `orbital()`, `orbitals()`,
+  `orbital_derivatives()` and `orbital_derivatives_blocked()`, with
+  `SpinDensities`. `DensityDerivatives` and `OrbitalDerivatives` are no
+  longer public. All evaluations go through the `Evaluator`, on grids or at
+  points, with one set of options and the same validation.
+- **Counts.** `Molecule::occupied_count()` returns `std::size_t`, like
+  `orbital_count()`.
+
+New:
+
+- `orbital::alpha(i).gradient()` and `.hessian()` (and `beta`): the gradient
+  and Hessian of an MO amplitude are Evaluator properties
+  (`PropertyKind::OrbitalGradient`, `OrbitalHessian`), on grids or at
+  points.
+- `Evaluator::field(grid, property)` returns one one-component property as a
+  `Field`, ready for `write_cube()`.
+- On grids, the amplitudes of all requested orbitals of a spin channel are
+  evaluated in one pass that shares the atomic-orbital values.
+
+Tests and documentation:
+
+- Tests and benchmarks reach the private kernels, and the simple pointwise
+  reference implementations, through `tests/molecule_test_access.hpp`. A
+  new test checks the Evaluator's orbital gradients and Hessians on a grid
+  and at points against the pointwise reference (to 1e-12).
+- `docs/API.md` is reorganized around the two main classes, with the
+  migration table; README, `docs/OPENMP.md`, the benchmark notes and the
+  mathematics document follow the new API.
+
 # chem-kumo 1.13.1 — release notes
 
 A maintenance release from a code, consistency and documentation audit.
