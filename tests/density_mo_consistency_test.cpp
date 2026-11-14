@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Core>
 #include <algorithm>
@@ -21,8 +22,8 @@ void check_close(double a, double b, const std::string& label) {
                          ", tolerance " + kumo_test::num(tolerance) + ")");
 }
 
-void compare(const chem::kumo::DensityDerivatives& a, const chem::kumo::DensityDerivatives& b,
-             const std::string& where) {
+void compare(const chem::kumo::detail::DensityDerivatives& a,
+             const chem::kumo::detail::DensityDerivatives& b, const std::string& where) {
     check_close(a.value, b.value, where + ": MO/DM densities agree");
     check_close(a.tau, b.tau, where + ": MO/DM tau agree");
     check_close(a.laplacian, b.laplacian, where + ": MO/DM Laplacians agree");
@@ -33,13 +34,13 @@ void compare(const chem::kumo::DensityDerivatives& a, const chem::kumo::DensityD
     }
 }
 
-chem::kumo::DensityDerivatives from_mos(const chem::kumo::Molecule& mol,
-                                        const Eigen::Vector3d& point,
-                                        chem::kumo::SpinChannel spin) {
-    chem::kumo::DensityDerivatives out;
+chem::kumo::detail::DensityDerivatives from_mos(const chem::kumo::Molecule& mol,
+                                                const Eigen::Vector3d& point,
+                                                chem::kumo::SpinChannel spin) {
+    chem::kumo::detail::DensityDerivatives out;
     const std::size_t occupied = mol.occupied_count(spin);
     for (std::size_t i = 1; i <= occupied; ++i) {
-        const auto mo = mol.orbital_derivatives(point, i, spin);
+        const auto mo = kumo_test::Kernels::orbital_derivatives(mol, point, i, spin);
         out.value += mo.value * mo.value;
         out.gradient += 2.0 * mo.value * mo.gradient;
         out.hessian += 2.0 * (mo.gradient * mo.gradient.transpose() + mo.value * mo.hessian);
@@ -62,8 +63,10 @@ int main(int argc, char** argv) {
                 points.col(j) = Eigen::Vector3d(0.31 + 0.21 * j, -0.47 + 0.17 * j, 0.39 - 0.11 * j);
             for (auto spin :
                  {chem::kumo::DensityComponent::Alpha, chem::kumo::DensityComponent::Beta}) {
-                const auto block = mol.density_derivatives_blocked(points, spin, 5);
-                const auto block1 = mol.density_derivatives_blocked(points, spin, 1);
+                const auto block =
+                    kumo_test::Kernels::density_derivatives_blocked(mol, points, spin, 5);
+                const auto block1 =
+                    kumo_test::Kernels::density_derivatives_blocked(mol, points, spin, 1);
                 const std::string label = name + " spin " + std::to_string(static_cast<int>(spin));
                 if (!kumo_test::check(block.size() == static_cast<std::size_t>(points.cols()),
                                       label + ": blocked output has one entry per point (got " +
@@ -71,7 +74,7 @@ int main(int argc, char** argv) {
                     continue;
                 for (int j = 0; j < points.cols(); ++j) {
                     const auto r = points.col(j).eval();
-                    const auto reference = mol.density_derivatives(r, spin);
+                    const auto reference = kumo_test::Kernels::density_derivatives(mol, r, spin);
                     const std::string where = label + " point " + std::to_string(j);
                     compare(block[static_cast<std::size_t>(j)], reference, where + " block 5");
                     compare(block1[static_cast<std::size_t>(j)], reference, where + " block 1");
@@ -84,17 +87,18 @@ int main(int argc, char** argv) {
             }
             for (auto spin :
                  {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Difference}) {
-                const auto block = mol.density_derivatives_blocked(points, spin, 7);
+                const auto block =
+                    kumo_test::Kernels::density_derivatives_blocked(mol, points, spin, 7);
                 for (int j = 0; j < points.cols(); ++j)
                     compare(block[static_cast<std::size_t>(j)],
-                            mol.density_derivatives(points.col(j), spin),
+                            kumo_test::Kernels::density_derivatives(mol, points.col(j), spin),
                             name + " spin " + std::to_string(static_cast<int>(spin)) + " point " +
                                 std::to_string(j) + " block 7");
             }
             kumo_test::check_throws<std::invalid_argument>(
                 [&] {
-                    (void)mol.density_derivatives_blocked(points,
-                                                          chem::kumo::DensityComponent::Total, 0);
+                    (void)kumo_test::Kernels::density_derivatives_blocked(
+                        mol, points, chem::kumo::DensityComponent::Total, 0);
                 },
                 name + ": density_derivatives_blocked rejects block size 0");
             if (kumo_test::failures == failures_before)

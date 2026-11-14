@@ -1,3 +1,4 @@
+#include "molecule_test_access.hpp"
 #include "chem/kumo.hpp"
 
 #include <algorithm>
@@ -48,8 +49,8 @@ struct Result {
 
 Result evaluate(const chem::kumo::Molecule& mol, const chem::kumo::Grid& grid,
                 std::size_t block_size) {
-    auto fields = mol.densities_blocked(
-        grid, {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Difference},
+    auto fields = kumo_test::Kernels::densities_blocked(
+        mol, grid, {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Difference},
         block_size);
     const auto a = fields.at(chem::kumo::DensityComponent::Total).values();
     const auto b = fields.at(chem::kumo::DensityComponent::Difference).values();

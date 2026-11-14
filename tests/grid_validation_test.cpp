@@ -3,6 +3,7 @@
 // not (nearly) linearly dependent. The rule is scale-independent, so a valid
 // grid with very small spacing is accepted everywhere.
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 
 #include <cmath>
@@ -46,8 +47,8 @@ void check_all(const Molecule& molecule, const Grid& grid, const std::string& na
     const Evaluator evaluator(molecule, {.threads = 1, .block_size = 4});
 
     const std::function<void()> calls[] = {
-        [&] { (void)molecule.density(grid); },
-        [&] { (void)molecule.orbital(grid, 1, SpinChannel::Alpha); },
+        [&] { (void)kumo_test::Kernels::density(molecule, grid); },
+        [&] { (void)kumo_test::Kernels::orbital(molecule, grid, 1, SpinChannel::Alpha); },
         [&] { (void)evaluator.evaluate(grid, derivatives); },
         [&] { (void)evaluator.evaluate(grid, orbital_request); },
         [&] { (void)evaluator.evaluate(grid, potential_request); },

@@ -1,5 +1,6 @@
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/basis_evaluator.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Core>
 #include <algorithm>
@@ -62,7 +63,8 @@ int main(int argc, char** argv) {
                                           DensityComponent::Beta, DensityComponent::Difference}) {
                 const Eigen::MatrixXd p = m.density_matrix(spin);
                 const double direct = ao.dot(p * ao);
-                const double reference = m.density_derivatives(point, spin).value;
+                const double reference =
+                    kumo_test::Kernels::density_derivatives(m, point, spin).value;
                 const double tolerance =
                     1e-9 * std::max({1.0, std::abs(direct), std::abs(reference)});
                 kumo_test::check(!(std::abs(direct - reference) > tolerance),

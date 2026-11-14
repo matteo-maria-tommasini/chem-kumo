@@ -11,7 +11,7 @@
 #include <vector>
 
 namespace chem::kumo::detail {
-struct AoMoTestAccess {
+struct MoleculeTestAccess {
     static auto run(const Molecule& m,
                     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                     const std::vector<DensityComponent>& components, std::size_t block, int order) {
@@ -42,7 +42,7 @@ struct AoMoTestAccess {
         const auto y = p * ao.values;
         const auto pg = p * ao.gradient;
         constexpr int index[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
-        DensityDerivatives d;
+        detail::DensityDerivatives d;
         d.value = ao.values.dot(y);
         for (int a = 0; a < 3; ++a) {
             d.gradient[a] = 2.0 * ao.gradient.col(a).dot(y);
@@ -89,7 +89,8 @@ void accumulate(ErrorRecord& rec, double left, double right, std::size_t point,
 struct Comparison {
     ErrorRecord rho, grad, hessian, laplacian, tau;
 
-    void add(const DensityDerivatives& a, const DensityDerivatives& b, std::size_t j) {
+    void add(const detail::DensityDerivatives& a, const detail::DensityDerivatives& b,
+             std::size_t j) {
         accumulate(rho, a.value, b.value, j, "rho");
         for (int k = 0; k < 3; ++k)
             accumulate(grad, a.gradient[k], b.gradient[k], j, std::string("grad_") + "xyz"[k]);
@@ -146,7 +147,7 @@ int main(int argc, char** argv) {
             const auto m = Molecule::from_fchk(argv[arg]);
             if (!m.electronic_structure_info().ao_mo_eligible())
                 throw std::runtime_error(std::string("AO-MO ineligible: ") + argv[arg]);
-            const auto [reconstructed, original] = detail::AoMoTestAccess::matrices(m);
+            const auto [reconstructed, original] = detail::MoleculeTestAccess::matrices(m);
             std::cout << "file=" << argv[arg] << " basis=" << m.basis_size() << '\n';
             for (DensityComponent spin : spins) {
                 const auto& pm = reconstructed.at(spin);
@@ -155,14 +156,14 @@ int main(int argc, char** argv) {
                           << '\n';
             }
             for (std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}}) {
-                const auto mo = detail::AoMoTestAccess::run(m, points, spins, block, 2);
+                const auto mo = detail::MoleculeTestAccess::run(m, points, spins, block, 2);
                 std::cout << "block=" << block << '\n';
                 for (DensityComponent spin : spins) {
                     Comparison algorithm, representation, total;
                     for (std::size_t j = 0; j < static_cast<std::size_t>(points.cols()); ++j) {
-                        const auto rec = detail::AoMoTestAccess::reference(
+                        const auto rec = detail::MoleculeTestAccess::reference(
                             m, points.col(static_cast<Eigen::Index>(j)), reconstructed.at(spin));
-                        const auto fchk = detail::AoMoTestAccess::reference(
+                        const auto fchk = detail::MoleculeTestAccess::reference(
                             m, points.col(static_cast<Eigen::Index>(j)), original.at(spin));
                         const auto& orbital = mo.at(spin).at(j);
                         algorithm.add(orbital, rec, j);

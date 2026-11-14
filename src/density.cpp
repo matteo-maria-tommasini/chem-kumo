@@ -25,7 +25,7 @@ namespace {
 // `out` must start zeroed; Hessians are left zero for ao_order 1.
 void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
                           const Eigen::Ref<const Eigen::MatrixXd>& product, Eigen::Index b,
-                          Eigen::Index j, int ao_order, DensityDerivatives& out) {
+                          Eigen::Index j, int ao_order, detail::DensityDerivatives& out) {
     const auto y = product.col(j);
     out.value = ao.col(j).dot(y);
     for (int a = 0; a < 3; ++a) {
@@ -46,9 +46,9 @@ void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
 // scale 1/2 this gives alpha = (total + spin) / 2 and beta = (total - spin) / 2
 // from the total and spin contractions; with scale 1, total = alpha + beta and
 // spin = alpha - beta. The Laplacian is the trace of the combined Hessian.
-DensityDerivatives combine(const DensityDerivatives& a, const DensityDerivatives& b, double sign,
-                           double scale) {
-    DensityDerivatives d;
+detail::DensityDerivatives combine(const detail::DensityDerivatives& a,
+                                   const detail::DensityDerivatives& b, double sign, double scale) {
+    detail::DensityDerivatives d;
     d.value = scale * (a.value + sign * b.value);
     d.gradient = scale * (a.gradient + sign * b.gradient);
     d.hessian = scale * (a.hessian + sign * b.hessian);
@@ -58,14 +58,14 @@ DensityDerivatives combine(const DensityDerivatives& a, const DensityDerivatives
 }
 
 // Store `value` at `slot` of the component `spin`, if it was requested.
-void store(std::map<DensityComponent, std::vector<DensityDerivatives>>& result,
-           DensityComponent spin, std::size_t slot, const DensityDerivatives& value) {
+void store(std::map<DensityComponent, std::vector<detail::DensityDerivatives>>& result,
+           DensityComponent spin, std::size_t slot, const detail::DensityDerivatives& value) {
     if (auto it = result.find(spin); it != result.end()) it->second[slot] = value;
 }
 } // namespace
 
-DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
-                                                 DensityComponent component) const {
+detail::DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
+                                                         DensityComponent component) const {
     if (!point.allFinite()) throw std::invalid_argument("density evaluation point must be finite");
     // P is the (symmetric) AO density matrix of the requested component; for
     // alpha and beta it is built from the FCHK total and spin matrices as
@@ -75,7 +75,7 @@ DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
     const auto ao = evaluator_.evaluate_derivatives(point);
     const Eigen::VectorXd y = p * ao.values;
     const Eigen::Matrix<double, Eigen::Dynamic, 3> pg = p * ao.gradient;
-    DensityDerivatives result;
+    detail::DensityDerivatives result;
     result.value = ao.values.dot(y);
     result.gradient = 2.0 * ao.gradient.transpose() * y;
     for (int a = 0; a < 3; ++a) {
@@ -91,7 +91,7 @@ DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
     return result;
 }
 
-std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
+std::vector<detail::DensityDerivatives> Molecule::density_derivatives_blocked(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     DensityComponent component, std::size_t block_size, double screening_threshold) const {
     if (block_size == 0) throw std::invalid_argument("block size must be positive");
@@ -102,7 +102,7 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
     const auto n = static_cast<Eigen::Index>(basis_size());
     const auto count = static_cast<std::size_t>(points.cols());
     const auto capacity = static_cast<Eigen::Index>(std::min(block_size, count));
-    std::vector<DensityDerivatives> result(count);
+    std::vector<detail::DensityDerivatives> result(count);
 
     struct Workspace {
         Eigen::MatrixXd ao; // value, x, y, z, then the AO Hessian (xx, xy, xz, yy, yz, zz)
@@ -143,7 +143,8 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
 // Total and spin are contracted with the FCHK matrices; alpha and beta are
 // linear combinations of these contractions, never reconstructed from MO
 // occupations.
-std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
+std::map<DensityComponent, std::vector<detail::DensityDerivatives>>
+Molecule::density_derivatives_shared(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     const std::vector<DensityComponent>& components, std::size_t block_size, int ao_order,
     double screening_threshold) const {
@@ -153,7 +154,7 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
     detail::validate_screening_threshold(screening_threshold);
     const std::size_t count = static_cast<std::size_t>(points.cols());
-    std::map<DensityComponent, std::vector<DensityDerivatives>> result;
+    std::map<DensityComponent, std::vector<detail::DensityDerivatives>> result;
     bool total_needed = false, spin_needed = false;
     for (DensityComponent component : components) {
         switch (component) {
@@ -209,7 +210,7 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
             // Contract the total and spin matrices once per point, then derive
             // alpha and beta from them as needed.
             for (Eigen::Index j = 0; j < b; ++j) {
-                DensityDerivatives t, s;
+                detail::DensityDerivatives t, s;
                 if (total_needed) contract_derivatives(ao, product_total, b, j, ao_order, t);
                 if (spin_needed) contract_derivatives(ao, product_spin, b, j, ao_order, s);
                 const auto slot = range.start + static_cast<std::size_t>(j);
@@ -227,7 +228,8 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
 // Validated occupied-MO contraction for electron-density derivatives.
 // Evaluator selects this backend when the orbital representation is eligible;
 // AO-P remains available as the general density-matrix reference.
-std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
+std::map<DensityComponent, std::vector<detail::DensityDerivatives>>
+Molecule::density_derivatives_mo(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
     const std::vector<DensityComponent>& components, std::size_t block_size, int ao_order,
     double screening_threshold) const {
@@ -240,7 +242,7 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
     if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
     detail::validate_screening_threshold(screening_threshold);
     const std::size_t count = static_cast<std::size_t>(points.cols());
-    std::map<DensityComponent, std::vector<DensityDerivatives>> result;
+    std::map<DensityComponent, std::vector<detail::DensityDerivatives>> result;
     for (DensityComponent c : components) {
         switch (c) {
         case DensityComponent::Total:
@@ -282,7 +284,7 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
     };
     // Density derivatives of one spin channel at point j of the block.
     const auto contract = [&](const Projection& v, Eigen::Index j) {
-        DensityDerivatives d;
+        detail::DensityDerivatives d;
         if (v[0].size() == 0) return d;
         d.value = v[0].col(j).squaredNorm();
         if (ao_order == 0) return d;
@@ -325,8 +327,8 @@ std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_de
             if (need_b && !beta_is_alpha)
                 project(detail::kept_rows(cb_occ, kept, w.cb_kept), panels_kept, b, vb);
             for (Eigen::Index j = 0; j < b; ++j) {
-                const auto alpha = need_a ? contract(va, j) : DensityDerivatives{};
-                DensityDerivatives beta;
+                const auto alpha = need_a ? contract(va, j) : detail::DensityDerivatives{};
+                detail::DensityDerivatives beta;
                 if (beta_is_alpha)
                     beta = alpha;
                 else if (need_b)
@@ -354,25 +356,6 @@ Field Molecule::density_pointwise(const Grid& grid, DensityComponent spin) const
         values[q] = ao.dot(p * ao);
     }
     return Field(grid, atoms_, std::move(values));
-}
-
-Field Molecule::density(const Grid& grid, DensityComponent spin) const {
-    auto fields = densities_blocked(grid, {spin});
-    return std::move(fields.at(spin));
-}
-
-SpinDensities Molecule::spin_densities(const Grid& grid) const {
-    auto fields = densities_blocked(grid, {DensityComponent::Total, DensityComponent::Alpha,
-                                           DensityComponent::Beta, DensityComponent::Difference});
-    return {std::move(fields.at(DensityComponent::Total)),
-            std::move(fields.at(DensityComponent::Alpha)),
-            std::move(fields.at(DensityComponent::Beta)),
-            std::move(fields.at(DensityComponent::Difference))};
-}
-
-std::map<DensityComponent, Field>
-Molecule::densities(const Grid& grid, std::initializer_list<DensityComponent> components) const {
-    return densities_blocked(grid, components);
 }
 
 std::map<DensityComponent, Field>

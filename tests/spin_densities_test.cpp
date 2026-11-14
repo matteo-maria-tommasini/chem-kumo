@@ -1,6 +1,7 @@
 // spin_densities() must agree with the four single-component density() calls
 // and satisfy total = alpha + beta and spin = alpha - beta pointwise.
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -13,11 +14,15 @@ int main(int argc, char** argv) {
         for (int t = 1; t < argc; ++t) {
             const auto molecule = chem::kumo::Molecule::from_fchk(argv[t]);
             auto grid = chem::kumo::Grid::around(molecule.atoms(), 1.5, 0.6);
-            auto all = molecule.spin_densities(grid);
-            const auto a = molecule.density(grid, chem::kumo::DensityComponent::Alpha);
-            const auto b = molecule.density(grid, chem::kumo::DensityComponent::Beta);
-            const auto total = molecule.density(grid, chem::kumo::DensityComponent::Total);
-            const auto spin = molecule.density(grid, chem::kumo::DensityComponent::Difference);
+            auto all = kumo_test::Kernels::spin_densities(molecule, grid);
+            const auto a =
+                kumo_test::Kernels::density(molecule, grid, chem::kumo::DensityComponent::Alpha);
+            const auto b =
+                kumo_test::Kernels::density(molecule, grid, chem::kumo::DensityComponent::Beta);
+            const auto total =
+                kumo_test::Kernels::density(molecule, grid, chem::kumo::DensityComponent::Total);
+            const auto spin = kumo_test::Kernels::density(molecule, grid,
+                                                          chem::kumo::DensityComponent::Difference);
             double worst = 0.0;
             for (std::size_t i = 0; i < all.total.values().size(); ++i) {
                 const double av = all.alpha.values()[i], bv = all.beta.values()[i];

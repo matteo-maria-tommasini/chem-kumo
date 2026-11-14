@@ -1,5 +1,6 @@
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <map>
@@ -20,7 +21,7 @@ int main(int argc, char** argv) {
                 chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
                 chem::kumo::DensityComponent::Beta, chem::kumo::DensityComponent::Difference};
             kumo_test::set_threads(1);
-            const auto reference = mol.densities_blocked(grid, components, 64);
+            const auto reference = kumo_test::Kernels::densities_blocked(mol, grid, components, 64);
             // Single-thread results by block size: with the same blocks, other
             // thread counts must give identical values (blocks are independent).
             std::map<std::size_t, std::map<chem::kumo::DensityComponent, chem::kumo::Field>> serial;
@@ -28,7 +29,8 @@ int main(int argc, char** argv) {
                 kumo_test::set_threads(threads);
                 for (std::size_t block :
                      {std::size_t(1), std::size_t(32), std::size_t(64), std::size_t(128)}) {
-                    const auto fields = mol.densities_blocked(grid, components, block);
+                    const auto fields =
+                        kumo_test::Kernels::densities_blocked(mol, grid, components, block);
                     if (threads == 1) serial.emplace(block, fields);
                     for (auto spin : components) {
                         const auto a = reference.at(spin).values();

@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <array>
@@ -51,7 +52,8 @@ void validate(const Molecule& molecule, std::size_t block_size) {
                         {.threads = 1, .block_size = block_size, .backend = Backend::AO_P});
     const auto fused = evaluator.evaluate(grid, request);
     for (std::size_t c = 0; c < components.size(); ++c) {
-        const auto reference = molecule.density_derivatives_blocked(points, spins[c], block_size);
+        const auto reference =
+            kumo_test::Kernels::density_derivatives_blocked(molecule, points, spins[c], block_size);
         const DensityDescriptor d{components[c]};
         const auto& grad = fused.get(d.gradient());
         const auto& hess = fused.get(d.hessian());

@@ -53,6 +53,12 @@ kumo_dep = declare_dependency(
     dependencies: [eigen_dep, zlib_dep] + openmp_deps,
 )
 meson.override_dependency('chem-kumo', kumo_dep)
+# Benchmarks of the private evaluation kernels reach them through the test
+# access header tests/molecule_test_access.hpp.
+kumo_bench_dep = declare_dependency(
+    dependencies: kumo_dep,
+    include_directories: include_directories('tests'),
+)
 # Installed consumers can discover the public headers and shared library.
 # Eigen appears in public headers; zlib is an implementation dependency.
 pkg = import('pkgconfig')
@@ -171,11 +177,11 @@ test(
     timeout: 120,
 )
 if benchmarks_enabled
-    executable('kumo-benchmark', 'benchmarks/density_benchmark.cpp', dependencies: kumo_dep)
+    executable('kumo-benchmark', 'benchmarks/density_benchmark.cpp', dependencies: kumo_bench_dep)
 endif
 
 if benchmarks_enabled
-    executable('kumo-profile', 'benchmarks/profile.cpp', dependencies: kumo_dep)
+    executable('kumo-profile', 'benchmarks/profile.cpp', dependencies: kumo_bench_dep)
 endif
 
 
@@ -188,7 +194,7 @@ test(
     ],
 )
 if benchmarks_enabled
-    executable('kumo-ao-benchmark', 'benchmarks/ao_benchmark.cpp', dependencies: kumo_dep)
+    executable('kumo-ao-benchmark', 'benchmarks/ao_benchmark.cpp', dependencies: kumo_bench_dep)
 endif
 
 blocked_test = executable('kumo-blocked-test', 'tests/blocked_test.cpp', dependencies: kumo_dep)
@@ -201,14 +207,18 @@ test(
     ],
 )
 if benchmarks_enabled
-    executable('kumo-block-benchmark', 'benchmarks/block_benchmark.cpp', dependencies: kumo_dep)
+    executable(
+        'kumo-block-benchmark',
+        'benchmarks/block_benchmark.cpp',
+        dependencies: kumo_bench_dep,
+    )
 endif
 
 if benchmarks_enabled
     executable(
         'kumo-parallel-density-benchmark',
         'benchmarks/parallel_density_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -216,7 +226,7 @@ if benchmarks_enabled
     executable(
         'kumo-parallel-fields-benchmark',
         'benchmarks/parallel_fields_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -224,7 +234,7 @@ if benchmarks_enabled
     executable(
         'kumo-backend-comparison',
         'benchmarks/backend_comparison_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -523,7 +533,7 @@ if benchmarks_enabled
     executable(
         'kumo-spatial-benchmark',
         'benchmarks/spatial_derivatives_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -608,7 +618,7 @@ if benchmarks_enabled
     executable(
         'kumo-derivative-backend-comparison',
         'benchmarks/derivative_backend_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -787,7 +797,7 @@ if benchmarks_enabled
     executable(
         'kumo-shared-ao-benchmark',
         'benchmarks/shared_ao_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -811,7 +821,7 @@ if benchmarks_enabled
     executable(
         'kumo-selective-ao-benchmark',
         'benchmarks/selective_ao_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -843,7 +853,11 @@ test(
 
 # Manual three-way AO-MO numerical diagnostic.
 if benchmarks_enabled
-    executable('kumo-ao-mo-diagnostic', 'benchmarks/ao_mo_diagnostic.cpp', dependencies: kumo_dep)
+    executable(
+        'kumo-ao-mo-diagnostic',
+        'benchmarks/ao_mo_diagnostic.cpp',
+        dependencies: kumo_bench_dep,
+    )
 endif
 
 # Explicit AO_P / AO_MO Evaluator backend selection.
@@ -866,7 +880,7 @@ if benchmarks_enabled
     executable(
         'kumo-evaluator-backend-benchmark',
         'benchmarks/evaluator_backend_benchmark.cpp',
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 
@@ -887,7 +901,7 @@ if benchmarks_enabled
         'kumo-automatic-backend-benchmark',
         'benchmarks/automatic_backend_benchmark.cpp',
         include_directories: include_directories('src'),
-        dependencies: kumo_dep,
+        dependencies: kumo_bench_dep,
     )
 endif
 

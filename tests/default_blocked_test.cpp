@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -17,10 +18,12 @@ int main(int argc, char** argv) {
             double max_abs = 0.0;
             for (auto spin : {DensityComponent::Total, DensityComponent::Alpha,
                               DensityComponent::Beta, DensityComponent::Difference}) {
-                const auto reference = molecule.density_pointwise(grid, spin);
-                const auto current = molecule.density(grid, spin);
-                const auto explicit_block = molecule.densities_blocked(grid, {spin}, 128).at(spin);
-                const auto selected = molecule.densities(grid, {spin}).at(spin);
+                const auto reference = kumo_test::Kernels::density_pointwise(molecule, grid, spin);
+                const auto current = kumo_test::Kernels::density(molecule, grid, spin);
+                const auto explicit_block =
+                    kumo_test::Kernels::densities_blocked(molecule, grid, {spin}, 128).at(spin);
+                const auto selected =
+                    kumo_test::Kernels::densities_blocked(molecule, grid, {spin}).at(spin);
                 auto a = reference.values(), b = current.values(), c = explicit_block.values(),
                      d = selected.values();
                 const bool finite =
@@ -33,10 +36,11 @@ int main(int argc, char** argv) {
                                     kumo_test::max_abs_diff(c, a, name + " densities_blocked()"),
                                     kumo_test::max_abs_diff(d, a, name + " densities()")});
             }
-            const auto combined = molecule.spin_densities(grid);
+            const auto combined = kumo_test::Kernels::spin_densities(molecule, grid);
             for (auto spin : {DensityComponent::Total, DensityComponent::Alpha,
                               DensityComponent::Beta, DensityComponent::Difference}) {
-                const auto reference_field = molecule.density_pointwise(grid, spin);
+                const auto reference_field =
+                    kumo_test::Kernels::density_pointwise(molecule, grid, spin);
                 const auto& field = spin == DensityComponent::Total   ? combined.total
                                     : spin == DensityComponent::Alpha ? combined.alpha
                                     : spin == DensityComponent::Beta  ? combined.beta

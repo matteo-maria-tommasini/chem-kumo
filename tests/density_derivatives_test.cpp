@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Core>
 #include <algorithm>
@@ -34,13 +35,13 @@ int main(int argc, char** argv) {
             for (int t = 0; t < 9; ++t) {
                 const Eigen::Vector3d r(0.41 + 0.29 * t, -0.37 + 0.13 * t, 0.23 - 0.17 * t);
                 context = std::string(argv[file]) + " point " + std::to_string(t) + ": ";
-                const auto total = molecule.density_derivatives(r);
-                const auto alpha =
-                    molecule.density_derivatives(r, chem::kumo::DensityComponent::Alpha);
-                const auto beta =
-                    molecule.density_derivatives(r, chem::kumo::DensityComponent::Beta);
-                const auto spin =
-                    molecule.density_derivatives(r, chem::kumo::DensityComponent::Difference);
+                const auto total = kumo_test::Kernels::density_derivatives(molecule, r);
+                const auto alpha = kumo_test::Kernels::density_derivatives(
+                    molecule, r, chem::kumo::DensityComponent::Alpha);
+                const auto beta = kumo_test::Kernels::density_derivatives(
+                    molecule, r, chem::kumo::DensityComponent::Beta);
+                const auto spin = kumo_test::Kernels::density_derivatives(
+                    molecule, r, chem::kumo::DensityComponent::Difference);
                 for (const auto* f : {&total, &alpha, &beta, &spin}) {
                     require(std::isfinite(f->value) && f->gradient.allFinite() &&
                                 f->hessian.allFinite() && std::isfinite(f->tau),
@@ -58,9 +59,12 @@ int main(int argc, char** argv) {
                          {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
                           chem::kumo::DensityComponent::Beta,
                           chem::kumo::DensityComponent::Difference}) {
-                        const auto exact = molecule.density_derivatives(r, component);
-                        const auto plus = molecule.density_derivatives(rp, component);
-                        const auto minus = molecule.density_derivatives(rm, component);
+                        const auto exact =
+                            kumo_test::Kernels::density_derivatives(molecule, r, component);
+                        const auto plus =
+                            kumo_test::Kernels::density_derivatives(molecule, rp, component);
+                        const auto minus =
+                            kumo_test::Kernels::density_derivatives(molecule, rm, component);
                         const double fd = (plus.value - minus.value) / (2 * step);
                         max_gradient = std::max(max_gradient, std::abs(fd - exact.gradient[a]));
                         close(fd, exact.gradient[a], 2.e-4, 2.e-5,
@@ -98,11 +102,14 @@ int main(int argc, char** argv) {
                 chem::kumo::Grid one;
                 one.origin = r;
                 one.counts = Eigen::Vector3i::Ones();
-                close(total.value, molecule.density_pointwise(one)(0, 0, 0), 1.e-10, 1.e-12,
-                      "density value matches density_pointwise()");
+                close(total.value, kumo_test::Kernels::density_pointwise(molecule, one)(0, 0, 0),
+                      1.e-10, 1.e-12, "density value matches density_pointwise()");
             }
             kumo_test::check_throws<std::invalid_argument>(
-                [&] { (void)molecule.density_derivatives(Eigen::Vector3d::Constant(NAN)); },
+                [&] {
+                    (void)kumo_test::Kernels::density_derivatives(molecule,
+                                                                  Eigen::Vector3d::Constant(NAN));
+                },
                 std::string(argv[file]) + ": density_derivatives rejects a nonfinite point");
             std::cout << argv[file] << " grad=" << max_gradient << " hessian=" << max_hessian
                       << '\n';

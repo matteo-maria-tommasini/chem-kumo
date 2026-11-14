@@ -1,3 +1,4 @@
+#include "molecule_test_access.hpp"
 #include "chem/kumo.hpp"
 #include <Eigen/Core>
 #include <algorithm>
@@ -59,7 +60,7 @@ Eigen::Matrix<double, 3, Eigen::Dynamic> grid_points(const Grid& grid) {
 }
 
 // All reported components enter the comparison; never compare only a checksum.
-void append(std::vector<double>& dest, const chem::kumo::DensityDerivatives& x) {
+void append(std::vector<double>& dest, const chem::kumo::detail::DensityDerivatives& x) {
     dest.push_back(x.value);
     for (int k = 0; k < 3; ++k)
         dest.push_back(x.gradient[k]);
@@ -70,35 +71,36 @@ void append(std::vector<double>& dest, const chem::kumo::DensityDerivatives& x) 
     dest.push_back(x.tau);
 }
 
-void append(std::vector<double>& dest, const chem::kumo::OrbitalDerivatives& x) {
-    dest.push_back(x.value);
-    for (int k = 0; k < 3; ++k)
-        dest.push_back(x.gradient[k]);
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            dest.push_back(x.hessian(i, j));
-}
-
 std::vector<double> evaluate(const Molecule& mol, const Grid& grid,
                              const Eigen::Matrix<double, 3, Eigen::Dynamic>& points,
                              const std::string& mode, std::size_t block, std::size_t mo_index,
                              const std::vector<std::size_t>& mo_indices) {
     std::vector<double> out;
     if (mode == "density-derivatives") {
-        const auto values = mol.density_derivatives_blocked(points, DensityComponent::Total, block);
+        const auto values = kumo_test::Kernels::density_derivatives_blocked(
+            mol, points, DensityComponent::Total, block);
         out.reserve(values.size() * 15);
         for (const auto& x : values)
             append(out, x);
     } else if (mode == "mo-derivatives") {
-        const auto values =
-            mol.orbital_derivatives_blocked(points, mo_index, SpinChannel::Alpha, block);
-        out.reserve(values.size() * 13);
-        for (const auto& x : values)
-            append(out, x);
+        // The Evaluator's orbital pass: amplitude, gradient and Hessian.
+        chem::kumo::EvaluationOptions options;
+        options.block_size = block;
+        const auto orbital = chem::kumo::orbital::alpha(mo_index);
+        const auto results = chem::kumo::Evaluator(mol, options)
+                                 .evaluate(points, chem::kumo::Request()
+                                                       .add(orbital.value())
+                                                       .add(orbital.gradient())
+                                                       .add(orbital.hessian()));
+        for (const auto property : {orbital.value(), orbital.gradient(), orbital.hessian()}) {
+            const auto& field = results.get(property);
+            for (std::size_t c = 0; c < field.components.size(); ++c)
+                out.insert(out.end(), field.component(c).begin(), field.component(c).end());
+        }
     } else if (mode == "mo-single" || mode == "mo-multiple") {
         const std::vector<std::size_t> indices =
             mode == "mo-single" ? std::vector<std::size_t>{mo_index} : mo_indices;
-        const auto fields = mol.orbitals(grid, indices, SpinChannel::Alpha);
+        const auto fields = kumo_test::Kernels::orbitals(mol, grid, indices, SpinChannel::Alpha);
         out.reserve(points.cols() * static_cast<Eigen::Index>(indices.size()));
         for (const auto& field : fields) {
             const auto values = field.values();

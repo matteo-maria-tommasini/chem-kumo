@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Core>
 #include <algorithm>
@@ -7,6 +8,59 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+
+namespace {
+// The Evaluator's OrbitalGradient and OrbitalHessian, at the points of a small
+// grid and at the same points given as a matrix, against the pointwise
+// reference: equal to rounding (1e-12 of the largest magnitude).
+void check_evaluator(const chem::kumo::Molecule& mol, const std::string& name,
+                     chem::kumo::SpinChannel channel, std::size_t index) {
+    using namespace chem::kumo;
+    const auto orbital =
+        channel == SpinChannel::Alpha ? orbital::alpha(index) : orbital::beta(index);
+    const Grid grid =
+        Grid::plane(mol.atoms().front().position, mol.atoms().back().position,
+                    mol.atoms().front().position + Eigen::Vector3d(0.3, 0.7, 0.2), 0.8, 0.45);
+    const auto n = static_cast<Eigen::Index>(static_cast<std::size_t>(grid.counts.prod()));
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, n);
+    for (Eigen::Index q = 0; q < n; ++q)
+        points.col(q) =
+            grid.origin +
+            grid.steps * Eigen::Vector3d(static_cast<double>(q / grid.counts[2] / grid.counts[1]),
+                                         static_cast<double>(q / grid.counts[2] % grid.counts[1]),
+                                         static_cast<double>(q % grid.counts[2]));
+    const auto request = Request().add(orbital.gradient()).add(orbital.hessian());
+    const Evaluator evaluator(mol);
+    const auto on_grid = evaluator.evaluate(grid, request);
+    const auto at_points = evaluator.evaluate(points, request);
+    constexpr int column[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
+    double worst = 0.0;
+    for (const auto* results : {&on_grid, &at_points})
+        for (Eigen::Index q = 0; q < n; ++q) {
+            const auto p = static_cast<std::size_t>(q);
+            const auto exact =
+                kumo_test::Kernels::orbital_derivatives(mol, points.col(q), index, channel);
+            const double scale = std::max(
+                {1.0, exact.gradient.cwiseAbs().maxCoeff(), exact.hessian.cwiseAbs().maxCoeff()});
+            for (std::size_t a = 0; a < 3; ++a) {
+                worst = std::max(worst, std::abs(results->get(orbital.gradient()).component(a)[p] -
+                                                 exact.gradient[static_cast<Eigen::Index>(a)]) /
+                                            scale);
+                for (int b = 0; b < 3; ++b)
+                    worst = std::max(
+                        worst, std::abs(results->get(orbital.hessian())
+                                            .component(static_cast<std::size_t>(column[a][b]))[p] -
+                                        exact.hessian(static_cast<Eigen::Index>(a), b)) /
+                                   scale);
+            }
+        }
+    kumo_test::check(worst <= 1e-12, name + " MO " + std::to_string(index) +
+                                         ": Evaluator orbital gradient and Hessian, on a grid "
+                                         "and at points, equal the pointwise reference to 1e-12 "
+                                         "(worst " +
+                                         kumo_test::num(worst) + ")");
+}
+} // namespace
 
 int main(int argc, char** argv) {
     if (!kumo_test::require_args(argc, argv, 2, 2, "FILE1.fchk FILE2.fchk")) return 2;
@@ -28,9 +82,11 @@ int main(int argc, char** argv) {
                     std::min<std::size_t>(static_cast<std::size_t>(mol.occupied_count(channel)) + 1,
                                           count)};
                 for (const auto index : indices) {
+                    check_evaluator(mol, name, channel, index);
                     for (int t = 0; t < 8; ++t) {
                         const Eigen::Vector3d r(0.41 + 0.33 * t, -0.37 + 0.17 * t, 0.23 - 0.13 * t);
-                        const auto exact = mol.orbital_derivatives(r, index, channel);
+                        const auto exact =
+                            kumo_test::Kernels::orbital_derivatives(mol, r, index, channel);
                         // The analytic Hessian is assembled symmetrically; 1e-13
                         // allows rounding only.
                         kumo_test::check(
@@ -47,8 +103,10 @@ int main(int argc, char** argv) {
                             Eigen::Vector3d rp = r, rm = r;
                             rp[a] += h;
                             rm[a] -= h;
-                            const auto plus = mol.orbital_derivatives(rp, index, channel);
-                            const auto minus = mol.orbital_derivatives(rm, index, channel);
+                            const auto plus =
+                                kumo_test::Kernels::orbital_derivatives(mol, rp, index, channel);
+                            const auto minus =
+                                kumo_test::Kernels::orbital_derivatives(mol, rm, index, channel);
                             const double fd1 = (plus.value - minus.value) / (2 * h);
                             max_gradient =
                                 std::max(max_gradient, std::abs(fd1 - exact.gradient[a]));
@@ -79,12 +137,14 @@ int main(int argc, char** argv) {
                                  "(max_abs=" +
                                  kumo_test::num(max_hessian) + ")");
             kumo_test::check_throws<std::out_of_range>(
-                [&] { (void)mol.orbital_derivatives(Eigen::Vector3d::Zero(), 0); },
+                [&] {
+                    (void)kumo_test::Kernels::orbital_derivatives(mol, Eigen::Vector3d::Zero(), 0);
+                },
                 name + ": orbital_derivatives rejects MO index 0");
             kumo_test::check_throws<std::invalid_argument>(
                 [&] {
-                    (void)mol.orbital_derivatives(Eigen::Vector3d::Zero(), 1,
-                                                  static_cast<chem::kumo::SpinChannel>(7));
+                    (void)kumo_test::Kernels::orbital_derivatives(
+                        mol, Eigen::Vector3d::Zero(), 1, static_cast<chem::kumo::SpinChannel>(7));
                 },
                 name + ": orbital_derivatives rejects an invalid spin channel");
         }

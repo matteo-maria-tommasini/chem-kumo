@@ -1,5 +1,7 @@
 #include "cli/orbital_output.hpp"
 
+#include "chem/kumo/evaluator.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <iomanip>
@@ -124,7 +126,13 @@ void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Opt
         numbers.push_back(std::to_string(n));
     console.begin("Evaluating " + spin_name(channel) + " molecular orbital" +
                   (indices.size() > 1 ? "s " : " ") + join(numbers));
-    auto fields = mol.orbitals(grid, indices, channel, console.progress());
+    chem::kumo::Request request;
+    for (auto n : indices)
+        request.add(channel == SpinChannel::Alpha ? chem::kumo::orbital::alpha(n).value()
+                                                  : chem::kumo::orbital::beta(n).value());
+    chem::kumo::EvaluationOptions options;
+    options.progress = console.progress();
+    const auto results = chem::kumo::Evaluator(mol, options).evaluate(grid, request);
     console.end("Evaluated in");
     console.begin("Writing " + std::to_string(indices.size()) + " Cube file" +
                   (indices.size() > 1 ? "s" : ""));
@@ -132,9 +140,15 @@ void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Opt
         const auto n = indices[j];
         const auto filename =
             o.prefix + "_" + spin_name(channel) + "_mo_" + std::to_string(n) + ".cube";
-        fields[j].write_orbital_cube(filename, n,
-                                     "Molecular orbital amplitude (signed), " + spin_name(channel) +
-                                         " MO " + std::to_string(n));
+        const auto values =
+            results
+                .get(channel == SpinChannel::Alpha ? chem::kumo::orbital::alpha(n).value()
+                                                   : chem::kumo::orbital::beta(n).value())
+                .component();
+        chem::kumo::Field(grid, mol.atoms(), {values.begin(), values.end()})
+            .write_orbital_cube(filename, n,
+                                "Molecular orbital amplitude (signed), " + spin_name(channel) +
+                                    " MO " + std::to_string(n));
         std::cout << filename << "\n";
     }
     console.end("Written in");

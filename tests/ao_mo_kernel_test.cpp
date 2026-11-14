@@ -1,4 +1,5 @@
 #include "chem/kumo/density.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/Eigenvalues>
 #include <algorithm>
@@ -9,48 +10,6 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
-
-namespace chem::kumo::detail {
-struct AoMoTestAccess {
-    static auto run(const Molecule& m,
-                    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-                    const std::vector<DensityComponent>& components, std::size_t block, int order) {
-        return m.density_derivatives_mo(points, components, block, order);
-    }
-
-    static auto reconstructed_matrices(const Molecule& m) {
-        const auto& cb = m.unrestricted_ ? m.beta_mos_ : m.alpha_mos_;
-        const Eigen::MatrixXd pa =
-            m.alpha_mos_.leftCols(m.nalpha_) * m.alpha_mos_.leftCols(m.nalpha_).transpose();
-        const Eigen::MatrixXd pb = cb.leftCols(m.nbeta_) * cb.leftCols(m.nbeta_).transpose();
-        std::map<DensityComponent, Eigen::MatrixXd> result;
-        result.emplace(DensityComponent::Alpha, pa);
-        result.emplace(DensityComponent::Beta, pb);
-        result.emplace(DensityComponent::Total, pa + pb);
-        result.emplace(DensityComponent::Difference, pa - pb);
-        return result;
-    }
-
-    static DensityDerivatives ao_p_reference(const Molecule& m, const Eigen::Vector3d& point,
-                                             const Eigen::MatrixXd& p) {
-        const auto ao = m.evaluator_.evaluate_derivatives(point, 2);
-        const auto y = p * ao.values;
-        const auto pg = p * ao.gradient;
-        constexpr int index[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
-        DensityDerivatives d;
-        d.value = ao.values.dot(y);
-        for (int a = 0; a < 3; ++a) {
-            d.gradient[a] = 2.0 * ao.gradient.col(a).dot(y);
-            d.tau += 0.5 * ao.gradient.col(a).dot(pg.col(a));
-            for (int b = a; b < 3; ++b)
-                d.hessian(a, b) = d.hessian(b, a) =
-                    2.0 * (ao.hessian.col(index[a][b]).dot(y) + ao.gradient.col(a).dot(pg.col(b)));
-        }
-        d.laplacian = d.hessian.trace();
-        return d;
-    }
-};
-} // namespace chem::kumo::detail
 
 using namespace chem::kumo;
 
@@ -75,8 +34,9 @@ void check(double actual, double reference, const std::string& label, const char
                                where(file, spin, block, point));
 }
 
-void compare(const DensityDerivatives& x, const DensityDerivatives& y, const char* file,
-             DensityComponent spin, std::size_t block, std::size_t point, int order) {
+void compare(const detail::DensityDerivatives& x, const detail::DensityDerivatives& y,
+             const char* file, DensityComponent spin, std::size_t block, std::size_t point,
+             int order) {
     const auto test = [&](double a, double b, const std::string& name) {
         check(a, b, name, file, spin, block, point);
     };
@@ -140,13 +100,14 @@ int main(int argc, char** argv) {
             if (!kumo_test::check(m.electronic_structure_info().ao_mo_eligible(),
                                   std::string(argv[arg]) + ": the test molecule is AO-MO eligible"))
                 continue;
-            const auto matrices = detail::AoMoTestAccess::reconstructed_matrices(m);
+            const auto matrices = detail::MoleculeTestAccess::reconstructed_matrices(m);
             for (int order : {1, 2})
                 for (std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}}) {
-                    const auto mo = detail::AoMoTestAccess::run(m, points, spins, block, order);
+                    const auto mo = detail::MoleculeTestAccess::density_derivatives_mo(
+                        m, points, spins, block, order);
                     for (DensityComponent spin : spins)
                         for (std::size_t j = 0; j < static_cast<std::size_t>(points.cols()); ++j) {
-                            const auto ref = detail::AoMoTestAccess::ao_p_reference(
+                            const auto ref = detail::MoleculeTestAccess::ao_p_reference(
                                 m, points.col(static_cast<Eigen::Index>(j)), matrices.at(spin));
                             compare(mo.at(spin).at(j), ref, argv[arg], spin, block, j, order);
                         }

@@ -1,3 +1,4 @@
+#include "molecule_test_access.hpp"
 #include "chem/kumo.hpp"
 #include <algorithm>
 #include <array>
@@ -59,8 +60,8 @@ int main(int argc, char** argv) {
             double checksum = 0;
             for (auto s : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
                            DensityComponent::Difference}) {
-                const auto fields = molecule.density_derivatives_blocked(
-                    points, s, static_cast<std::size_t>(block));
+                const auto fields = kumo_test::Kernels::density_derivatives_blocked(
+                    molecule, points, s, static_cast<std::size_t>(block));
                 for (const auto& d : fields)
                     checksum += d.gradient.x() + d.tau + d.hessian(0, 0);
             }

@@ -1,5 +1,6 @@
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <map>
 #include <vector>
@@ -10,6 +11,42 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+namespace {
+// Amplitude, gradient and Hessian of one MO at the columns of `points`, from
+// the Evaluator with blocks of `block` points.
+std::vector<chem::kumo::detail::OrbitalDerivatives>
+orbital_derivatives(const chem::kumo::Molecule& mol,
+                    const Eigen::Matrix<double, 3, Eigen::Dynamic>& points, std::size_t index,
+                    chem::kumo::SpinChannel channel, std::size_t block) {
+    const auto orbital = channel == chem::kumo::SpinChannel::Alpha
+                             ? chem::kumo::orbital::alpha(index)
+                             : chem::kumo::orbital::beta(index);
+    chem::kumo::EvaluationOptions options;
+    options.block_size = block;
+    const auto results = chem::kumo::Evaluator(mol, options)
+                             .evaluate(points, chem::kumo::Request()
+                                                   .add(orbital.value())
+                                                   .add(orbital.gradient())
+                                                   .add(orbital.hessian()));
+    const auto& value = results.get(orbital.value());
+    const auto& gradient = results.get(orbital.gradient());
+    const auto& hessian = results.get(orbital.hessian());
+    constexpr int column[3][3] = {{0, 1, 2}, {1, 3, 4}, {2, 4, 5}};
+    std::vector<chem::kumo::detail::OrbitalDerivatives> out(
+        static_cast<std::size_t>(points.cols()));
+    for (std::size_t j = 0; j < out.size(); ++j) {
+        out[j].value = value.component(0)[j];
+        for (std::size_t a = 0; a < 3; ++a) {
+            out[j].gradient[static_cast<Eigen::Index>(a)] = gradient.component(a)[j];
+            for (int b = 0; b < 3; ++b)
+                out[j].hessian(static_cast<Eigen::Index>(a), b) =
+                    hessian.component(static_cast<std::size_t>(column[a][b]))[j];
+        }
+    }
+    return out;
+}
+} // namespace
 
 int main(int argc, char** argv) {
     if (!kumo_test::require_args(argc, argv, 2, 2, "FILE1.fchk FILE2.fchk")) return 2;
@@ -35,18 +72,18 @@ int main(int argc, char** argv) {
                     1, std::min<std::size_t>(3, n),
                     std::min<std::size_t>(static_cast<std::size_t>(mol.occupied_count(spin)) + 1,
                                           n)};
-                const auto reference = mol.orbitals(grid, indices, spin);
+                const auto reference = kumo_test::Kernels::orbitals(mol, grid, indices, spin);
                 const auto derivative_reference =
-                    mol.orbital_derivatives_blocked(points, indices[1], spin, 64);
-                // Single-thread derivatives by block size: with the same blocks,
+                    orbital_derivatives(mol, points, indices[1], spin, 64);
+                // Single-thread Evaluator derivatives by block size: with the same blocks,
                 // other thread counts must give identical values.
-                std::map<std::size_t, std::vector<chem::kumo::OrbitalDerivatives>> serial;
+                std::map<std::size_t, std::vector<chem::kumo::detail::OrbitalDerivatives>> serial;
                 for (int threads : {1, 2, 4}) {
                     kumo_test::set_threads(threads);
                     const std::string label = name + " spin " +
                                               std::to_string(static_cast<int>(spin)) + " threads " +
                                               std::to_string(threads);
-                    const auto fields = mol.orbitals(grid, indices, spin);
+                    const auto fields = kumo_test::Kernels::orbitals(mol, grid, indices, spin);
                     if (kumo_test::check(fields.size() == reference.size(),
                                          label + ": same number of MO fields as the reference")) {
                         for (std::size_t k = 0; k < fields.size(); ++k) {
@@ -69,7 +106,7 @@ int main(int argc, char** argv) {
                     for (std::size_t block :
                          {std::size_t(1), std::size_t(32), std::size_t(64), std::size_t(128)}) {
                         const auto derivatives =
-                            mol.orbital_derivatives_blocked(points, indices[1], spin, block);
+                            orbital_derivatives(mol, points, indices[1], spin, block);
                         if (threads == 1) serial.emplace(block, derivatives);
                         const std::string mo = label + " MO " + std::to_string(indices[1]) +
                                                " block " + std::to_string(block);
@@ -104,12 +141,6 @@ int main(int argc, char** argv) {
                     }
                 }
             }
-            kumo_test::check_throws<std::invalid_argument>(
-                [&] {
-                    (void)mol.orbital_derivatives_blocked(points, 1, chem::kumo::SpinChannel::Alpha,
-                                                          0);
-                },
-                name + ": orbital_derivatives_blocked rejects block size 0");
             if (kumo_test::failures == failures_before)
                 std::cout << argv[file] << " parallel orbital grid/derivatives OK\n";
         }

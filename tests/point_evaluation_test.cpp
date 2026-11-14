@@ -13,6 +13,7 @@
 // Usage: kumo-point-evaluation-test WATER.fchk O2.fchk ACROLEIN.fchk
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -168,7 +169,8 @@ void check_orbital_energy_formulas(const Molecule& molecule, const std::string& 
             const auto occupied_count = molecule.occupied_count(channel);
             for (std::size_t i = 0; i < molecule.orbital_count(channel); ++i) {
                 const double phi =
-                    molecule.orbital_derivatives(points.col(p), i + 1, channel).value;
+                    kumo_test::Kernels::orbital_derivatives(molecule, points.col(p), i + 1, channel)
+                        .value;
                 const double n = unrestricted ? 1.0 : 2.0;
                 if (i < occupied_count) {
                     occupied += n * phi * phi;

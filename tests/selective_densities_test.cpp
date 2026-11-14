@@ -1,6 +1,7 @@
 // densities() with a subset of components (duplicates allowed, empty list
 // allowed) must match spin_densities() and single-component density().
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
 #include <cmath>
@@ -14,14 +15,14 @@ int main(int argc, char** argv) {
         for (int n = 1; n < argc; ++n) {
             auto molecule = Molecule::from_fchk(argv[n]);
             auto grid = Grid::around(molecule.atoms(), 1.5, 0.6);
-            auto all = molecule.spin_densities(grid);
-            auto selected =
-                molecule.densities(grid, {DensityComponent::Total, DensityComponent::Difference,
-                                          DensityComponent::Total});
+            auto all = kumo_test::Kernels::spin_densities(molecule, grid);
+            auto selected = kumo_test::Kernels::densities_blocked(
+                molecule, grid,
+                {DensityComponent::Total, DensityComponent::Difference, DensityComponent::Total});
             kumo_test::check(selected.size() == 2,
                              "duplicate components are merged (expected 2 fields, got " +
                                  std::to_string(selected.size()) + ")");
-            kumo_test::check(molecule.densities(grid, {}).empty(),
+            kumo_test::check(kumo_test::Kernels::densities_blocked(molecule, grid, {}).empty(),
                              "an empty component list returns no fields");
             double error = 0;
             for (auto [key, expected] : {std::pair{DensityComponent::Total, &all.total},
@@ -32,8 +33,8 @@ int main(int argc, char** argv) {
             }
             for (DensityComponent key : {DensityComponent::Alpha, DensityComponent::Beta,
                                          DensityComponent::Total, DensityComponent::Difference}) {
-                auto one = molecule.densities(grid, {key});
-                auto field = molecule.density(grid, key);
+                auto one = kumo_test::Kernels::densities_blocked(molecule, grid, {key});
+                auto field = kumo_test::Kernels::density(molecule, grid, key);
                 error =
                     std::max(error, kumo_test::max_abs_diff(one.at(key).values(), field.values(),
                                                             "densities() vs density()"));

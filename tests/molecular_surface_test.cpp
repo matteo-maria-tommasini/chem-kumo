@@ -9,6 +9,7 @@
 #include "gzip_input.hpp"
 #include "isosurface.hpp"
 #include "omp_support.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 
 #include <Eigen/Geometry>
@@ -337,8 +338,8 @@ void test_molecule(const char* path) {
     Points points(3, static_cast<Eigen::Index>(mesh.vertices.size()));
     for (std::size_t v = 0; v < mesh.vertices.size(); ++v)
         points.col(static_cast<Eigen::Index>(v)) = mesh.vertices[v];
-    const auto density =
-        mol.density_derivatives_blocked(points, chem::kumo::DensityComponent::Total, 128, 0.0);
+    const auto density = kumo_test::Kernels::density_derivatives_blocked(
+        mol, points, chem::kumo::DensityComponent::Total, 128, 0.0);
     double worst = 0.0;
     for (const auto& d : density)
         worst = std::max(worst, std::abs(d.value - 1e-3) / d.gradient.norm());
@@ -414,7 +415,8 @@ double ionization_energy(const chem::kumo::Molecule& mol, const Eigen::Vector3d&
     for (auto channel : {chem::kumo::SpinChannel::Alpha, chem::kumo::SpinChannel::Beta}) {
         const auto& energies = mol.orbital_energies(channel);
         for (std::size_t i = 0; i < mol.occupied_count(channel); ++i) {
-            const double phi = mol.orbital_derivatives(point, i + 1, channel).value;
+            const double phi =
+                kumo_test::Kernels::orbital_derivatives(mol, point, i + 1, channel).value;
             weighted += std::abs(energies[i]) * phi * phi;
             density += phi * phi;
         }
@@ -458,9 +460,10 @@ void test_ionization_energy(const char* path) {
                                     std::abs(expected));
         // The occupied orbitals reproduce the FCHK density (to the precision
         // of its printed matrices).
-        worst_density =
-            std::max(worst_density,
-                     std::abs(density - mol.density_derivatives(points.col(p)).value) / density);
+        worst_density = std::max(
+            worst_density,
+            std::abs(density - kumo_test::Kernels::density_derivatives(mol, points.col(p)).value) /
+                density);
     }
     kumo_test::check(worst <= 1e-12, name +
                                          ": agrees with the orbital formula to 1e-12 relative "

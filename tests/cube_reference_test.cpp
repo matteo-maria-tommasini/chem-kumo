@@ -1,4 +1,5 @@
 #include <chem/kumo.hpp>
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <Eigen/LU>
 #include <array>
@@ -69,7 +70,7 @@ int main(int argc, char** argv) {
             spin = DensityComponent::Difference;
         else if (component != "total")
             throw std::runtime_error("invalid spin component: " + component);
-        auto calculated = mol.densities_blocked(g, {spin}, 128).at(spin);
+        auto calculated = kumo_test::Kernels::densities_blocked(mol, g, {spin}, 128).at(spin);
         const auto vals = calculated.values();
         double max_abs = 0, sum_sq = 0, sum_abs = 0, sum_ref = 0, sum_val = 0, sum_reference = 0;
         std::size_t worst = 0;

@@ -94,7 +94,11 @@ enum class PropertyKind {
     LocalElectronAffinity,
     LocalElectronAttachmentEnergy,
     LocalElectronegativity,
-    LocalHardness
+    LocalHardness,
+    /// Gradient (x, y, z) and Hessian (xx, xy, xz, yy, yz, zz) of the signed
+    /// amplitude of a molecular orbital, in bohr^(-5/2) and bohr^(-7/2).
+    OrbitalGradient,
+    OrbitalHessian
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -229,7 +233,7 @@ struct DensityDescriptor {
     constexpr Property local_hardness() const { return {PropertyKind::LocalHardness, component}; }
 };
 
-/// The four density components: density::total, alpha, beta, spin.
+/// The four density components: density::total, alpha, beta, difference.
 namespace density {
 inline constexpr DensityDescriptor total{DensityComponent::Total};
 inline constexpr DensityDescriptor alpha{DensityComponent::Alpha};
@@ -242,8 +246,19 @@ struct OrbitalDescriptor {
     SpinChannel channel;
     std::size_t index; ///< one-based
 
+    /// Signed amplitude, in bohr^(-3/2).
     Property value() const {
         return {PropertyKind::Orbital, DensityComponent::Total, channel, index};
+    }
+
+    /// Gradient of the amplitude (x, y, z).
+    Property gradient() const {
+        return {PropertyKind::OrbitalGradient, DensityComponent::Total, channel, index};
+    }
+
+    /// Hessian of the amplitude (xx, xy, xz, yy, yz, zz).
+    Property hessian() const {
+        return {PropertyKind::OrbitalHessian, DensityComponent::Total, channel, index};
     }
 };
 

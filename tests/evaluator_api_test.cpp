@@ -1,4 +1,5 @@
 #include "chem/kumo.hpp"
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <cmath>
 #include <stdexcept>
@@ -20,7 +21,7 @@ int main(int argc, char** argv) {
             .add(density::total.laplacian())
             .add(density::total.tau());
         const auto results = evaluator.evaluate(grid, request);
-        const auto legacy = molecule.density(grid);
+        const auto legacy = kumo_test::Kernels::density(molecule, grid);
         auto rho = results.get(density::total.value()).component();
         // Both paths contract the same AO density matrix and differ only by
         // rounding: 1e-12 absolute is a few thousand ulps of an O(1) density.

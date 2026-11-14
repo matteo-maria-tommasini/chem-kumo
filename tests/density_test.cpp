@@ -1,6 +1,7 @@
 // Density components on a coarse grid: the total density is finite and
 // non-negative, total = alpha + beta and spin = alpha - beta at every point.
 #include <chem/kumo.hpp>
+#include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <cmath>
 #include <iostream>
@@ -13,10 +14,10 @@ int main(int argc, char** argv) {
             const std::string file = argv[f];
             auto mol = chem::kumo::Molecule::from_fchk(file);
             auto g = chem::kumo::Grid::around(mol.atoms(), 2.0, 0.7);
-            auto t = mol.density(g, chem::kumo::DensityComponent::Total);
-            auto a = mol.density(g, chem::kumo::DensityComponent::Alpha);
-            auto b = mol.density(g, chem::kumo::DensityComponent::Beta);
-            auto s = mol.density(g, chem::kumo::DensityComponent::Difference);
+            auto t = kumo_test::Kernels::density(mol, g, chem::kumo::DensityComponent::Total);
+            auto a = kumo_test::Kernels::density(mol, g, chem::kumo::DensityComponent::Alpha);
+            auto b = kumo_test::Kernels::density(mol, g, chem::kumo::DensityComponent::Beta);
+            auto s = kumo_test::Kernels::density(mol, g, chem::kumo::DensityComponent::Difference);
             // Report only the first failing point of each file.
             for (std::size_t i = 0; i < t.values().size(); ++i) {
                 const double total = t.values()[i], alpha = a.values()[i], beta = b.values()[i];
