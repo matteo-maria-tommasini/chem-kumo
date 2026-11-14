@@ -489,6 +489,9 @@ potential, in hartree/e:
 
 with the nuclear charges Z_A of the FCHK (the `Nuclear charges` record when
 present, so effective charges with ECPs) and the total AO density matrix P.
+Without that record the charges are the atomic numbers; a file that has ECP
+records but no `Nuclear charges` is rejected when it is loaded, because the
+effective charges would be unknown.
 It is defined only for the total density; other components throw
 `std::invalid_argument`. With the AO_MO backend the electronic term still
 uses P, which then reproduces the orbital density (checked at load time).
