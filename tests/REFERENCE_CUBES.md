@@ -6,8 +6,8 @@ quantitative validation of chem-kumo.
 The electron-density reference files were generated using the
 full SCF electron density:
 
-    gcubegen09d 0 FDensity=SCF o2.fchk o2_density.cube -3 h
-    gcubegen09d 0 FDensity=SCF acrolein.fchk acrolein_density.cube -3 h
+    cubegen 0 FDensity=SCF o2.fchk o2_density.cube -3 h
+    cubegen 0 FDensity=SCF acrolein.fchk acrolein_density.cube -3 h
 
 The corresponding numerical electron counts on the reference grids
 are approximately:
@@ -27,6 +27,28 @@ Gaussian Cube data point by point, including numerical integration
 and error statistics.
 
 The corresponding FCHK inputs are stored as `o2.fchk.gz` and `acrolein.fchk.gz`.
+
+**Citation.** The Gaussian FCHK files in `tests/data/` and the Gaussian
+reference Cube files were computed with Gaussian 09, Revision D.01 (the Cube
+files with its `cubegen` utility). Work that uses these data should cite:
+
+> Gaussian 09, Revision D.01,
+> M. J. Frisch, G. W. Trucks, H. B. Schlegel, G. E. Scuseria,
+> M. A. Robb, J. R. Cheeseman, G. Scalmani, V. Barone, B. Mennucci,
+> G. A. Petersson, H. Nakatsuji, M. Caricato, X. Li, H. P. Hratchian,
+> A. F. Izmaylov, J. Bloino, G. Zheng, J. L. Sonnenberg, M. Hada,
+> M. Ehara, K. Toyota, R. Fukuda, J. Hasegawa, M. Ishida, T. Nakajima,
+> Y. Honda, O. Kitao, H. Nakai, T. Vreven, J. A. Montgomery, Jr.,
+> J. E. Peralta, F. Ogliaro, M. Bearpark, J. J. Heyd, E. Brothers,
+> K. N. Kudin, V. N. Staroverov, T. Keith, R. Kobayashi, J. Normand,
+> K. Raghavachari, A. Rendell, J. C. Burant, S. S. Iyengar, J. Tomasi,
+> M. Cossi, N. Rega, J. M. Millam, M. Klene, J. E. Knox, J. B. Cross,
+> V. Bakken, C. Adamo, J. Jaramillo, R. Gomperts, R. E. Stratmann,
+> O. Yazyev, A. J. Austin, R. Cammi, C. Pomelli, J. W. Ochterski,
+> R. L. Martin, K. Morokuma, V. G. Zakrzewski, G. A. Voth,
+> P. Salvador, J. J. Dannenberg, S. Dapprich, A. D. Daniels,
+> O. Farkas, J. B. Foresman, J. V. Ortiz, J. Cioslowski,
+> and D. J. Fox, Gaussian, Inc., Wallingford CT, 2013.
 
 ## Multiwfn references for derived properties
 

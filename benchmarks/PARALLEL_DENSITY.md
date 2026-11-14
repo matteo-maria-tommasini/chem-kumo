@@ -164,7 +164,7 @@ Reproduce the larger-grid measurements with:
 ```
 
 These timings measure only the parallelized `densities_blocked()` path.
-They are not directly comparable with `gcubegen09d` end-to-end timings or
+They are not directly comparable with `cubegen` end-to-end timings or
 with a different compiler, grid, or set of requested fields.
 
 ## Measured baseline: Avatar, Debian x86-64, 2026-10-15 (before AO screening)
