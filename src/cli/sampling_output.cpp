@@ -1,4 +1,5 @@
 #include "cli/sampling_output.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>

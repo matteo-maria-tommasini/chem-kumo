@@ -1,7 +1,9 @@
 #pragma once
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/evaluator.hpp"
+
 #include <Eigen/Core>
+
 #include <array>
 #include <cstddef>
 #include <filesystem>

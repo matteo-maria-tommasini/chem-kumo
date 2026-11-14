@@ -1,4 +1,5 @@
 #include "cli/surface_output.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <iomanip>

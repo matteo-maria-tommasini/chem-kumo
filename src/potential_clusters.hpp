@@ -13,6 +13,7 @@
 #include "parallel_blocks.hpp"
 
 #include <Eigen/Core>
+
 #include <algorithm>
 #include <cstddef>
 #include <functional>

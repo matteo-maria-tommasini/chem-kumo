@@ -1,4 +1,5 @@
 #include "cli/options.hpp"
+
 #include <cctype>
 #include <cmath>
 #include <iostream>

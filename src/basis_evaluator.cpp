@@ -1,7 +1,7 @@
 #include "chem/kumo/basis_evaluator.hpp"
 
-#include "checked_math.hpp"
 #include "basis_math.hpp"
+#include "checked_math.hpp"
 #include "mo_coefficients.hpp"
 
 #include <algorithm>

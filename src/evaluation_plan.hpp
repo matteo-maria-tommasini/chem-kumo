@@ -1,7 +1,8 @@
 #pragma once
 #include "chem/kumo/evaluator.hpp"
-#include <array>
+
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <string>
 

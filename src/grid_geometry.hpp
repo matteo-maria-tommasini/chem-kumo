@@ -3,6 +3,7 @@
 #include "chem/kumo/density.hpp"
 
 #include <Eigen/LU> // Matrix3d::determinant()
+
 #include <cmath>
 #include <cstddef>
 #include <limits>

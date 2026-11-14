@@ -3,6 +3,7 @@
 #include "chem/kumo/fchk.hpp"
 
 #include <Eigen/Core>
+
 #include <cstddef>
 #include <stdexcept>
 #include <string>

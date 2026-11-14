@@ -1,18 +1,21 @@
 #include "chem/kumo/evaluator.hpp"
-#include "evaluation_plan.hpp"
+
+#include "ao_screening.hpp"
 #include "automatic_backend.hpp"
 #include "electrostatic_potential.hpp"
-#include "ao_screening.hpp"
+#include "evaluation_plan.hpp"
 #include "grid_geometry.hpp"
 #include "orbital_energy_fields.hpp"
 #include "parallel_blocks.hpp"
 #include "potential_clusters.hpp"
+
 #include <Eigen/Eigenvalues>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <initializer_list>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <numbers>

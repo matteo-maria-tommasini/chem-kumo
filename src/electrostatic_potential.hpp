@@ -1,7 +1,9 @@
 #pragma once
 #include "chem/kumo/basis.hpp"
 #include "chem/kumo/density.hpp"
+
 #include <Eigen/Core>
+
 #include <array>
 #include <cstddef>
 #include <span>

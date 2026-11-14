@@ -1,5 +1,6 @@
 #pragma once
 #include <Eigen/Core>
+
 #include <cmath>
 #include <stdexcept>
 #include <vector>

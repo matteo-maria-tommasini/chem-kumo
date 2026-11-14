@@ -1,8 +1,9 @@
 // Electron densities and their derivatives: AO-P contractions with the FCHK
 // density matrices and the validated occupied-MO (AO-MO) contraction.
 
-#include "ao_screening.hpp"
 #include "chem/kumo/density.hpp"
+
+#include "ao_screening.hpp"
 #include "density_matrix.hpp"
 #include "derivative_layout.hpp"
 #include "grid_geometry.hpp"

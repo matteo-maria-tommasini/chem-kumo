@@ -3,11 +3,12 @@
 #include "chem/kumo/basis_evaluator.hpp"
 
 #include <Eigen/Core>
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <stdexcept>
 #include <limits>
+#include <stdexcept>
 
 namespace chem::kumo {
 

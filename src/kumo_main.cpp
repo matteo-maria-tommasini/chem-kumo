@@ -10,6 +10,7 @@
 #include "cli/sampling_output.hpp"
 #include "cli/summary.hpp"
 #include "cli/surface_output.hpp"
+
 #include <exception>
 #include <iostream>
 #include <string>

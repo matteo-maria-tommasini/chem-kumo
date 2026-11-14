@@ -6,6 +6,7 @@
 #include "chem/kumo/density.hpp"
 
 #include <Eigen/Core>
+
 #include <stdexcept>
 
 namespace chem::kumo::detail {

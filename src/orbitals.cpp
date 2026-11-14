@@ -1,13 +1,15 @@
-#include <Eigen/LU>
-#include "parallel_blocks.hpp"
 #include "chem/kumo/density.hpp"
 #include "derivative_layout.hpp"
 #include "grid_geometry.hpp"
+#include "parallel_blocks.hpp"
+
+#include <Eigen/LU>
+
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
-#include <limits>
 #include <exception>
+#include <limits>
+#include <stdexcept>
 
 namespace chem::kumo {
 

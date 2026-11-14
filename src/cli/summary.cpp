@@ -1,5 +1,7 @@
 #include "cli/summary.hpp"
+
 #include "cli/console.hpp"
+
 #include <iomanip>
 #include <sstream>
 

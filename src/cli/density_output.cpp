@@ -1,4 +1,5 @@
 #include "cli/density_output.hpp"
+
 #include <iostream>
 #include <string>
 #include <utility>

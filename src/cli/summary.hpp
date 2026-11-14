@@ -2,6 +2,7 @@
 // One-line summaries for --verbose.
 #include "chem/kumo.hpp"
 #include "cli/options.hpp"
+
 #include <string>
 
 namespace kumo_cli {

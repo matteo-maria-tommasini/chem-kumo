@@ -4,6 +4,7 @@
 #include "chem/kumo/basis_evaluator.hpp"
 
 #include <Eigen/Core>
+
 #include <cstddef>
 #include <vector>
 

@@ -5,6 +5,7 @@
 // metadata, so that read_cube() reproduces the field.
 
 #include "chem/kumo/cube.hpp"
+
 #include "gzip_input.hpp"
 
 #include <algorithm>

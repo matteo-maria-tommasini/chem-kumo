@@ -1,5 +1,6 @@
 #pragma once
 #include "chem/kumo/density.hpp"
+
 #include <cstddef>
 #include <map>
 #include <span>

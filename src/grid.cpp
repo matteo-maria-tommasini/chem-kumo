@@ -4,6 +4,7 @@
 #include "grid_geometry.hpp"
 
 #include <Eigen/Geometry> // cross()
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
