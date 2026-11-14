@@ -4,6 +4,7 @@
 #include "isosurface.hpp"
 #include "orbital_energy_fields.hpp"
 #include "parallel_blocks.hpp"
+#include "potential_clusters.hpp"
 
 #include <Eigen/Geometry> // cross()
 
@@ -547,44 +548,25 @@ PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
         const Eigen::Vector3i& c = surface.vertex_cells[v];
         return std::array<int, 3>{c[0] / tile, c[1] / tile, c[2] / tile};
     };
-    std::vector<std::size_t> order(nvertices);
-    std::iota(order.begin(), order.end(), std::size_t{0});
-    std::stable_sort(order.begin(), order.end(),
-                     [&](std::size_t a, std::size_t b) { return tile_of(a) < tile_of(b); });
-    std::vector<std::size_t> starts;
-    for (std::size_t p = 0; p < nvertices; ++p)
-        if (p == 0 || tile_of(order[p]) != tile_of(order[p - 1])) starts.push_back(p);
-    starts.push_back(nvertices);
-
-    double radius = 0.0;
-    for (int corner = 0; corner < 8; ++corner) {
-        Eigen::Vector3d offset;
-        for (int a = 0; a < 3; ++a)
-            offset[a] = ((corner >> a) & 1 ? 0.5 : -0.5) * tile;
-        radius = std::max(radius, (grid.steps * offset).norm());
-    }
-    // Slightly enlarged to cover rounding in the vertex coordinates.
-    const auto plan =
-        potential.far_field_plan(radius * (1.0 + 1e-10) + 1e-12, options.potential_tolerance);
+    const auto clusters = detail::cluster_by(nvertices, tile_of);
+    const auto plan = detail::cluster_plan(
+        potential, detail::grid_box_radius(grid.steps, Eigen::Vector3d::Constant(tile)),
+        options.potential_tolerance);
+    const auto gather = [&](std::size_t c, Eigen::Matrix<double, 3, Eigen::Dynamic>& points,
+                            std::vector<std::size_t>& targets) {
+        detail::gather_cluster(
+            clusters, c, [&](std::size_t v) { return mesh.vertices[v]; }, points, targets);
+        const auto block = tile_of(targets.front());
+        return Eigen::Vector3d(
+            grid.origin +
+            grid.steps *
+                (tile * (Eigen::Vector3d(block[0], block[1], block[2]).array() + 0.5)).matrix());
+    };
 
     PotentialSurface result;
     result.potential.assign(nvertices, 0.0);
-    detail::for_each_block(starts.size() - 1, [&](std::size_t g) {
-        const std::size_t begin = starts[g], end = starts[g + 1];
-        const auto count = static_cast<Eigen::Index>(end - begin);
-        Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, count);
-        for (Eigen::Index p = 0; p < count; ++p)
-            points.col(p) = mesh.vertices[order[begin + static_cast<std::size_t>(p)]];
-        const auto block = tile_of(order[begin]);
-        const Eigen::Vector3d center =
-            grid.origin +
-            grid.steps *
-                (tile * (Eigen::Vector3d(block[0], block[1], block[2]).array() + 0.5)).matrix();
-        std::vector<double> values(static_cast<std::size_t>(count));
-        potential.evaluate_cluster(points, center, plan, values);
-        for (std::size_t p = 0; p < values.size(); ++p)
-            result.potential[order[begin + p]] = values[p];
-    });
+    detail::evaluate_in_clusters(potential, plan, clusters.size(), gather, result.potential,
+                                 nvertices, {});
     result.statistics = surface_statistics(mesh, result.potential);
     result.mesh = std::move(surface.mesh);
     return result;
