@@ -16,13 +16,14 @@ int main(int argc, char** argv) {
             const int failures_before = kumo_test::failures;
             const auto mol = chem::kumo::Molecule::from_fchk(argv[file]);
             const auto grid = chem::kumo::Grid::around(mol.atoms(), 2.0, 0.55);
-            const auto components = {chem::kumo::Spin::Total, chem::kumo::Spin::Alpha,
-                                     chem::kumo::Spin::Beta, chem::kumo::Spin::Difference};
+            const auto components = {
+                chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
+                chem::kumo::DensityComponent::Beta, chem::kumo::DensityComponent::Difference};
             kumo_test::set_threads(1);
             const auto reference = mol.densities_blocked(grid, components, 64);
             // Single-thread results by block size: with the same blocks, other
             // thread counts must give identical values (blocks are independent).
-            std::map<std::size_t, std::map<chem::kumo::Spin, chem::kumo::Field>> serial;
+            std::map<std::size_t, std::map<chem::kumo::DensityComponent, chem::kumo::Field>> serial;
             for (int threads : {1, 2, 4}) {
                 kumo_test::set_threads(threads);
                 for (std::size_t block :

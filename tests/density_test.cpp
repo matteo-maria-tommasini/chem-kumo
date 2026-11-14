@@ -13,10 +13,10 @@ int main(int argc, char** argv) {
             const std::string file = argv[f];
             auto mol = chem::kumo::Molecule::from_fchk(file);
             auto g = chem::kumo::Grid::around(mol.atoms(), 2.0, 0.7);
-            auto t = mol.density(g, chem::kumo::Spin::Total);
-            auto a = mol.density(g, chem::kumo::Spin::Alpha);
-            auto b = mol.density(g, chem::kumo::Spin::Beta);
-            auto s = mol.density(g, chem::kumo::Spin::Difference);
+            auto t = mol.density(g, chem::kumo::DensityComponent::Total);
+            auto a = mol.density(g, chem::kumo::DensityComponent::Alpha);
+            auto b = mol.density(g, chem::kumo::DensityComponent::Beta);
+            auto s = mol.density(g, chem::kumo::DensityComponent::Difference);
             // Report only the first failing point of each file.
             for (std::size_t i = 0; i < t.values().size(); ++i) {
                 const double total = t.values()[i], alpha = a.values()[i], beta = b.values()[i];

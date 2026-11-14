@@ -8,7 +8,7 @@
 
 namespace chem::kumo::detail {
 /// What a Request needs for one density component (Total, Alpha, Beta or
-/// Spin): which properties are needed and, from them, the highest
+/// Difference): which properties are needed and, from them, the highest
 /// atomic-orbital (AO) derivative order to evaluate (-1: none).
 ///
 /// Derived properties are computed pointwise from density derivatives
@@ -27,7 +27,7 @@ namespace chem::kumo::detail {
 ///    gradient and Hessian;
 ///  - the kinetic (K), potential (V) and total (H) energy densities from the
 ///    Laplacian and tau of their component;
-///  - the spin polarization from the Total and Spin values (`value_input`).
+///  - the spin polarization from the Total and Difference values (`value_input`).
 struct ComponentPlan {
     bool density = false;
     bool gradient = false;
@@ -116,7 +116,7 @@ struct EvaluationPlan {
     // difference has no such quantity and is rejected.
     void require_spin_inputs(const Property& property, bool ComponentPlan::* input,
                              const char* what) {
-        if (property.component == DensityComponent::Spin)
+        if (property.component == DensityComponent::Difference)
             throw std::invalid_argument(std::string(what) +
                                         " is not defined for the spin-difference density");
         if (property.component == DensityComponent::Total) {
@@ -190,7 +190,7 @@ struct EvaluationPlan {
                 c.energy_input = true;
                 break;
             case PropertyKind::SpinPolarization:
-                if (property.component != DensityComponent::Spin)
+                if (property.component != DensityComponent::Difference)
                     throw std::invalid_argument(
                         "the spin polarization is defined only for the spin component");
                 plan.components[index(DensityComponent::Total)].value_input = true;

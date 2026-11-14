@@ -63,8 +63,9 @@ void verify(const std::filesystem::path& zipped, const std::filesystem::path& di
     const auto mol_a = chem::kumo::Molecule::from_fchk(plain_path);
     const auto mol_b = chem::kumo::Molecule::from_fchk(zipped);
     const Eigen::Vector3d point(0.2, -0.3, 0.4);
-    for (const auto spin : {chem::kumo::Spin::Total, chem::kumo::Spin::Alpha,
-                            chem::kumo::Spin::Beta, chem::kumo::Spin::Difference}) {
+    for (const auto spin :
+         {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
+          chem::kumo::DensityComponent::Beta, chem::kumo::DensityComponent::Difference}) {
         const auto x = mol_a.density_derivatives(point, spin);
         const auto y = mol_b.density_derivatives(point, spin);
         require(x.value == y.value && x.laplacian == y.laplacian && x.tau == y.tau &&

@@ -16,7 +16,8 @@ int main(int argc, char** argv) {
             const std::string name = argv[file];
             const auto mol = chem::kumo::Molecule::from_fchk(argv[file]);
             double max_gradient = 0.0, max_hessian = 0.0;
-            for (const auto channel : {chem::kumo::Spin::Alpha, chem::kumo::Spin::Beta}) {
+            for (const auto channel :
+                 {chem::kumo::SpinChannel::Alpha, chem::kumo::SpinChannel::Beta}) {
                 const auto count = mol.orbital_count(channel);
                 if (!kumo_test::check(count != 0, name + ": molecular orbitals of spin " +
                                                       std::to_string(static_cast<int>(channel)) +
@@ -83,9 +84,9 @@ int main(int argc, char** argv) {
             kumo_test::check_throws<std::invalid_argument>(
                 [&] {
                     (void)mol.orbital_derivatives(Eigen::Vector3d::Zero(), 1,
-                                                  chem::kumo::Spin::Total);
+                                                  static_cast<chem::kumo::SpinChannel>(7));
                 },
-                name + ": orbital_derivatives rejects the Total spin channel");
+                name + ": orbital_derivatives rejects an invalid spin channel");
         }
     });
 }

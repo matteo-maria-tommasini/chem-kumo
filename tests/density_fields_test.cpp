@@ -32,7 +32,7 @@ using kumo_test::num;
 constexpr double pi = std::numbers::pi;
 
 const DensityDescriptor all_components[] = {density::total, density::alpha, density::beta,
-                                            density::spin};
+                                            density::difference};
 
 Request full_request() {
     Request request;
@@ -51,7 +51,7 @@ Request full_request() {
         .add(density::total.energy_density())
         .add(density::total.shannon_entropy_density())
         .add(density::total.fisher_information_density())
-        .add(density::spin.spin_polarization());
+        .add(density::difference.spin_polarization());
     return request;
 }
 
@@ -100,8 +100,9 @@ void check_molecule(const std::string& name) {
     const Request request = full_request();
     kumo_test::set_threads(1);
     const Results r = Evaluator(molecule).evaluate(grid, request);
-    const bool closed_shell = !molecule.unrestricted() && molecule.occupied_count(Spin::Alpha) ==
-                                                              molecule.occupied_count(Spin::Beta);
+    const bool closed_shell =
+        !molecule.unrestricted() &&
+        molecule.occupied_count(SpinChannel::Alpha) == molecule.occupied_count(SpinChannel::Beta);
 
     // Formulas applied to the Evaluator's own inputs, to rounding.
     Worst energy, lol, iri, dori, polarization, shannon, fisher;
@@ -145,8 +146,8 @@ void check_molecule(const std::string& name) {
                          theta / (1.0 + theta), 1.0);
         }
 
-        const double zeta = at(r, density::spin.spin_polarization(), p);
-        polarization.add(zeta, rho > 0.0 ? at(r, density::spin.value(), p) / rho : 0.0, 1.0);
+        const double zeta = at(r, density::difference.spin_polarization(), p);
+        polarization.add(zeta, rho > 0.0 ? at(r, density::difference.value(), p) / rho : 0.0, 1.0);
         ranges = ranges && std::abs(zeta) <= 1.0 + 1e-12 && (!closed_shell || zeta == 0.0);
         for (const auto& key : {density::total.lol(), density::alpha.lol(), density::beta.lol(),
                                 density::total.density_overlap_regions_indicator()}) {
@@ -205,12 +206,11 @@ void check_molecule(const std::string& name) {
         if (rho < 1e-3) continue;
         ++sampled;
         // K_s = -(1/2) sum_i phi_i lap phi_i over the occupied orbitals of each channel.
-        for (const auto& [channel, descriptor] :
-             {std::pair{Spin::Alpha, density::alpha}, std::pair{Spin::Beta, density::beta}}) {
+        for (const auto& [channel, descriptor] : {std::pair{SpinChannel::Alpha, density::alpha},
+                                                  std::pair{SpinChannel::Beta, density::beta}}) {
             double k = 0.0;
-            for (int i = 1; i <= molecule.occupied_count(channel); ++i) {
-                const auto phi =
-                    molecule.orbital_derivatives(x, static_cast<std::size_t>(i), channel);
+            for (std::size_t i = 1; i <= molecule.occupied_count(channel); ++i) {
+                const auto phi = molecule.orbital_derivatives(x, i, channel);
                 k -= 0.5 * phi.value * phi.hessian.trace();
             }
             const double tau = at(r, descriptor.tau(), p), lap = at(r, descriptor.laplacian(), p);
@@ -271,7 +271,7 @@ void check_molecule(const std::string& name) {
                    at(empty, density::total.interaction_region_indicator(), p) ==
                        interaction_region_indicator_cap &&
                    at(empty, density::total.density_overlap_regions_indicator(), p) == 0.0 &&
-                   at(empty, density::spin.spin_polarization(), p) == 0.0 &&
+                   at(empty, density::difference.spin_polarization(), p) == 0.0 &&
                    at(empty, density::total.shannon_entropy_density(), p) == 0.0 &&
                    at(empty, density::total.fisher_information_density(), p) == 0.0 &&
                    at(empty, density::total.hamiltonian_kinetic_energy(), p) == 0.0;
@@ -281,11 +281,12 @@ void check_molecule(const std::string& name) {
     // Components the fields are not defined for.
     const Evaluator evaluator(molecule);
     for (const Property& key :
-         {density::spin.lol(), density::alpha.interaction_region_indicator(),
+         {density::difference.lol(), density::alpha.interaction_region_indicator(),
           density::beta.density_overlap_regions_indicator(),
-          density::alpha.potential_energy_density(), density::spin.energy_density(),
+          density::alpha.potential_energy_density(), density::difference.energy_density(),
           density::total.spin_polarization(), density::alpha.spin_polarization(),
-          density::beta.shannon_entropy_density(), density::spin.fisher_information_density()}) {
+          density::beta.shannon_entropy_density(),
+          density::difference.fisher_information_density()}) {
         Request bad;
         bad.add(key);
         kumo_test::check_throws<std::invalid_argument>(

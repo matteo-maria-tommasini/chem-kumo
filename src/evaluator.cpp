@@ -27,26 +27,13 @@
 
 namespace chem::kumo {
 namespace {
-Spin spin_of(DensityComponent c) {
-    switch (c) {
-    case DensityComponent::Total: return Spin::Total;
-    case DensityComponent::Alpha: return Spin::Alpha;
-    case DensityComponent::Beta: return Spin::Beta;
-    case DensityComponent::Spin: return Spin::Difference;
-    }
-    throw std::invalid_argument("unknown density component");
-}
-
-Spin spin_of(SpinChannel c) {
-    return c == SpinChannel::Alpha ? Spin::Alpha : Spin::Beta;
-}
-
 std::size_t channels(PropertyKind k) {
     return k == PropertyKind::Gradient ? 3 : k == PropertyKind::Hessian ? 6 : 1;
 }
 
 constexpr DensityComponent all_components[] = {DensityComponent::Total, DensityComponent::Alpha,
-                                               DensityComponent::Beta, DensityComponent::Spin};
+                                               DensityComponent::Beta,
+                                               DensityComponent::Difference};
 
 // The points of one evaluation: a validated grid, in Field order, or the
 // columns of a matrix.
@@ -196,7 +183,7 @@ double density_overlap_regions_indicator(const DensityDerivatives& d) {
     return theta / (1.0 + theta);
 }
 
-using BlockDerivatives = std::map<Spin, std::vector<DensityDerivatives>>;
+using BlockDerivatives = std::map<DensityComponent, std::vector<DensityDerivatives>>;
 
 // Copy (or derive) one property from the density derivatives of a block of
 // `count` points into `output`, starting at point index `start`. Evaluator
@@ -205,8 +192,8 @@ void store_block(PropertyField& output, const Property& key, const BlockDerivati
                  std::size_t count, std::size_t start) {
     if ((key.kind == PropertyKind::Elf || key.kind == PropertyKind::Lol) &&
         key.component == DensityComponent::Total) {
-        const auto& alpha = block.at(Spin::Alpha);
-        const auto& beta = block.at(Spin::Beta);
+        const auto& alpha = block.at(DensityComponent::Alpha);
+        const auto& beta = block.at(DensityComponent::Beta);
         for (std::size_t local = 0; local < count; ++local)
             output.components[0][start + local] = key.kind == PropertyKind::Elf
                                                       ? elf({&alpha[local], &beta[local]})
@@ -214,14 +201,14 @@ void store_block(PropertyField& output, const Property& key, const BlockDerivati
         return;
     }
     if (key.kind == PropertyKind::SpinPolarization) {
-        const auto& total = block.at(Spin::Total);
-        const auto& spin = block.at(Spin::Difference);
+        const auto& total = block.at(DensityComponent::Total);
+        const auto& spin = block.at(DensityComponent::Difference);
         for (std::size_t local = 0; local < count; ++local)
             output.components[0][start + local] =
                 total[local].value > 0.0 ? spin[local].value / total[local].value : 0.0;
         return;
     }
-    const auto& derivatives = block.at(spin_of(key.component));
+    const auto& derivatives = block.at(key.component);
     for (std::size_t local = 0; local < count; ++local) {
         const auto& d = derivatives[local];
         const std::size_t p = start + local;
@@ -291,10 +278,9 @@ void evaluate_point_path(const PointSet& set, std::size_t block_size,
                          const ProgressCallback& progress) {
     const bool grid = set.grid != nullptr;
     const std::size_t n = set.count;
-    std::vector<Spin> needed;
+    std::vector<DensityComponent> needed;
     for (auto component : all_components)
-        if (uses_point_path(plan_for(plan, component), backend, grid))
-            needed.push_back(spin_of(component));
+        if (uses_point_path(plan_for(plan, component), backend, grid)) needed.push_back(component);
 
     detail::Progress report(progress, n);
     detail::for_each_point_block(
@@ -490,8 +476,8 @@ public:
                                    ? "the local electron affinity and related fields"
                                    : "the average local ionization energy";
             orbital_energies.emplace(
-                molecule_, molecule_.evaluator_, molecule_.mo_coefficients(Spin::Alpha),
-                molecule_.mo_coefficients(Spin::Beta), plan_.virtual_orbitals, what);
+                molecule_, molecule_.evaluator_, molecule_.mo_coefficients(SpinChannel::Alpha),
+                molecule_.mo_coefficients(SpinChannel::Beta), plan_.virtual_orbitals, what);
         }
         const auto orbitals = checked_orbitals();
 
@@ -523,7 +509,7 @@ private:
         std::vector<Property> orbitals;
         for (const auto& entry : result_.fields_)
             if (entry.first.kind == PropertyKind::Orbital) {
-                const auto& coefficients = molecule_.mo_coefficients(spin_of(entry.first.channel));
+                const auto& coefficients = molecule_.mo_coefficients(entry.first.channel);
                 if (coefficients.cols() == 0)
                     throw std::runtime_error("FCHK has no MO coefficients");
                 if (entry.first.orbital_index > static_cast<std::size_t>(coefficients.cols()))
@@ -540,7 +526,7 @@ private:
         const int ao_order =
             on_grid() ? plan_.maximum_ao_order : std::max(1, plan_.maximum_ao_order);
         const auto evaluate_block = [&](const Eigen::Matrix<double, 3, Eigen::Dynamic>& block,
-                                        const std::vector<Spin>& needed) {
+                                        const std::vector<DensityComponent>& needed) {
             return backend_ == Backend::AO_MO
                        ? molecule_.density_derivatives_mo(block, needed, options_.block_size,
                                                           std::max(0, ao_order),
@@ -559,7 +545,8 @@ private:
         // the backend; when AO-MO is in use, that matrix was checked at load
         // time to agree with the occupied orbitals.
         const detail::ElectrostaticPotential potential(
-            molecule_.evaluator_.basis(), molecule_.density_matrix(Spin::Total), molecule_.atoms());
+            molecule_.evaluator_.basis(), molecule_.density_matrix(DensityComponent::Total),
+            molecule_.atoms());
         auto& output = result_.fields_.at(density::total.electrostatic_potential()).components[0];
         if (on_grid())
             evaluate_electrostatic_potential(*set_.grid, set_.count, options_.potential_tolerance,
@@ -586,7 +573,7 @@ private:
                                     static_cast<Eigen::Index>(range.size));
                 basis.evaluate_batch(block, phi);
                 for (const Property& key : orbitals) {
-                    const auto& coefficients = molecule_.mo_coefficients(spin_of(key.channel));
+                    const auto& coefficients = molecule_.mo_coefficients(key.channel);
                     const Eigen::VectorXd psi =
                         phi.transpose() *
                         coefficients.col(static_cast<Eigen::Index>(key.orbital_index - 1));
@@ -605,11 +592,10 @@ private:
             const Field field =
                 key.kind == PropertyKind::Density
                     ? molecule_
-                          .densities_blocked(grid, {spin_of(key.component)}, options_.block_size,
+                          .densities_blocked(grid, {key.component}, options_.block_size,
                                              options_.screening_threshold, pass_progress_)
-                          .at(spin_of(key.component))
-                    : molecule_
-                          .orbitals(grid, {key.orbital_index}, spin_of(key.channel), pass_progress_)
+                          .at(key.component)
+                    : molecule_.orbitals(grid, {key.orbital_index}, key.channel, pass_progress_)
                           .front();
             std::copy(field.values().begin(), field.values().end(), output.components[0].begin());
             completed_ += set_.count;

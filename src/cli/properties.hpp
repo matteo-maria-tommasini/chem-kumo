@@ -13,7 +13,7 @@
 namespace kumo_cli {
 using chem::kumo::Molecule;
 using chem::kumo::PropertyKind;
-using chem::kumo::Spin;
+using chem::kumo::DensityComponent;
 
 /// Density components a property is defined for (as the library defines it).
 enum class Components {
@@ -51,18 +51,18 @@ std::vector<DensityProperty> select_properties(const std::string& list);
 
 /// Throw std::invalid_argument if a property is requested for a component
 /// it is not defined for.
-void check_components(const std::vector<std::pair<Spin, std::string>>& components,
+void check_components(const std::vector<std::pair<DensityComponent, std::string>>& components,
                       const std::vector<DensityProperty>& properties);
 
 /// The library property of `property` for a density component.
-chem::kumo::Property density_property(Spin component, const DensityProperty& property);
+chem::kumo::Property density_property(DensityComponent component, const DensityProperty& property);
 
 /// "total", "alpha", "beta" or "alpha-beta difference".
-std::string component_label(Spin component);
+std::string component_label(DensityComponent component);
 
 /// Table column name "<property>_<total|alpha|beta|spin>"; also the PLY
 /// property name, with '-' replaced by '_'.
-std::string column_name(Spin component, const DensityProperty& property);
+std::string column_name(DensityComponent component, const DensityProperty& property);
 
 /// How `property` was computed, for Cube comments and table headers.
 std::string method_label(const DensityProperty& property, chem::kumo::Backend used,
@@ -70,8 +70,9 @@ std::string method_label(const DensityProperty& property, chem::kumo::Backend us
 
 /// "Evaluating the total electron density", or "Evaluating the gradient norm
 /// and Laplacian of the total and alpha electron densities".
-std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& components,
-                               const std::vector<DensityProperty>& properties);
+std::string
+evaluation_summary(const std::vector<std::pair<DensityComponent, std::string>>& components,
+                   const std::vector<DensityProperty>& properties);
 
 /// Values at every point as written to files: the gradient as its norm, the
 /// other properties as they are.
@@ -80,7 +81,8 @@ std::vector<double> scalar_values(const chem::kumo::PropertyField& field, Proper
 /// Density components and properties selected with --spin and --property, and
 /// the contraction selected with --backend.
 struct DensitySelection {
-    std::vector<std::pair<Spin, std::string>> components; ///< with their Cube filename suffix
+    std::vector<std::pair<DensityComponent, std::string>>
+        components; ///< with their Cube filename suffix
     std::vector<DensityProperty> properties;
     chem::kumo::Backend backend = chem::kumo::Backend::AUTO;
 };

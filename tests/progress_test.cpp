@@ -57,12 +57,13 @@ int main(int argc, char** argv) {
 
             // Molecule::densities_blocked: one pass over the grid.
             Recorder density_progress;
-            const auto all = {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
+            const auto all = {DensityComponent::Total, DensityComponent::Alpha,
+                              DensityComponent::Beta, DensityComponent::Difference};
             const auto densities = molecule.densities_blocked(
                 grid, all, 128, default_screening_threshold, density_progress.callback());
             const auto reference = molecule.densities_blocked(grid, all);
             density_progress.check(name + " densities_blocked", n);
-            for (Spin spin : all)
+            for (DensityComponent spin : all)
                 kumo_test::check(same(densities.at(spin).values(), reference.at(spin).values()),
                                  name + ": densities_blocked with progress is bit-identical");
 
@@ -70,8 +71,8 @@ int main(int argc, char** argv) {
             Recorder orbital_progress;
             const std::vector<std::size_t> mos{1, 2};
             const auto orbitals =
-                molecule.orbitals(grid, mos, Spin::Alpha, orbital_progress.callback());
-            const auto orbital_reference = molecule.orbitals(grid, mos, Spin::Alpha);
+                molecule.orbitals(grid, mos, SpinChannel::Alpha, orbital_progress.callback());
+            const auto orbital_reference = molecule.orbitals(grid, mos, SpinChannel::Alpha);
             orbital_progress.check(name + " orbitals", n);
             for (std::size_t i = 0; i < mos.size(); ++i)
                 kumo_test::check(same(orbitals[i].values(), orbital_reference[i].values()),
@@ -81,7 +82,7 @@ int main(int argc, char** argv) {
             // density field (here 2); AO_MO evaluates everything in one pass.
             Request request;
             request.add(density::total.value())
-                .add(density::spin.value())
+                .add(density::difference.value())
                 .add(density::total.laplacian())
                 .add(density::alpha.tau());
             for (Backend backend : {Backend::AO_P, Backend::AO_MO}) {
@@ -111,10 +112,13 @@ int main(int argc, char** argv) {
                 if (done > 0) throw std::runtime_error("stop");
             };
             kumo_test::check_throws<std::runtime_error>(
-                [&] { (void)molecule.densities_blocked(grid, {Spin::Total}, 128, 0.0, stop); },
+                [&] {
+                    (void)molecule.densities_blocked(grid, {DensityComponent::Total}, 128, 0.0,
+                                                     stop);
+                },
                 name + ": a throwing progress callback aborts densities_blocked");
             kumo_test::check_throws<std::runtime_error>(
-                [&] { (void)molecule.orbitals(grid, {1}, Spin::Alpha, stop); },
+                [&] { (void)molecule.orbitals(grid, {1}, SpinChannel::Alpha, stop); },
                 name + ": a throwing progress callback aborts orbitals");
             kumo_test::check_throws<std::runtime_error>(
                 [&] {

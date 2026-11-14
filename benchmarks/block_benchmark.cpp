@@ -21,16 +21,18 @@ int main(int argc, char** argv) {
         for (int r = 0; r < repeats; ++r) {
             auto t0 = std::chrono::steady_clock::now();
             auto result = fn();
-            sink = sink + result.at(Spin::Total).values()[0];
+            sink = sink + result.at(DensityComponent::Total).values()[0];
             auto t1 = std::chrono::steady_clock::now();
             best = std::min(best, std::chrono::duration<double>(t1 - t0).count());
         }
         return best;
     };
     auto ref = measure([&] {
-        std::map<Spin, Field> result;
-        result.emplace(Spin::Total, mol.density_pointwise(grid, Spin::Total));
-        result.emplace(Spin::Difference, mol.density_pointwise(grid, Spin::Difference));
+        std::map<DensityComponent, Field> result;
+        result.emplace(DensityComponent::Total,
+                       mol.density_pointwise(grid, DensityComponent::Total));
+        result.emplace(DensityComponent::Difference,
+                       mol.density_pointwise(grid, DensityComponent::Difference));
         return result;
     });
     std::cout << "basis=" << mol.basis_size() << " points="
@@ -38,8 +40,10 @@ int main(int argc, char** argv) {
               << " repeats=" << repeats << "\n";
     std::cout << "pointwise_s=" << ref << "\n";
     for (auto b : {16, 32, 64, 128, 256}) {
-        auto t = measure(
-            [&] { return mol.densities_blocked(grid, {Spin::Total, Spin::Difference}, b); });
+        auto t = measure([&] {
+            return mol.densities_blocked(
+                grid, {DensityComponent::Total, DensityComponent::Difference}, b);
+        });
         std::cout << "block_" << b << "_s=" << t << " speedup=" << ref / t << "\n";
     }
     std::cout << "sink=" << sink << "\n";

@@ -22,7 +22,7 @@ void write_density_cubes(const Molecule& mol, const chem::kumo::Grid& grid,
     console.end("Evaluated in");
     const auto files = components.size() * properties.size();
     console.begin("Writing " + std::to_string(files) + " Cube file" + (files > 1 ? "s" : ""));
-    const auto write = [&](Spin component, const std::string& suffix,
+    const auto write = [&](DensityComponent component, const std::string& suffix,
                            const DensityProperty& property) {
         auto values =
             scalar_values(results.get(density_property(component, property)), property.kind);

@@ -18,7 +18,8 @@ namespace {
 using Clock = std::chrono::steady_clock;
 using chem::kumo::Molecule;
 using chem::kumo::Grid;
-using chem::kumo::Spin;
+using chem::kumo::DensityComponent;
+using chem::kumo::SpinChannel;
 
 Grid make_grid(const std::vector<chem::kumo::Atom>& atoms, std::size_t requested, double margin) {
     if (atoms.empty()) throw std::invalid_argument("empty molecule");
@@ -84,19 +85,20 @@ std::vector<double> evaluate(const Molecule& mol, const Grid& grid,
                              const std::vector<std::size_t>& mo_indices) {
     std::vector<double> out;
     if (mode == "density-derivatives") {
-        const auto values = mol.density_derivatives_blocked(points, Spin::Total, block);
+        const auto values = mol.density_derivatives_blocked(points, DensityComponent::Total, block);
         out.reserve(values.size() * 15);
         for (const auto& x : values)
             append(out, x);
     } else if (mode == "mo-derivatives") {
-        const auto values = mol.orbital_derivatives_blocked(points, mo_index, Spin::Alpha, block);
+        const auto values =
+            mol.orbital_derivatives_blocked(points, mo_index, SpinChannel::Alpha, block);
         out.reserve(values.size() * 13);
         for (const auto& x : values)
             append(out, x);
     } else if (mode == "mo-single" || mode == "mo-multiple") {
         const std::vector<std::size_t> indices =
             mode == "mo-single" ? std::vector<std::size_t>{mo_index} : mo_indices;
-        const auto fields = mol.orbitals(grid, indices, Spin::Alpha);
+        const auto fields = mol.orbitals(grid, indices, SpinChannel::Alpha);
         out.reserve(points.cols() * static_cast<Eigen::Index>(indices.size()));
         for (const auto& field : fields) {
             const auto values = field.values();
@@ -160,9 +162,8 @@ int main(int argc, char** argv) {
         const auto grid = make_grid(mol.atoms(), requested, margin);
         const auto points = grid_points(grid);
         const auto count = static_cast<std::size_t>(points.cols());
-        const auto occupied =
-            static_cast<std::size_t>(std::max(1, mol.occupied_count(Spin::Alpha)));
-        const auto nmo = mol.orbital_count(Spin::Alpha);
+        const auto occupied = std::max<std::size_t>(1, mol.occupied_count(SpinChannel::Alpha));
+        const auto nmo = mol.orbital_count(SpinChannel::Alpha);
         if (nmo == 0) throw std::runtime_error("no alpha orbitals");
         const auto mo_index = std::min(occupied, nmo);
         std::vector<std::size_t> mo_indices;

@@ -21,10 +21,10 @@ int main(int argc, char** argv) {
             const auto m = Molecule::from_fchk(argv[arg]);
             FormattedCheckpoint f(argv[arg]);
             const Eigen::MatrixXd S = BasisEvaluator{BasisSet(f)}.overlap_matrix();
-            const auto pt = m.density_matrix(Spin::Total);
-            const auto ps = m.density_matrix(Spin::Difference);
-            const auto pa = m.density_matrix(Spin::Alpha);
-            const auto pb = m.density_matrix(Spin::Beta);
+            const auto pt = m.density_matrix(DensityComponent::Total);
+            const auto ps = m.density_matrix(DensityComponent::Difference);
+            const auto pa = m.density_matrix(DensityComponent::Alpha);
+            const auto pb = m.density_matrix(DensityComponent::Beta);
             const double total_split = max_abs_diff(pa + pb, pt);
             const double spin_split = max_abs_diff(pa - pb, ps);
             kumo_test::check(!(total_split > 2e-14),
@@ -54,11 +54,12 @@ int main(int argc, char** argv) {
                           << " electrons=" << std::setprecision(12) << trace
                           << " idempotency_max=" << idempotency << '\n';
             };
-            verify(pa, m.occupied_count(Spin::Alpha), "alpha");
-            verify(pb, m.occupied_count(Spin::Beta), "beta");
+            verify(pa, m.occupied_count(SpinChannel::Alpha), "alpha");
+            verify(pb, m.occupied_count(SpinChannel::Beta), "beta");
             const Eigen::Vector3d point(0.29, -0.41, 0.37);
             const Eigen::VectorXd ao = BasisEvaluator{BasisSet(f)}.evaluate(point);
-            for (Spin spin : {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference}) {
+            for (DensityComponent spin : {DensityComponent::Total, DensityComponent::Alpha,
+                                          DensityComponent::Beta, DensityComponent::Difference}) {
                 const Eigen::MatrixXd p = m.density_matrix(spin);
                 const double direct = ao.dot(p * ao);
                 const double reference = m.density_derivatives(point, spin).value;

@@ -18,34 +18,34 @@ namespace chem::kumo {
 // squaring it would lose the nodal structure of the orbital.
 
 namespace {
-void check_channel(Spin s) {
-    if (s != Spin::Alpha && s != Spin::Beta)
+void check_channel(SpinChannel s) {
+    if (s != SpinChannel::Alpha && s != SpinChannel::Beta)
         throw std::invalid_argument("MO spin channel must be alpha or beta");
 }
 } // namespace
 
 // Restricted calculations have one set of MOs for both channels.
-const Eigen::MatrixXd& Molecule::mo_coefficients(Spin channel) const {
+const Eigen::MatrixXd& Molecule::mo_coefficients(SpinChannel channel) const {
     check_channel(channel);
-    return (channel == Spin::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
+    return (channel == SpinChannel::Beta && unrestricted_) ? beta_mos_ : alpha_mos_;
 }
 
-std::size_t Molecule::orbital_count(Spin channel) const {
+std::size_t Molecule::orbital_count(SpinChannel channel) const {
     return static_cast<std::size_t>(mo_coefficients(channel).cols());
 }
 
-int Molecule::occupied_count(Spin channel) const {
+std::size_t Molecule::occupied_count(SpinChannel channel) const {
     check_channel(channel);
-    return channel == Spin::Alpha ? nalpha_ : nbeta_;
+    return static_cast<std::size_t>(channel == SpinChannel::Alpha ? nalpha_ : nbeta_);
 }
 
-const std::vector<double>& Molecule::orbital_energies(Spin channel) const {
+const std::vector<double>& Molecule::orbital_energies(SpinChannel channel) const {
     check_channel(channel);
-    return (channel == Spin::Beta && unrestricted_) ? beta_energies_ : alpha_energies_;
+    return (channel == SpinChannel::Beta && unrestricted_) ? beta_energies_ : alpha_energies_;
 }
 
 OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, std::size_t index,
-                                                 Spin channel) const {
+                                                 SpinChannel channel) const {
     const auto& coeff = mo_coefficients(channel);
     if (!point.allFinite()) throw std::invalid_argument("MO evaluation point must be finite");
     if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
@@ -67,7 +67,7 @@ OrbitalDerivatives Molecule::orbital_derivatives(const Eigen::Vector3d& point, s
 
 std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, std::size_t index,
-    Spin channel, std::size_t block_size) const {
+    SpinChannel channel, std::size_t block_size) const {
     const auto& coeff = mo_coefficients(channel);
     if (index == 0 || index > static_cast<std::size_t>(coeff.cols()))
         throw std::out_of_range("MO index outside available coefficient range");
@@ -107,13 +107,13 @@ std::vector<OrbitalDerivatives> Molecule::orbital_derivatives_blocked(
     return result;
 }
 
-Field Molecule::orbital(const Grid& grid, std::size_t index, Spin channel) const {
+Field Molecule::orbital(const Grid& grid, std::size_t index, SpinChannel channel) const {
     auto fields = orbitals(grid, {index}, channel);
     return std::move(fields.front());
 }
 
 std::vector<Field> Molecule::orbitals(const Grid& grid, const std::vector<std::size_t>& indices,
-                                      Spin channel, const ProgressCallback& progress) const {
+                                      SpinChannel channel, const ProgressCallback& progress) const {
     const auto& coeff = mo_coefficients(channel);
     if (coeff.cols() == 0) throw std::runtime_error("FCHK has no MO coefficients");
     for (auto i : indices)

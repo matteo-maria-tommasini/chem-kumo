@@ -2,6 +2,7 @@
 
 #include "chem/kumo/basis.hpp"
 #include "chem/kumo/fchk.hpp"
+#include "chem/kumo/spin.hpp"
 
 #include <Eigen/Core>
 
@@ -144,12 +145,6 @@ private:
     int max_angular_momentum_ = 0;
 };
 
-/// Which molecular-orbital (MO) coefficient record MolecularOrbitals reads.
-enum class OrbitalSpin {
-    Alpha,
-    Beta,
-};
-
 /// MO coefficient matrix of one spin, and MO amplitudes computed from AO
 /// values. Unlike Molecule, `orbital` indices here are zero-based.
 class MolecularOrbitals {
@@ -157,7 +152,7 @@ public:
     /// Read the "Alpha MO coefficients" or "Beta MO coefficients" record;
     /// throws std::runtime_error if it is missing or has the wrong size.
     explicit MolecularOrbitals(const FormattedCheckpoint& fchk,
-                               OrbitalSpin spin = OrbitalSpin::Alpha);
+                               SpinChannel spin = SpinChannel::Alpha);
 
     [[nodiscard]] std::size_t basis_size() const noexcept;    ///< rows: AOs
     [[nodiscard]] std::size_t orbital_count() const noexcept; ///< columns: MOs

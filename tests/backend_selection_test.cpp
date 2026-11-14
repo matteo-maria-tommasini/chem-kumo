@@ -17,10 +17,8 @@ int main(int argc, char** argv) {
             const std::string file = argv[i];
             const auto molecule = chem::kumo::Molecule::from_fchk(file);
             const auto& info = molecule.electronic_structure_info();
-            check(info.occupied_alpha == static_cast<std::size_t>(
-                                             molecule.occupied_count(chem::kumo::Spin::Alpha)) &&
-                      info.occupied_beta ==
-                          static_cast<std::size_t>(molecule.occupied_count(chem::kumo::Spin::Beta)),
+            check(info.occupied_alpha == molecule.occupied_count(chem::kumo::SpinChannel::Alpha) &&
+                      info.occupied_beta == molecule.occupied_count(chem::kumo::SpinChannel::Beta),
                   file + ": occupied counts in ElectronicStructureInfo match the molecule");
             check(std::isfinite(info.total_relative_error) &&
                       std::isfinite(info.spin_relative_error),

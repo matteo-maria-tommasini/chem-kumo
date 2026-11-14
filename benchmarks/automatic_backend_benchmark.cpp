@@ -16,7 +16,7 @@ using namespace chem::kumo;
 namespace {
 using Clock = std::chrono::steady_clock;
 volatile double sink = 0.0;
-constexpr std::array components{density::total, density::alpha, density::beta, density::spin};
+constexpr std::array components{density::total, density::alpha, density::beta, density::difference};
 
 enum class Workload { Density, ELF, Hessian };
 

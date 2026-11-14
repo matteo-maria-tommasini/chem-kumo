@@ -69,9 +69,9 @@ double elf_from(double d, double d0) {
 }
 
 // Pauli kinetic energy density of one spin channel from its occupied MOs.
-double pauli_from_orbitals(const Molecule& m, const Eigen::Vector3d& point, Spin channel,
+double pauli_from_orbitals(const Molecule& m, const Eigen::Vector3d& point, SpinChannel channel,
                            double& rho) {
-    const auto n = static_cast<std::size_t>(m.occupied_count(channel));
+    const auto n = m.occupied_count(channel);
     std::vector<OrbitalDerivatives> mo;
     for (std::size_t i = 1; i <= n; ++i)
         mo.push_back(m.orbital_derivatives(point, i, channel));
@@ -232,9 +232,9 @@ void check_molecule(const std::string& name) {
                                         static_cast<std::size_t>(grid.counts[1]));
         const auto k = static_cast<int>(p % static_cast<std::size_t>(grid.counts[2]));
         const Eigen::Vector3d point = grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
-        for (Spin channel : {Spin::Alpha, Spin::Beta}) {
+        for (SpinChannel channel : {SpinChannel::Alpha, SpinChannel::Beta}) {
             const auto c =
-                channel == Spin::Alpha ? DensityComponent::Alpha : DensityComponent::Beta;
+                channel == SpinChannel::Alpha ? DensityComponent::Alpha : DensityComponent::Beta;
             const auto s = at(r, c, p);
             if (s.rho < 1e-3) continue;
             double rho = 0.0;
@@ -268,8 +268,9 @@ void check_molecule(const std::string& name) {
     // Components the derived properties are not defined for.
     const Evaluator evaluator(molecule);
     for (const Property& key :
-         {density::spin.elf(), density::alpha.reduced_gradient(), density::spin.reduced_gradient(),
-          density::beta.sign_lambda2_density(), density::spin.sign_lambda2_density()}) {
+         {density::difference.elf(), density::alpha.reduced_gradient(),
+          density::difference.reduced_gradient(), density::beta.sign_lambda2_density(),
+          density::difference.sign_lambda2_density()}) {
         Request bad;
         bad.add(key);
         kumo_test::check_throws<std::invalid_argument>(

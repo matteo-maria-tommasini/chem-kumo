@@ -24,7 +24,7 @@ void validate(const char* path) {
         Evaluator evaluator(molecule, EvaluationOptions{1, block});
         Request first, second;
         for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
-                               DensityComponent::Beta, DensityComponent::Spin}) {
+                               DensityComponent::Beta, DensityComponent::Difference}) {
             DensityDescriptor d{component};
             first.add(d.gradient()).add(d.tau());
             second.add(d.gradient()).add(d.tau()).add(d.hessian());
@@ -32,7 +32,7 @@ void validate(const char* path) {
         const auto low = evaluator.evaluate(grid, first);
         const auto full = evaluator.evaluate(grid, second);
         for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
-                               DensityComponent::Beta, DensityComponent::Spin}) {
+                               DensityComponent::Beta, DensityComponent::Difference}) {
             DensityDescriptor d{component};
             for (auto key : {d.gradient(), d.tau()}) {
                 const auto& a = low.get(key);

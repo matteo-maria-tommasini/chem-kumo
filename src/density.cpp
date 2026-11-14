@@ -58,14 +58,14 @@ DensityDerivatives combine(const DensityDerivatives& a, const DensityDerivatives
 }
 
 // Store `value` at `slot` of the component `spin`, if it was requested.
-void store(std::map<Spin, std::vector<DensityDerivatives>>& result, Spin spin, std::size_t slot,
-           const DensityDerivatives& value) {
+void store(std::map<DensityComponent, std::vector<DensityDerivatives>>& result,
+           DensityComponent spin, std::size_t slot, const DensityDerivatives& value) {
     if (auto it = result.find(spin); it != result.end()) it->second[slot] = value;
 }
 } // namespace
 
 DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
-                                                 Spin component) const {
+                                                 DensityComponent component) const {
     if (!point.allFinite()) throw std::invalid_argument("density evaluation point must be finite");
     // P is the (symmetric) AO density matrix of the requested component; for
     // alpha and beta it is built from the FCHK total and spin matrices as
@@ -92,8 +92,8 @@ DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& point,
 }
 
 std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
-    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points, Spin component,
-    std::size_t block_size, double screening_threshold) const {
+    const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
+    DensityComponent component, std::size_t block_size, double screening_threshold) const {
     if (block_size == 0) throw std::invalid_argument("block size must be positive");
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
     detail::validate_screening_threshold(screening_threshold);
@@ -143,9 +143,9 @@ std::vector<DensityDerivatives> Molecule::density_derivatives_blocked(
 // Total and spin are contracted with the FCHK matrices; alpha and beta are
 // linear combinations of these contractions, never reconstructed from MO
 // occupations.
-std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
+std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_derivatives_shared(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-    const std::vector<Spin>& components, std::size_t block_size, int ao_order,
+    const std::vector<DensityComponent>& components, std::size_t block_size, int ao_order,
     double screening_threshold) const {
     if (ao_order != 1 && ao_order != 2)
         throw std::invalid_argument("shared AO derivative order must be 1 or 2");
@@ -153,14 +153,14 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
     if (!points.allFinite()) throw std::invalid_argument("density points must be finite");
     detail::validate_screening_threshold(screening_threshold);
     const std::size_t count = static_cast<std::size_t>(points.cols());
-    std::map<Spin, std::vector<DensityDerivatives>> result;
+    std::map<DensityComponent, std::vector<DensityDerivatives>> result;
     bool total_needed = false, spin_needed = false;
-    for (Spin component : components) {
+    for (DensityComponent component : components) {
         switch (component) {
-        case Spin::Total: total_needed = true; break;
-        case Spin::Difference: spin_needed = true; break;
-        case Spin::Alpha:
-        case Spin::Beta: total_needed = spin_needed = true; break;
+        case DensityComponent::Total: total_needed = true; break;
+        case DensityComponent::Difference: spin_needed = true; break;
+        case DensityComponent::Alpha:
+        case DensityComponent::Beta: total_needed = spin_needed = true; break;
         default: throw std::invalid_argument("invalid density spin component");
         }
         result.try_emplace(component, count);
@@ -213,12 +213,12 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
                 if (total_needed) contract_derivatives(ao, product_total, b, j, ao_order, t);
                 if (spin_needed) contract_derivatives(ao, product_spin, b, j, ao_order, s);
                 const auto slot = range.start + static_cast<std::size_t>(j);
-                store(result, Spin::Total, slot, t);
-                store(result, Spin::Difference, slot, s);
-                if (result.contains(Spin::Alpha))
-                    store(result, Spin::Alpha, slot, combine(t, s, 1.0, 0.5));
-                if (result.contains(Spin::Beta))
-                    store(result, Spin::Beta, slot, combine(t, s, -1.0, 0.5));
+                store(result, DensityComponent::Total, slot, t);
+                store(result, DensityComponent::Difference, slot, s);
+                if (result.contains(DensityComponent::Alpha))
+                    store(result, DensityComponent::Alpha, slot, combine(t, s, 1.0, 0.5));
+                if (result.contains(DensityComponent::Beta))
+                    store(result, DensityComponent::Beta, slot, combine(t, s, -1.0, 0.5));
             }
         });
     return result;
@@ -227,9 +227,9 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_sh
 // Validated occupied-MO contraction for electron-density derivatives.
 // Evaluator selects this backend when the orbital representation is eligible;
 // AO-P remains available as the general density-matrix reference.
-std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
+std::map<DensityComponent, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo(
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-    const std::vector<Spin>& components, std::size_t block_size, int ao_order,
+    const std::vector<DensityComponent>& components, std::size_t block_size, int ao_order,
     double screening_threshold) const {
     if (!electronic_info_.ao_mo_eligible())
         throw std::invalid_argument("AO-MO backend is not eligible for this molecule");
@@ -240,22 +240,24 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
     if (!points.allFinite()) throw std::invalid_argument("nonfinite AO-MO points");
     detail::validate_screening_threshold(screening_threshold);
     const std::size_t count = static_cast<std::size_t>(points.cols());
-    std::map<Spin, std::vector<DensityDerivatives>> result;
-    for (Spin c : components) {
+    std::map<DensityComponent, std::vector<DensityDerivatives>> result;
+    for (DensityComponent c : components) {
         switch (c) {
-        case Spin::Total:
-        case Spin::Alpha:
-        case Spin::Beta:
-        case Spin::Difference: break;
+        case DensityComponent::Total:
+        case DensityComponent::Alpha:
+        case DensityComponent::Beta:
+        case DensityComponent::Difference: break;
         default: throw std::invalid_argument("invalid AO-MO spin component");
         }
         result.try_emplace(c, count);
     }
     if (result.empty() || count == 0) return result;
-    const bool need_a = result.contains(Spin::Alpha) || result.contains(Spin::Total) ||
-                        result.contains(Spin::Difference);
-    const bool need_b = result.contains(Spin::Beta) || result.contains(Spin::Total) ||
-                        result.contains(Spin::Difference);
+    const bool need_a = result.contains(DensityComponent::Alpha) ||
+                        result.contains(DensityComponent::Total) ||
+                        result.contains(DensityComponent::Difference);
+    const bool need_b = result.contains(DensityComponent::Beta) ||
+                        result.contains(DensityComponent::Total) ||
+                        result.contains(DensityComponent::Difference);
     const auto n = static_cast<Eigen::Index>(basis_size());
     const auto capacity = static_cast<Eigen::Index>(std::min(count, block_size));
     const auto& cb = unrestricted_ ? beta_mos_ : alpha_mos_;
@@ -330,18 +332,19 @@ std::map<Spin, std::vector<DensityDerivatives>> Molecule::density_derivatives_mo
                 else if (need_b)
                     beta = contract(vb, j);
                 const auto slot = range.start + static_cast<std::size_t>(j);
-                store(result, Spin::Alpha, slot, alpha);
-                store(result, Spin::Beta, slot, beta);
-                if (result.contains(Spin::Total))
-                    store(result, Spin::Total, slot, combine(alpha, beta, 1.0, 1.0));
-                if (result.contains(Spin::Difference))
-                    store(result, Spin::Difference, slot, combine(alpha, beta, -1.0, 1.0));
+                store(result, DensityComponent::Alpha, slot, alpha);
+                store(result, DensityComponent::Beta, slot, beta);
+                if (result.contains(DensityComponent::Total))
+                    store(result, DensityComponent::Total, slot, combine(alpha, beta, 1.0, 1.0));
+                if (result.contains(DensityComponent::Difference))
+                    store(result, DensityComponent::Difference, slot,
+                          combine(alpha, beta, -1.0, 1.0));
             }
         });
     return result;
 }
 
-Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {
+Field Molecule::density_pointwise(const Grid& grid, DensityComponent spin) const {
     const auto count = detail::validated_point_count(grid);
     std::vector<double> values(count);
     Eigen::MatrixXd storage;
@@ -353,34 +356,36 @@ Field Molecule::density_pointwise(const Grid& grid, Spin spin) const {
     return Field(grid, atoms_, std::move(values));
 }
 
-Field Molecule::density(const Grid& grid, Spin spin) const {
+Field Molecule::density(const Grid& grid, DensityComponent spin) const {
     auto fields = densities_blocked(grid, {spin});
     return std::move(fields.at(spin));
 }
 
 SpinDensities Molecule::spin_densities(const Grid& grid) const {
-    auto fields = densities_blocked(grid, {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference});
-    return {std::move(fields.at(Spin::Total)), std::move(fields.at(Spin::Alpha)),
-            std::move(fields.at(Spin::Beta)), std::move(fields.at(Spin::Difference))};
+    auto fields = densities_blocked(grid, {DensityComponent::Total, DensityComponent::Alpha,
+                                           DensityComponent::Beta, DensityComponent::Difference});
+    return {std::move(fields.at(DensityComponent::Total)),
+            std::move(fields.at(DensityComponent::Alpha)),
+            std::move(fields.at(DensityComponent::Beta)),
+            std::move(fields.at(DensityComponent::Difference))};
 }
 
-std::map<Spin, Field> Molecule::densities(const Grid& grid,
-                                          std::initializer_list<Spin> components) const {
+std::map<DensityComponent, Field>
+Molecule::densities(const Grid& grid, std::initializer_list<DensityComponent> components) const {
     return densities_blocked(grid, components);
 }
 
-std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
-                                                  std::initializer_list<Spin> components,
-                                                  std::size_t block_size,
-                                                  double screening_threshold,
-                                                  const ProgressCallback& progress) const {
+std::map<DensityComponent, Field>
+Molecule::densities_blocked(const Grid& grid, std::initializer_list<DensityComponent> components,
+                            std::size_t block_size, double screening_threshold,
+                            const ProgressCallback& progress) const {
     const auto count = detail::validated_point_count(grid);
     if (block_size == 0 || block_size > max_block_size)
         throw std::invalid_argument("block_size must be in [1, " + std::to_string(max_block_size) +
                                     "]");
     detail::validate_screening_threshold(screening_threshold);
-    std::map<Spin, std::vector<double>> buffers;
-    for (Spin component : components)
+    std::map<DensityComponent, std::vector<double>> buffers;
+    for (DensityComponent component : components)
         buffers.try_emplace(component, count);
     if (buffers.empty()) return {};
     // Each component is a quadratic form phi^T P phi (phi = AO values at a
@@ -390,12 +395,16 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
     // If alpha or beta is requested, contract the alpha and beta matrices and
     // derive total = alpha + beta and difference = alpha - beta from them, so
     // that no request needs more than two products.
-    const bool by_spin = buffers.contains(Spin::Alpha) || buffers.contains(Spin::Beta);
-    std::vector<Spin> contracted;
+    const bool by_spin =
+        buffers.contains(DensityComponent::Alpha) || buffers.contains(DensityComponent::Beta);
+    std::vector<DensityComponent> contracted;
     if (by_spin) {
-        const bool derived = buffers.contains(Spin::Total) || buffers.contains(Spin::Difference);
-        if (derived || buffers.contains(Spin::Alpha)) contracted.push_back(Spin::Alpha);
-        if (derived || buffers.contains(Spin::Beta)) contracted.push_back(Spin::Beta);
+        const bool derived = buffers.contains(DensityComponent::Total) ||
+                             buffers.contains(DensityComponent::Difference);
+        if (derived || buffers.contains(DensityComponent::Alpha))
+            contracted.push_back(DensityComponent::Alpha);
+        if (derived || buffers.contains(DensityComponent::Beta))
+            contracted.push_back(DensityComponent::Beta);
     } else {
         for (const auto& entry : buffers)
             contracted.push_back(entry.first);
@@ -423,7 +432,7 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
             const auto kept = detail::significant_aos(phi, screening_threshold);
             const bool screened = static_cast<Eigen::Index>(kept.size()) < m;
             if (screened) phi = detail::select_rows(phi, kept);
-            std::map<Spin, Eigen::VectorXd> rho;
+            std::map<DensityComponent, Eigen::VectorXd> rho;
             for (std::size_t i = 0; i < contracted.size(); ++i) {
                 const Eigen::MatrixXd y =
                     screened ? Eigen::MatrixXd(detail::select_submatrix(*matrices[i], kept) * phi)
@@ -434,14 +443,14 @@ std::map<Spin, Field> Molecule::densities_blocked(const Grid& grid,
                 Eigen::Map<Eigen::VectorXd> out(values.data() + start, b);
                 if (rho.contains(spin))
                     out = rho.at(spin);
-                else if (spin == Spin::Total)
-                    out = rho.at(Spin::Alpha) + rho.at(Spin::Beta);
+                else if (spin == DensityComponent::Total)
+                    out = rho.at(DensityComponent::Alpha) + rho.at(DensityComponent::Beta);
                 else
-                    out = rho.at(Spin::Alpha) - rho.at(Spin::Beta);
+                    out = rho.at(DensityComponent::Alpha) - rho.at(DensityComponent::Beta);
             }
             report.advance(static_cast<std::size_t>(b));
         });
-    std::map<Spin, Field> result;
+    std::map<DensityComponent, Field> result;
     for (auto& [spin, values] : buffers)
         result.emplace(spin, Field(grid, atoms_, std::move(values)));
     return result;

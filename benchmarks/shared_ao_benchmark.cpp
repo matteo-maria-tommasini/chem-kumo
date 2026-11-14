@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
             points.col(p) = grid.origin + grid.steps * Eigen::Vector3d(p, 0, 0);
         Request request;
         for (auto c : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
-                       DensityComponent::Spin}) {
+                       DensityComponent::Difference}) {
             const DensityDescriptor d{c};
             request.add(d.gradient()).add(d.hessian()).add(d.laplacian()).add(d.tau());
         }
@@ -57,7 +57,8 @@ int main(int argc, char** argv) {
                             {.threads = 1, .block_size = static_cast<std::size_t>(block)});
         const auto old = [&]() {
             double checksum = 0;
-            for (auto s : {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference}) {
+            for (auto s : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
+                           DensityComponent::Difference}) {
                 const auto fields = molecule.density_derivatives_blocked(
                     points, s, static_cast<std::size_t>(block));
                 for (const auto& d : fields)
@@ -69,7 +70,7 @@ int main(int argc, char** argv) {
             const auto fields = evaluator.evaluate(grid, request);
             double checksum = 0;
             for (auto c : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
-                           DensityComponent::Spin}) {
+                           DensityComponent::Difference}) {
                 const auto& grad = fields.get(Property{PropertyKind::Gradient, c});
                 const auto& tau = fields.get(Property{PropertyKind::Tau, c});
                 const auto& hess = fields.get(Property{PropertyKind::Hessian, c});

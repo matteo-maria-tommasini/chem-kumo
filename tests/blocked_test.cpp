@@ -18,23 +18,29 @@ int main(int argc, char** argv) {
             for (auto size : {std::size_t(1), std::size_t(16), std::size_t(32), std::size_t(64),
                               std::size_t(128), std::size_t(256)}) {
                 auto ref =
-                    mol.densities(grid, {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference});
-                auto blk = mol.densities_blocked(
-                    grid, {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference}, size);
-                for (auto component : {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference})
+                    mol.densities(grid, {DensityComponent::Total, DensityComponent::Alpha,
+                                         DensityComponent::Beta, DensityComponent::Difference});
+                auto blk =
+                    mol.densities_blocked(grid,
+                                          {DensityComponent::Total, DensityComponent::Alpha,
+                                           DensityComponent::Beta, DensityComponent::Difference},
+                                          size);
+                for (auto component : {DensityComponent::Total, DensityComponent::Alpha,
+                                       DensityComponent::Beta, DensityComponent::Difference})
                     maxerr =
                         std::max(maxerr, kumo_test::max_abs_diff(
                                              blk.at(component).values(), ref.at(component).values(),
                                              name + " block " + std::to_string(size)));
             }
-            auto only = mol.densities_blocked(grid, {Spin::Total, Spin::Total}, 32);
+            auto only =
+                mol.densities_blocked(grid, {DensityComponent::Total, DensityComponent::Total}, 32);
             kumo_test::check(only.size() == 1,
                              name +
                                  ": a duplicate component is evaluated once (expected 1 field, "
                                  "got " +
                                  std::to_string(only.size()) + ")");
             kumo_test::check_throws<std::invalid_argument>(
-                [&] { (void)mol.densities_blocked(grid, {Spin::Total}, 0); },
+                [&] { (void)mol.densities_blocked(grid, {DensityComponent::Total}, 0); },
                 name + ": densities_blocked rejects block size 0");
             kumo_test::check(!(maxerr > 1e-9),
                              name + ": blocked densities match densities() within 1e-9 (max_abs=" +

@@ -15,20 +15,23 @@ int main(int argc, char** argv) {
             auto molecule = Molecule::from_fchk(argv[n]);
             auto grid = Grid::around(molecule.atoms(), 1.5, 0.6);
             auto all = molecule.spin_densities(grid);
-            auto selected = molecule.densities(grid, {Spin::Total, Spin::Difference, Spin::Total});
+            auto selected =
+                molecule.densities(grid, {DensityComponent::Total, DensityComponent::Difference,
+                                          DensityComponent::Total});
             kumo_test::check(selected.size() == 2,
                              "duplicate components are merged (expected 2 fields, got " +
                                  std::to_string(selected.size()) + ")");
             kumo_test::check(molecule.densities(grid, {}).empty(),
                              "an empty component list returns no fields");
             double error = 0;
-            for (auto [key, expected] :
-                 {std::pair{Spin::Total, &all.total}, std::pair{Spin::Difference, &all.spin}}) {
+            for (auto [key, expected] : {std::pair{DensityComponent::Total, &all.total},
+                                         std::pair{DensityComponent::Difference, &all.spin}}) {
                 error = std::max(error, kumo_test::max_abs_diff(selected.at(key).values(),
                                                                 expected->values(),
                                                                 "densities() vs spin_densities()"));
             }
-            for (Spin key : {Spin::Alpha, Spin::Beta, Spin::Total, Spin::Difference}) {
+            for (DensityComponent key : {DensityComponent::Alpha, DensityComponent::Beta,
+                                         DensityComponent::Total, DensityComponent::Difference}) {
                 auto one = molecule.densities(grid, {key});
                 auto field = molecule.density(grid, key);
                 error =

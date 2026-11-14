@@ -16,12 +16,12 @@ void require_close(double actual, double expected, const std::string& label) {
     kumo_test::check_close(actual, expected, 2e-11, 2e-11, label);
 }
 
-Spin legacy_spin(DensityComponent c) {
+DensityComponent legacy_spin(DensityComponent c) {
     switch (c) {
-    case DensityComponent::Total: return Spin::Total;
-    case DensityComponent::Alpha: return Spin::Alpha;
-    case DensityComponent::Beta: return Spin::Beta;
-    case DensityComponent::Spin: return Spin::Difference;
+    case DensityComponent::Total: return DensityComponent::Total;
+    case DensityComponent::Alpha: return DensityComponent::Alpha;
+    case DensityComponent::Beta: return DensityComponent::Beta;
+    case DensityComponent::Difference: return DensityComponent::Difference;
     }
     throw std::logic_error("invalid spin component");
 }
@@ -53,7 +53,7 @@ void check(const Molecule& molecule, std::size_t block_size, bool reversed) {
     Request combined;
     std::vector<Property> all;
     for (auto component : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
-                           DensityComponent::Spin}) {
+                           DensityComponent::Difference}) {
         const auto props = keys(component);
         all.insert(all.end(), props.begin(), props.end());
     }
@@ -62,7 +62,7 @@ void check(const Molecule& molecule, std::size_t block_size, bool reversed) {
         combined.add(key);
     const auto fused = evaluator.evaluate(grid, combined);
     for (auto component : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
-                           DensityComponent::Spin}) {
+                           DensityComponent::Difference}) {
         const auto reference =
             molecule.density_derivatives_blocked(points, legacy_spin(component), block_size);
         const auto scalar = molecule.density(grid, legacy_spin(component));

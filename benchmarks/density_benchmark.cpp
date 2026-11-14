@@ -27,7 +27,8 @@ int main(int argc, char** argv) {
     };
     volatile double sink = 0.0;
     const double separate = measure([&] {
-        for (auto s : {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference}) {
+        for (auto s : {DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
+                       DensityComponent::Difference}) {
             auto f = molecule.density(grid, s);
             sink = sink + f.values()[0];
         }
@@ -37,8 +38,8 @@ int main(int argc, char** argv) {
         sink = sink + f.total.values()[0];
     });
     const double selective = measure([&] {
-        auto f = molecule.densities(grid, {Spin::Total, Spin::Difference});
-        sink = sink + f.at(Spin::Total).values()[0];
+        auto f = molecule.densities(grid, {DensityComponent::Total, DensityComponent::Difference});
+        sink = sink + f.at(DensityComponent::Total).values()[0];
     });
     std::cout << "basis=" << molecule.basis_size() << " grid="
               << static_cast<long long>(grid.counts[0]) * grid.counts[1] * grid.counts[2]

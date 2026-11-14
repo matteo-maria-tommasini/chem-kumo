@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
                           << " ao_diagonal_error=" << diagonal_error
                           << " eigenvalues=skipped_large_basis" << '\n';
             }
-            const auto test_spin = [&](chem::kumo::OrbitalSpin spin) {
+            const auto test_spin = [&](chem::kumo::SpinChannel spin) {
                 chem::kumo::MolecularOrbitals orbitals(fchk, spin);
                 const auto& C = orbitals.coefficients();
                 const Eigen::MatrixXd metric = C.transpose() * S * C;
@@ -55,16 +55,16 @@ int main(int argc, char** argv) {
                 offdiag.diagonal().setZero();
                 const double offdiag_error = offdiag.cwiseAbs().maxCoeff();
                 std::cout << std::scientific << std::setprecision(12) << argv[a]
-                          << " spin=" << (spin == chem::kumo::OrbitalSpin::Alpha ? "alpha" : "beta")
+                          << " spin=" << (spin == chem::kumo::SpinChannel::Alpha ? "alpha" : "beta")
                           << " nAO=" << S.rows() << " orthonormality_max=" << error
                           << " diagonal_error=" << diag_error
                           << " offdiagonal_error=" << offdiag_error << '\n';
                 if (!std::isfinite(error) || error > 1e-5)
                     throw std::runtime_error("MO orthonormality regression");
             };
-            test_spin(chem::kumo::OrbitalSpin::Alpha);
+            test_spin(chem::kumo::SpinChannel::Alpha);
             // Restricted FCHK may omit beta coefficients.
-            if (fchk.contains("Beta MO coefficients")) test_spin(chem::kumo::OrbitalSpin::Beta);
+            if (fchk.contains("Beta MO coefficients")) test_spin(chem::kumo::SpinChannel::Beta);
         }
     } catch (const std::exception& e) {
         std::cerr << e.what() << '\n';

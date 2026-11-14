@@ -27,7 +27,7 @@ int validate(const std::string& path) {
     const Molecule mol = Molecule::from_fchk(path);
     const BasisEvaluator ao{BasisSet(fchk)};
     const CartesianAOMoments moments = ao.cartesian_moments();
-    const Eigen::MatrixXd P = mol.density_matrix(Spin::Total);
+    const Eigen::MatrixXd P = mol.density_matrix(DensityComponent::Total);
     if (P.rows() != moments.overlap.rows() || P.cols() != moments.overlap.cols())
         throw std::runtime_error("P/AO basis dimension mismatch");
 

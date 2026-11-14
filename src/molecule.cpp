@@ -168,7 +168,7 @@ Molecule Molecule::from_fchk(const std::filesystem::path& path) {
     return result;
 }
 
-Eigen::MatrixXd Molecule::density_matrix(Spin component) const {
+Eigen::MatrixXd Molecule::density_matrix(DensityComponent component) const {
     Eigen::MatrixXd storage;
     return detail::select_density_matrix(total_, spin_, component, storage);
 }

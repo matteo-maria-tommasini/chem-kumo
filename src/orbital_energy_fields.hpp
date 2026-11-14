@@ -62,17 +62,18 @@ public:
         // MOs, so this cannot happen today; the check keeps the restriction
         // explicit here in case that changes.
         if (virtuals && !molecule.unrestricted() &&
-            molecule.occupied_count(Spin::Alpha) != molecule.occupied_count(Spin::Beta))
+            molecule.occupied_count(SpinChannel::Alpha) !=
+                molecule.occupied_count(SpinChannel::Beta))
             throw std::invalid_argument(what +
                                         " is not defined for a restricted open-shell calculation");
         if (!molecule.electronic_structure_info().ao_mo_eligible())
             throw std::invalid_argument(what +
                                         " needs occupied MOs that reproduce the FCHK density "
                                         "matrices (an SCF calculation)");
-        const int nalpha = molecule.occupied_count(Spin::Alpha);
-        const int nbeta = molecule.occupied_count(Spin::Beta);
-        const auto& alpha_energies = molecule.orbital_energies(Spin::Alpha);
-        const auto& beta_energies = molecule.orbital_energies(Spin::Beta);
+        const int nalpha = static_cast<int>(molecule.occupied_count(SpinChannel::Alpha));
+        const int nbeta = static_cast<int>(molecule.occupied_count(SpinChannel::Beta));
+        const auto& alpha_energies = molecule.orbital_energies(SpinChannel::Alpha);
+        const auto& beta_energies = molecule.orbital_energies(SpinChannel::Beta);
         const bool unrestricted = molecule.unrestricted();
         if (alpha_energies.size() < static_cast<std::size_t>(alpha.cols()) ||
             (unrestricted && beta_energies.size() < static_cast<std::size_t>(beta.cols())) ||

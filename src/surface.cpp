@@ -37,15 +37,16 @@ struct SurfaceAccess {
     total_density(const Molecule& molecule,
                   const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points) {
         return molecule
-            .density_derivatives_shared(points, {Spin::Total}, 128, 1, default_screening_threshold)
-            .at(Spin::Total);
+            .density_derivatives_shared(points, {DensityComponent::Total}, 128, 1,
+                                        default_screening_threshold)
+            .at(DensityComponent::Total);
     }
 
     static const BasisSet& basis(const Molecule& molecule) { return molecule.evaluator_.basis(); }
 
     static const BasisEvaluator& evaluator(const Molecule& molecule) { return molecule.evaluator_; }
 
-    static const Eigen::MatrixXd& orbitals(const Molecule& molecule, Spin channel) {
+    static const Eigen::MatrixXd& orbitals(const Molecule& molecule, SpinChannel channel) {
         return molecule.mo_coefficients(channel);
     }
 };
@@ -335,7 +336,8 @@ DensitySurface density_surface(const Molecule& molecule, double isovalue, double
     for (double margin = 4.0; margin <= 16.0; margin += 2.0) {
         const Grid grid = Grid::around(molecule.atoms(), margin, spacing);
         validated_point_count(grid);
-        const auto field = molecule.densities_blocked(grid, {Spin::Total}).at(Spin::Total);
+        const auto field =
+            molecule.densities_blocked(grid, {DensityComponent::Total}).at(DensityComponent::Total);
         if (isosurface_reaches_boundary(grid, field.values(), isovalue)) continue;
         return {extract_isosurface(grid, field.values(), isovalue, density), grid};
     }
@@ -529,10 +531,11 @@ std::vector<double> average_local_ionization_energy(
     const Molecule& molecule,
     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points) {
     if (!points.allFinite()) throw std::invalid_argument("ionization energy points must be finite");
-    const detail::OrbitalEnergyFields fields(molecule, detail::SurfaceAccess::evaluator(molecule),
-                                             detail::SurfaceAccess::orbitals(molecule, Spin::Alpha),
-                                             detail::SurfaceAccess::orbitals(molecule, Spin::Beta),
-                                             false, "the average local ionization energy");
+    const detail::OrbitalEnergyFields fields(
+        molecule, detail::SurfaceAccess::evaluator(molecule),
+        detail::SurfaceAccess::orbitals(molecule, SpinChannel::Alpha),
+        detail::SurfaceAccess::orbitals(molecule, SpinChannel::Beta), false,
+        "the average local ionization energy");
     const auto count = static_cast<std::size_t>(points.cols());
     std::vector<double> result(count);
     constexpr std::size_t block_size = 128;
@@ -581,7 +584,7 @@ PotentialSurface electrostatic_potential_surface(const Molecule& molecule,
     auto& surface = density.surface;
     const Grid& grid = density.grid;
     const detail::ElectrostaticPotential potential(detail::SurfaceAccess::basis(molecule),
-                                                   molecule.density_matrix(Spin::Total),
+                                                   molecule.density_matrix(DensityComponent::Total),
                                                    molecule.atoms());
 
     // Vertices are evaluated in clusters: those whose edges start in the same

@@ -78,12 +78,12 @@ const std::vector<DensityProperty>& known_properties() {
     return known;
 }
 
-chem::kumo::DensityDescriptor descriptor(Spin component) {
+chem::kumo::DensityDescriptor descriptor(DensityComponent component) {
     switch (component) {
-    case Spin::Total: return chem::kumo::density::total;
-    case Spin::Alpha: return chem::kumo::density::alpha;
-    case Spin::Beta: return chem::kumo::density::beta;
-    default: return chem::kumo::density::spin;
+    case DensityComponent::Total: return chem::kumo::density::total;
+    case DensityComponent::Alpha: return chem::kumo::density::alpha;
+    case DensityComponent::Beta: return chem::kumo::density::beta;
+    default: return chem::kumo::density::difference;
     }
 }
 
@@ -148,44 +148,46 @@ std::vector<DensityProperty> select_properties(const std::string& list) {
     return result;
 }
 
-void check_components(const std::vector<std::pair<Spin, std::string>>& components,
+void check_components(const std::vector<std::pair<DensityComponent, std::string>>& components,
                       const std::vector<DensityProperty>& properties) {
     for (const auto& property : properties)
         for (const auto& component : components) {
-            const Spin spin = component.first;
-            if (property.components == Components::NotDifference && spin == Spin::Difference)
+            const DensityComponent spin = component.first;
+            if (property.components == Components::NotDifference &&
+                spin == DensityComponent::Difference)
                 throw std::invalid_argument("--property " + property.name +
                                             " is not defined for --spin difference (or all); "
                                             "use total, alpha or beta");
-            if (property.components == Components::DifferenceOnly && spin != Spin::Difference)
+            if (property.components == Components::DifferenceOnly &&
+                spin != DensityComponent::Difference)
                 throw std::invalid_argument("--property " + property.name +
                                             " is defined only for --spin difference");
-            if (property.components == Components::TotalOnly && spin != Spin::Total)
+            if (property.components == Components::TotalOnly && spin != DensityComponent::Total)
                 throw std::invalid_argument("--property " + property.name +
                                             " is defined only for --spin total");
         }
 }
 
-chem::kumo::Property density_property(Spin component, const DensityProperty& property) {
+chem::kumo::Property density_property(DensityComponent component, const DensityProperty& property) {
     const auto d = descriptor(component);
     return (d.*property.property)();
 }
 
-std::string component_label(Spin component) {
+std::string component_label(DensityComponent component) {
     switch (component) {
-    case Spin::Total: return "total";
-    case Spin::Alpha: return "alpha";
-    case Spin::Beta: return "beta";
+    case DensityComponent::Total: return "total";
+    case DensityComponent::Alpha: return "alpha";
+    case DensityComponent::Beta: return "beta";
     default: return "alpha-beta difference";
     }
 }
 
-std::string column_name(Spin component, const DensityProperty& property) {
+std::string column_name(DensityComponent component, const DensityProperty& property) {
     const char* names[] = {"total", "alpha", "beta", "spin"};
-    const auto index = component == Spin::Total   ? 0
-                       : component == Spin::Alpha ? 1
-                       : component == Spin::Beta  ? 2
-                                                  : 3;
+    const auto index = component == DensityComponent::Total   ? 0
+                       : component == DensityComponent::Alpha ? 1
+                       : component == DensityComponent::Beta  ? 2
+                                                              : 3;
     return property.name + "_" + names[index];
 }
 
@@ -203,8 +205,9 @@ std::string method_label(const DensityProperty& property, chem::kumo::Backend us
     }
 }
 
-std::string evaluation_summary(const std::vector<std::pair<Spin, std::string>>& components,
-                               const std::vector<DensityProperty>& properties) {
+std::string
+evaluation_summary(const std::vector<std::pair<DensityComponent, std::string>>& components,
+                   const std::vector<DensityProperty>& properties) {
     std::vector<std::string> what, which;
     for (const auto& property : properties)
         what.push_back(property.summary);
@@ -233,10 +236,12 @@ DensitySelection select_density(const Options& o, const Molecule& mol, Console& 
     DensitySelection selection;
     auto& components = selection.components;
     const auto spin = o.spin.empty() ? "total" : o.spin;
-    if (spin == "total" || spin == "all") components.emplace_back(Spin::Total, "density");
-    if (spin == "alpha" || spin == "all") components.emplace_back(Spin::Alpha, "alpha");
-    if (spin == "beta" || spin == "all") components.emplace_back(Spin::Beta, "beta");
-    if (spin == "difference" || spin == "all") components.emplace_back(Spin::Difference, "spin");
+    if (spin == "total" || spin == "all")
+        components.emplace_back(DensityComponent::Total, "density");
+    if (spin == "alpha" || spin == "all") components.emplace_back(DensityComponent::Alpha, "alpha");
+    if (spin == "beta" || spin == "all") components.emplace_back(DensityComponent::Beta, "beta");
+    if (spin == "difference" || spin == "all")
+        components.emplace_back(DensityComponent::Difference, "spin");
     if (components.empty())
         throw std::invalid_argument(
             "density --spin must be total, alpha, beta, difference, or all");

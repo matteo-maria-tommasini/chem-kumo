@@ -668,11 +668,11 @@ void BasisEvaluator::evaluate_batch(
     }
 }
 
-MolecularOrbitals::MolecularOrbitals(const FormattedCheckpoint& fchk, OrbitalSpin spin) {
+MolecularOrbitals::MolecularOrbitals(const FormattedCheckpoint& fchk, SpinChannel spin) {
     const auto nbasis = detail::checked_positive_size(fchk.integer("Number of basis functions"),
                                                       "Number of basis functions");
     const char* label =
-        spin == OrbitalSpin::Alpha ? "Alpha MO coefficients" : "Beta MO coefficients";
+        spin == SpinChannel::Alpha ? "Alpha MO coefficients" : "Beta MO coefficients";
     if (!fchk.contains(label)) {
         throw std::runtime_error(std::string("missing fchk record: ") + label);
     }

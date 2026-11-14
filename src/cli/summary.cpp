@@ -7,10 +7,11 @@
 
 namespace kumo_cli {
 using chem::kumo::Molecule;
-using chem::kumo::Spin;
+using chem::kumo::SpinChannel;
 
 std::string molecule_summary(const Molecule& mol) {
-    const auto na = mol.occupied_count(Spin::Alpha), nb = mol.occupied_count(Spin::Beta);
+    const auto na = mol.occupied_count(SpinChannel::Alpha),
+               nb = mol.occupied_count(SpinChannel::Beta);
     std::string reference;
     if (mol.unrestricted())
         reference = "unrestricted SCF, " + std::to_string(na) + " alpha and " + std::to_string(nb) +

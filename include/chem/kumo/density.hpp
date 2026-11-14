@@ -15,11 +15,6 @@ namespace detail {
 struct AoMoTestAccess;
 struct SurfaceAccess;
 } // namespace detail
-/// Component of the self-consistent-field (SCF) electron density: total,
-/// alpha, beta, or Difference = alpha minus beta (the spin density).
-/// Functions that evaluate molecular orbitals (MOs) take Alpha or Beta as
-/// the spin channel and throw std::invalid_argument for the other values.
-enum class Spin { Total, Alpha, Beta, Difference };
 
 /// Default threshold for leaving negligible atomic orbitals (AOs, the basis
 /// functions) out of the evaluation of densities and their derivatives on
@@ -236,13 +231,14 @@ public:
     /// One density component (default: total) on `grid`, in e/bohr^3, with
     /// the default block size and AO screening. Throws std::invalid_argument
     /// for an invalid grid (see Grid).
-    Field density(const Grid& grid, Spin spin = Spin::Total) const;
+    Field density(const Grid& grid, DensityComponent spin = DensityComponent::Total) const;
     /// Density, gradient, Hessian, Laplacian and positive kinetic-energy
     /// density of any component at one point (bohr), computed analytically
     /// without AO screening. Throws std::invalid_argument for a nonfinite
     /// point.
-    [[nodiscard]] DensityDerivatives density_derivatives(const Eigen::Vector3d& point,
-                                                         Spin spin = Spin::Total) const;
+    [[nodiscard]] DensityDerivatives
+    density_derivatives(const Eigen::Vector3d& point,
+                        DensityComponent spin = DensityComponent::Total) const;
     /// density_derivatives() at each column of `points` (bohr), in column
     /// order, evaluated in blocks of `block_size` points with matrix
     /// products. AOs whose value and derivatives are all at most
@@ -251,25 +247,26 @@ public:
     /// block size, a nonfinite point, or a negative or nonfinite threshold.
     [[nodiscard]] std::vector<DensityDerivatives> density_derivatives_blocked(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-        Spin spin = Spin::Total, std::size_t block_size = 128,
+        DensityComponent spin = DensityComponent::Total, std::size_t block_size = 128,
         double screening_threshold = default_screening_threshold) const;
     /// density() computed point by point, without blocks or AO screening;
     /// kept as a reference for numerical regression tests.
-    [[nodiscard]] Field density_pointwise(const Grid& grid, Spin spin = Spin::Total) const;
+    [[nodiscard]] Field density_pointwise(const Grid& grid,
+                                          DensityComponent spin = DensityComponent::Total) const;
     /// All four density components on `grid`, computed together.
     [[nodiscard]] SpinDensities spin_densities(const Grid& grid) const;
     /// The requested density components on `grid`, sharing the AO
     /// evaluation; as densities_blocked() with the default settings.
-    [[nodiscard]] std::map<Spin, Field> densities(const Grid& grid,
-                                                  std::initializer_list<Spin> components) const;
+    [[nodiscard]] std::map<DensityComponent, Field>
+    densities(const Grid& grid, std::initializer_list<DensityComponent> components) const;
     /// The requested density components on `grid`, evaluated in blocks of
     /// `block_size` grid points (1 to max_block_size) with AO screening
     /// threshold `screening_threshold` (finite and >= 0; 0 disables it, see
     /// default_screening_threshold). `progress`, if set, is called after each
     /// block (see ProgressCallback). Throws std::invalid_argument for an
     /// invalid grid or an invalid block size or threshold.
-    [[nodiscard]] std::map<Spin, Field>
-    densities_blocked(const Grid& grid, std::initializer_list<Spin> components,
+    [[nodiscard]] std::map<DensityComponent, Field>
+    densities_blocked(const Grid& grid, std::initializer_list<DensityComponent> components,
                       std::size_t block_size = 128,
                       double screening_threshold = default_screening_threshold,
                       const ProgressCallback& progress = {}) const;
@@ -282,41 +279,43 @@ public:
     /// SCF matrices stored in the FCHK; Alpha = (Total + Difference) / 2 and
     /// Beta = (Total - Difference) / 2. The MOs are not used. The number of
     /// electrons is Tr(P S), with S the AO overlap matrix.
-    [[nodiscard]] Eigen::MatrixXd density_matrix(Spin component = Spin::Total) const;
+    [[nodiscard]] Eigen::MatrixXd
+    density_matrix(DensityComponent component = DensityComponent::Total) const;
 
     /// Whether the FCHK has separate beta MOs (unrestricted SCF).
     [[nodiscard]] bool unrestricted() const noexcept { return unrestricted_; }
 
     /// Number of MOs of the channel (Alpha or Beta); can be less than the
     /// number of AOs if Gaussian removed linear dependencies.
-    [[nodiscard]] std::size_t orbital_count(Spin channel = Spin::Alpha) const;
+    [[nodiscard]] std::size_t orbital_count(SpinChannel channel = SpinChannel::Alpha) const;
     /// Number of occupied orbitals of the channel (Alpha or Beta), that is
     /// the number of electrons of that spin.
-    [[nodiscard]] int occupied_count(Spin channel = Spin::Alpha) const;
+    [[nodiscard]] std::size_t occupied_count(SpinChannel channel = SpinChannel::Alpha) const;
     /// MO energies of the channel (Alpha or Beta) in hartree; entry i is the
     /// energy of MO i + 1.
-    [[nodiscard]] const std::vector<double>& orbital_energies(Spin channel = Spin::Alpha) const;
+    [[nodiscard]] const std::vector<double>&
+    orbital_energies(SpinChannel channel = SpinChannel::Alpha) const;
     /// Signed amplitude of MO `index_one_based` (1 = first MO) of the channel
     /// (Alpha or Beta) on `grid`, in bohr^(-3/2). Throws
     /// std::invalid_argument for an invalid grid or channel and
     /// std::out_of_range for an index outside 1 to orbital_count().
     [[nodiscard]] Field orbital(const Grid& grid, std::size_t index_one_based,
-                                Spin channel = Spin::Alpha) const;
+                                SpinChannel channel = SpinChannel::Alpha) const;
     /// Value, gradient and Hessian of the signed amplitude of MO
     /// `index_one_based` (1 = first MO) at one point (bohr), computed
     /// analytically. Throws std::invalid_argument for a nonfinite point or a
     /// channel other than Alpha or Beta, and std::out_of_range for an index
     /// outside 1 to orbital_count().
-    [[nodiscard]] OrbitalDerivatives orbital_derivatives(const Eigen::Vector3d& point,
-                                                         std::size_t index_one_based,
-                                                         Spin channel = Spin::Alpha) const;
+    [[nodiscard]] OrbitalDerivatives
+    orbital_derivatives(const Eigen::Vector3d& point, std::size_t index_one_based,
+                        SpinChannel channel = SpinChannel::Alpha) const;
     /// orbital_derivatives() at each column of `points` (bohr), in column
     /// order, evaluated in blocks of `block_size` points (in parallel in
     /// OpenMP builds). Throws as orbital_derivatives(), and
     /// std::invalid_argument for a zero block size.
     [[nodiscard]] std::vector<OrbitalDerivatives> orbital_derivatives_blocked(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-        std::size_t index_one_based, Spin channel = Spin::Alpha,
+        std::size_t index_one_based, SpinChannel channel = SpinChannel::Alpha,
         std::size_t block_size = 128) const;
     /// Several MOs of one channel on `grid` (one-based indices), sharing the
     /// AO evaluation; one Field per index, in the order given. `progress`, if
@@ -324,7 +323,7 @@ public:
     /// Throws as orbital(), and std::runtime_error if the FCHK has no MOs.
     [[nodiscard]] std::vector<Field> orbitals(const Grid& grid,
                                               const std::vector<std::size_t>& indices_one_based,
-                                              Spin channel = Spin::Alpha,
+                                              SpinChannel channel = SpinChannel::Alpha,
                                               const ProgressCallback& progress = {}) const;
 
 private:
@@ -334,13 +333,14 @@ private:
     /// Derivatives of several density components at the columns of `points`
     /// from the density matrices (AO_P), with one AO evaluation per point
     /// shared by all components; used by Evaluator and the surface functions.
-    [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>> density_derivatives_shared(
+    [[nodiscard]] std::map<DensityComponent, std::vector<DensityDerivatives>>
+    density_derivatives_shared(
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-        const std::vector<Spin>& components, std::size_t block_size, int ao_order = 2,
+        const std::vector<DensityComponent>& components, std::size_t block_size, int ao_order = 2,
         double screening_threshold = default_screening_threshold) const;
-    [[nodiscard]] std::map<Spin, std::vector<DensityDerivatives>>
+    [[nodiscard]] std::map<DensityComponent, std::vector<DensityDerivatives>>
     density_derivatives_mo(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-                           const std::vector<Spin>& components, std::size_t block_size,
+                           const std::vector<DensityComponent>& components, std::size_t block_size,
                            int ao_order = 2,
                            double screening_threshold = default_screening_threshold) const;
     Molecule(std::vector<Atom> atoms, BasisEvaluator evaluator, Eigen::MatrixXd total,
@@ -351,7 +351,7 @@ private:
     Eigen::MatrixXd alpha_mos_, beta_mos_;
     /// MO coefficients of a channel, one MO per column (Alpha or Beta; else
     /// throws std::invalid_argument).
-    [[nodiscard]] const Eigen::MatrixXd& mo_coefficients(Spin channel) const;
+    [[nodiscard]] const Eigen::MatrixXd& mo_coefficients(SpinChannel channel) const;
     std::vector<double> alpha_energies_, beta_energies_;
     int nalpha_ = 0, nbeta_ = 0;
     bool unrestricted_ = false;

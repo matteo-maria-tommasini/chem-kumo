@@ -60,13 +60,13 @@ int main(int argc, char** argv) {
         recover_gaussian_standard_step(g);
         auto mol = Molecule::from_fchk(argv[1]);
         const std::string component = argc == 4 ? argv[3] : "total";
-        Spin spin = Spin::Total;
+        DensityComponent spin = DensityComponent::Total;
         if (component == "alpha")
-            spin = Spin::Alpha;
+            spin = DensityComponent::Alpha;
         else if (component == "beta")
-            spin = Spin::Beta;
+            spin = DensityComponent::Beta;
         else if (component == "spin")
-            spin = Spin::Difference;
+            spin = DensityComponent::Difference;
         else if (component != "total")
             throw std::runtime_error("invalid spin component: " + component);
         auto calculated = mol.densities_blocked(g, {spin}, 128).at(spin);

@@ -35,9 +35,12 @@ int main(int argc, char** argv) {
                 const Eigen::Vector3d r(0.41 + 0.29 * t, -0.37 + 0.13 * t, 0.23 - 0.17 * t);
                 context = std::string(argv[file]) + " point " + std::to_string(t) + ": ";
                 const auto total = molecule.density_derivatives(r);
-                const auto alpha = molecule.density_derivatives(r, chem::kumo::Spin::Alpha);
-                const auto beta = molecule.density_derivatives(r, chem::kumo::Spin::Beta);
-                const auto spin = molecule.density_derivatives(r, chem::kumo::Spin::Difference);
+                const auto alpha =
+                    molecule.density_derivatives(r, chem::kumo::DensityComponent::Alpha);
+                const auto beta =
+                    molecule.density_derivatives(r, chem::kumo::DensityComponent::Beta);
+                const auto spin =
+                    molecule.density_derivatives(r, chem::kumo::DensityComponent::Difference);
                 for (const auto* f : {&total, &alpha, &beta, &spin}) {
                     require(std::isfinite(f->value) && f->gradient.allFinite() &&
                                 f->hessian.allFinite() && std::isfinite(f->tau),
@@ -51,8 +54,10 @@ int main(int argc, char** argv) {
                     Eigen::Vector3d rp = r, rm = r;
                     rp[a] += step;
                     rm[a] -= step;
-                    for (auto component : {chem::kumo::Spin::Total, chem::kumo::Spin::Alpha,
-                                           chem::kumo::Spin::Beta, chem::kumo::Spin::Difference}) {
+                    for (auto component :
+                         {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
+                          chem::kumo::DensityComponent::Beta,
+                          chem::kumo::DensityComponent::Difference}) {
                         const auto exact = molecule.density_derivatives(r, component);
                         const auto plus = molecule.density_derivatives(rp, component);
                         const auto minus = molecule.density_derivatives(rm, component);

@@ -91,7 +91,7 @@ void closed_forms(const std::string& label, const BasisSet& basis) {
 }
 
 void far_field(const std::string& label, const BasisSet& basis, const Molecule& molecule) {
-    const Eigen::MatrixXd P = molecule.density_matrix(Spin::Total);
+    const Eigen::MatrixXd P = molecule.density_matrix(DensityComponent::Total);
     const auto moments = BasisEvaluator(basis).cartesian_moments();
     const double electrons = (P.array() * moments.overlap.array()).sum();
     Eigen::Vector3d dipole;
@@ -133,7 +133,8 @@ void far_field(const std::string& label, const BasisSet& basis, const Molecule& 
 }
 
 void poisson(const std::string& label, const BasisSet& basis, const Molecule& molecule) {
-    const ElectrostaticPotential potential(basis, molecule.density_matrix(Spin::Total), {});
+    const ElectrostaticPotential potential(basis, molecule.density_matrix(DensityComponent::Total),
+                                           {});
     const auto& atoms = molecule.atoms();
     // Points between and around the first atoms (at most 8, which bounds the
     // cost for large molecules), away from the nuclear cusps.
@@ -171,7 +172,7 @@ void poisson(const std::string& label, const BasisSet& basis, const Molecule& mo
 }
 
 void nuclear_term(const std::string& label, const BasisSet& basis, const Molecule& molecule) {
-    const ElectrostaticPotential potential(basis, molecule.density_matrix(Spin::Total),
+    const ElectrostaticPotential potential(basis, molecule.density_matrix(DensityComponent::Total),
                                            molecule.atoms());
     const Eigen::Vector3d point(0.4, -1.3, 2.2);
     double expected = 0.0;
@@ -214,7 +215,7 @@ void nuclear_term(const std::string& label, const BasisSet& basis, const Molecul
 // order, for any block size (and, in OpenMP builds, any thread count), with
 // or without other properties in the same request.
 void evaluator(const std::string& label, const BasisSet& basis, const Molecule& molecule) {
-    const ElectrostaticPotential potential(basis, molecule.density_matrix(Spin::Total),
+    const ElectrostaticPotential potential(basis, molecule.density_matrix(DensityComponent::Total),
                                            molecule.atoms());
     Grid grid;
     grid.origin = Eigen::Vector3d(-3.1, -2.9, -3.3);
@@ -277,7 +278,7 @@ void evaluator(const std::string& label, const BasisSet& basis, const Molecule& 
         [&] { Evaluator(molecule, {.potential_tolerance = -1e-9}); },
         label + ": a negative potential tolerance is rejected");
 
-    for (const auto component : {density::alpha, density::beta, density::spin}) {
+    for (const auto component : {density::alpha, density::beta, density::difference}) {
         Request wrong;
         wrong.add(component.electrostatic_potential());
         kumo_test::check_throws<std::invalid_argument>(
@@ -298,7 +299,7 @@ void evaluator(const std::string& label, const BasisSet& basis, const Molecule& 
 // Far-field plans and cluster evaluation: the error is within the tolerance,
 // some pairs are expanded, tolerance 0 is exact, and invalid use is rejected.
 void clusters(const std::string& label, const BasisSet& basis, const Molecule& molecule) {
-    const ElectrostaticPotential potential(basis, molecule.density_matrix(Spin::Total),
+    const ElectrostaticPotential potential(basis, molecule.density_matrix(DensityComponent::Total),
                                            molecule.atoms());
     const double radius = 1.2;
     // Points on a sphere and inside it, around centres in and far from the molecule.

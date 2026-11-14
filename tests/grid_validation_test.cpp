@@ -47,7 +47,7 @@ void check_all(const Molecule& molecule, const Grid& grid, const std::string& na
 
     const std::function<void()> calls[] = {
         [&] { (void)molecule.density(grid); },
-        [&] { (void)molecule.orbital(grid, 1, Spin::Alpha); },
+        [&] { (void)molecule.orbital(grid, 1, SpinChannel::Alpha); },
         [&] { (void)evaluator.evaluate(grid, derivatives); },
         [&] { (void)evaluator.evaluate(grid, orbital_request); },
         [&] { (void)evaluator.evaluate(grid, potential_request); },
