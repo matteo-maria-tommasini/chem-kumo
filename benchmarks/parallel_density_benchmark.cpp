@@ -49,9 +49,10 @@ struct Result {
 Result evaluate(const chem::kumo::Molecule& mol, const chem::kumo::Grid& grid,
                 std::size_t block_size) {
     auto fields = mol.densities_blocked(
-        grid, {chem::kumo::Spin::Total, chem::kumo::Spin::Difference}, block_size);
-    const auto a = fields.at(chem::kumo::Spin::Total).values();
-    const auto b = fields.at(chem::kumo::Spin::Difference).values();
+        grid, {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Difference},
+        block_size);
+    const auto a = fields.at(chem::kumo::DensityComponent::Total).values();
+    const auto b = fields.at(chem::kumo::DensityComponent::Difference).values();
     return {std::vector<double>(a.begin(), a.end()), std::vector<double>(b.begin(), b.end())};
 }
 

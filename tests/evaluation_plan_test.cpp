@@ -24,18 +24,20 @@ int main() {
               "gradient and tau need first AO derivatives");
 
         const auto mixed = EvaluationPlan::from(Request{}
-                                                    .add(density::spin.laplacian())
+                                                    .add(density::difference.laplacian())
                                                     .add(density::beta.value())
-                                                    .add(density::spin.laplacian())
+                                                    .add(density::difference.laplacian())
                                                     .add(orbital::alpha(1).value()));
-        check(mixed.maximum_ao_order == 2 && mixed.orbitals &&
-                  mixed.components[EvaluationPlan::index(DensityComponent::Beta)].ao_order() == 0 &&
-                  mixed.components[EvaluationPlan::index(DensityComponent::Spin)].ao_order() == 2,
-              "a mixed request keeps per-component orders and needs second derivatives overall");
+        check(
+            mixed.maximum_ao_order == 2 && mixed.orbitals &&
+                mixed.components[EvaluationPlan::index(DensityComponent::Beta)].ao_order() == 0 &&
+                mixed.components[EvaluationPlan::index(DensityComponent::Difference)].ao_order() ==
+                    2,
+            "a mixed request keeps per-component orders and needs second derivatives overall");
 
         const auto reversed = EvaluationPlan::from(Request{}
                                                        .add(orbital::alpha(1).value())
-                                                       .add(density::spin.laplacian())
+                                                       .add(density::difference.laplacian())
                                                        .add(density::beta.value()));
         check(reversed.maximum_ao_order == mixed.maximum_ao_order &&
                   reversed.needs_derivative_points() == mixed.needs_derivative_points(),

@@ -12,7 +12,7 @@
 
 namespace kumo_cli {
 using chem::kumo::Molecule;
-using chem::kumo::Spin;
+using chem::kumo::SpinChannel;
 
 namespace {
 // A positive decimal integer (an orbital index or offset); throws
@@ -31,15 +31,15 @@ std::size_t number(const std::string& s) {
 // One end of an MO selector, as a 1-based MO index of `channel`: a number,
 // or homo (highest occupied MO) or lumo (lowest unoccupied MO), optionally
 // followed by +K or -K.
-std::size_t endpoint(const std::string& s, const Molecule& mol, Spin channel) {
+std::size_t endpoint(const std::string& s, const Molecule& mol, SpinChannel channel) {
     if (s.empty()) throw std::invalid_argument("empty orbital selector");
     if (std::isdigit(static_cast<unsigned char>(s[0]))) return number(s);
     std::size_t base = 0, offset = 0;
     if (s.rfind("homo", 0) == 0) {
-        base = static_cast<std::size_t>(mol.occupied_count(channel));
+        base = mol.occupied_count(channel);
         offset = 4;
     } else if (s.rfind("lumo", 0) == 0) {
-        base = static_cast<std::size_t>(mol.occupied_count(channel)) + 1;
+        base = mol.occupied_count(channel) + 1;
         offset = 4;
     } else
         throw std::invalid_argument("unknown MO selector: " + s);
@@ -60,7 +60,7 @@ std::size_t endpoint(const std::string& s, const Molecule& mol, Spin channel) {
 // end as above or an inclusive range FIRST:LAST of two ends; "frontier"
 // means homo,lumo. Repeated indices are dropped and the order given is kept.
 std::vector<std::size_t> select_mos(const std::string& selector, const Molecule& mol,
-                                    Spin channel) {
+                                    SpinChannel channel) {
     std::vector<std::size_t> result;
     std::set<std::size_t> seen;
     std::string expanded = selector == "frontier" ? "homo,lumo" : selector;
@@ -86,12 +86,12 @@ std::vector<std::size_t> select_mos(const std::string& selector, const Molecule&
     return result;
 }
 
-std::string spin_name(Spin s) {
-    return s == Spin::Alpha ? "alpha" : "beta";
+std::string spin_name(SpinChannel s) {
+    return s == SpinChannel::Alpha ? "alpha" : "beta";
 }
 
 // The --list-mo table of one channel: index, occupation, energy, HOMO/LUMO.
-void list_mos(const Molecule& mol, Spin channel) {
+void list_mos(const Molecule& mol, SpinChannel channel) {
     const auto count = mol.orbital_count(channel);
     const auto& energies = mol.orbital_energies(channel);
     const auto occupied = mol.occupied_count(channel);
@@ -117,7 +117,7 @@ void list_mos(const Molecule& mol, Spin channel) {
 // Evaluate the selected MOs of one channel and write one Cube file each,
 // PREFIX_<alpha|beta>_mo_<index>.cube.
 void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Options& o,
-                    Spin channel, Console& console) {
+                    SpinChannel channel, Console& console) {
     const auto indices = select_mos(o.selector, mol, channel);
     std::vector<std::string> numbers;
     for (auto n : indices)
@@ -144,8 +144,8 @@ void write_orbitals(const Molecule& mol, const chem::kumo::Grid& grid, const Opt
 void list_orbitals(const Molecule& mol, const Options& o) {
     if (!(o.spin.empty() || o.spin == "alpha" || o.spin == "beta" || o.spin == "both"))
         throw std::invalid_argument("--list-mo accepts alpha, beta, or both");
-    if (o.spin.empty() || o.spin == "alpha" || o.spin == "both") list_mos(mol, Spin::Alpha);
-    if (o.spin == "beta" || o.spin == "both") list_mos(mol, Spin::Beta);
+    if (o.spin.empty() || o.spin == "alpha" || o.spin == "both") list_mos(mol, SpinChannel::Alpha);
+    if (o.spin == "beta" || o.spin == "both") list_mos(mol, SpinChannel::Beta);
 }
 
 void write_orbital_cubes(const Molecule& mol, const chem::kumo::Grid& grid, const Options& o,
@@ -153,7 +153,8 @@ void write_orbital_cubes(const Molecule& mol, const chem::kumo::Grid& grid, cons
     if (!(o.spin.empty() || o.spin == "alpha" || o.spin == "beta" || o.spin == "both"))
         throw std::invalid_argument("--mo accepts --spin alpha, beta, or both");
     if (o.spin.empty() || o.spin == "alpha" || o.spin == "both")
-        write_orbitals(mol, grid, o, Spin::Alpha, console);
-    if (o.spin == "beta" || o.spin == "both") write_orbitals(mol, grid, o, Spin::Beta, console);
+        write_orbitals(mol, grid, o, SpinChannel::Alpha, console);
+    if (o.spin == "beta" || o.spin == "both")
+        write_orbitals(mol, grid, o, SpinChannel::Beta, console);
 }
 } // namespace kumo_cli

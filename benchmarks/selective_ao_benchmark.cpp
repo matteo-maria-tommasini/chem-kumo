@@ -35,7 +35,7 @@ template <class F> Measurement measure(F&& function, int repeats) {
 }
 
 constexpr std::array components{DensityComponent::Total, DensityComponent::Alpha,
-                                DensityComponent::Beta, DensityComponent::Spin};
+                                DensityComponent::Beta, DensityComponent::Difference};
 
 Request make_request(bool hessian) {
     Request request;

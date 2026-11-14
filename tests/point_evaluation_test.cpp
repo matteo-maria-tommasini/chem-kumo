@@ -47,11 +47,11 @@ Points points_of(const Grid& grid) {
 Request full_request(const Molecule& molecule) {
     Request request;
     const DensityDescriptor components[] = {density::total, density::alpha, density::beta,
-                                            density::spin};
+                                            density::difference};
     for (const auto& d : components) {
         request.add(d.value()).add(d.gradient()).add(d.hessian()).add(d.laplacian()).add(d.tau());
         request.add(d.hamiltonian_kinetic_energy());
-        if (d.component != DensityComponent::Spin) request.add(d.elf()).add(d.lol());
+        if (d.component != DensityComponent::Difference) request.add(d.elf()).add(d.lol());
     }
     const auto& t = density::total;
     request.add(t.reduced_gradient())
@@ -68,13 +68,12 @@ Request full_request(const Molecule& molecule) {
         .add(t.local_electron_attachment_energy())
         .add(t.local_electronegativity())
         .add(t.local_hardness())
-        .add(density::spin.spin_polarization());
-    const auto homo = static_cast<std::size_t>(molecule.occupied_count(Spin::Alpha));
+        .add(density::difference.spin_polarization());
+    const auto homo = molecule.occupied_count(SpinChannel::Alpha);
     request.add(orbital::alpha(1).value()).add(orbital::alpha(homo).value());
     request.add(orbital::alpha(homo + 1).value());
     if (molecule.unrestricted())
-        request.add(
-            orbital::beta(static_cast<std::size_t>(molecule.occupied_count(Spin::Beta))).value());
+        request.add(orbital::beta(molecule.occupied_count(SpinChannel::Beta)).value());
     return request;
 }
 
@@ -155,17 +154,18 @@ void check_orbital_energy_formulas(const Molecule& molecule, const std::string& 
     const std::vector<double> alie_surface = average_local_ionization_energy(molecule, points);
 
     const bool unrestricted = molecule.unrestricted();
-    const std::vector<Spin> channels =
-        unrestricted ? std::vector<Spin>{Spin::Alpha, Spin::Beta} : std::vector<Spin>{Spin::Alpha};
+    const std::vector<SpinChannel> channels =
+        unrestricted ? std::vector<SpinChannel>{SpinChannel::Alpha, SpinChannel::Beta}
+                     : std::vector<SpinChannel>{SpinChannel::Alpha};
     double worst = 0, worst_attachment = 0;
     std::size_t attachment_points = 0; // with |LEAE| >= 1e-3 hartree
     bool identical_alie = true;
     for (Eigen::Index p = 0; p < points.cols(); ++p) {
         double occupied = 0, occupied_energy = 0, virtual_density = 0, virtual_energy = 0,
                attachment = 0;
-        for (const Spin channel : channels) {
+        for (const SpinChannel channel : channels) {
             const auto& energies = molecule.orbital_energies(channel);
-            const auto occupied_count = static_cast<std::size_t>(molecule.occupied_count(channel));
+            const auto occupied_count = molecule.occupied_count(channel);
             for (std::size_t i = 0; i < molecule.orbital_count(channel); ++i) {
                 const double phi =
                     molecule.orbital_derivatives(points.col(p), i + 1, channel).value;
@@ -257,9 +257,10 @@ void check_input(const Molecule& water) {
         [&] { (void)evaluator.evaluate(Points(3, 1), orbital_request); },
         "a missing orbital is rejected at points");
     for (const Property key :
-         {density::spin.average_local_ionization_energy(), density::alpha.local_electron_affinity(),
-          density::beta.local_electron_attachment_energy(), density::spin.local_electronegativity(),
-          density::alpha.local_hardness()}) {
+         {density::difference.average_local_ionization_energy(),
+          density::alpha.local_electron_affinity(),
+          density::beta.local_electron_attachment_energy(),
+          density::difference.local_electronegativity(), density::alpha.local_hardness()}) {
         Request single;
         single.add(key);
         kumo_test::check_throws<std::invalid_argument>(

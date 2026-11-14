@@ -14,13 +14,14 @@ namespace chem::kumo::detail {
 // canonical FCHK matrices and are returned by reference; alpha and beta are
 // built in `storage` as (P_total +/- P_spin) / 2, never from MO occupations.
 inline const Eigen::MatrixXd& select_density_matrix(const Eigen::MatrixXd& total,
-                                                    const Eigen::MatrixXd& spin, Spin component,
+                                                    const Eigen::MatrixXd& spin,
+                                                    DensityComponent component,
                                                     Eigen::MatrixXd& storage) {
     switch (component) {
-    case Spin::Total: return total;
-    case Spin::Difference: return spin;
-    case Spin::Alpha: storage = 0.5 * (total + spin); return storage;
-    case Spin::Beta: storage = 0.5 * (total - spin); return storage;
+    case DensityComponent::Total: return total;
+    case DensityComponent::Difference: return spin;
+    case DensityComponent::Alpha: storage = 0.5 * (total + spin); return storage;
+    case DensityComponent::Beta: storage = 0.5 * (total - spin); return storage;
     }
     throw std::invalid_argument("invalid density spin component");
 }

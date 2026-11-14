@@ -12,7 +12,7 @@ namespace chem::kumo::detail {
 struct AoMoTestAccess {
     static auto run(const Molecule& m,
                     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-                    const std::vector<Spin>& components, std::size_t block, int order) {
+                    const std::vector<DensityComponent>& components, std::size_t block, int order) {
         return m.density_derivatives_mo(points, components, block, order);
     }
 };
@@ -39,8 +39,10 @@ void run(const Molecule& m, const std::string& name) {
                 points.col((i * 2 + j) * 3 + k) =
                     grid.origin + grid.steps * Eigen::Vector3d(i, j, k);
     const std::array<DensityDescriptor, 4> ds{density::total, density::alpha, density::beta,
-                                              density::spin};
-    const std::array<Spin, 4> spins{Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
+                                              density::difference};
+    const std::array<DensityComponent, 4> spins{DensityComponent::Total, DensityComponent::Alpha,
+                                                DensityComponent::Beta,
+                                                DensityComponent::Difference};
     for (std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}}) {
         Evaluator mo(m, {.threads = 1, .block_size = block, .backend = Backend::AO_MO});
         Evaluator ao(m, {.threads = 1, .block_size = block, .backend = Backend::AO_P});

@@ -14,7 +14,7 @@ namespace chem::kumo::detail {
 struct AoMoTestAccess {
     static auto run(const Molecule& m,
                     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-                    const std::vector<Spin>& components, std::size_t block, int order) {
+                    const std::vector<DensityComponent>& components, std::size_t block, int order) {
         return m.density_derivatives_mo(points, components, block, order);
     }
 
@@ -23,16 +23,16 @@ struct AoMoTestAccess {
         const Eigen::MatrixXd pa =
             m.alpha_mos_.leftCols(m.nalpha_) * m.alpha_mos_.leftCols(m.nalpha_).transpose();
         const Eigen::MatrixXd pb = cb.leftCols(m.nbeta_) * cb.leftCols(m.nbeta_).transpose();
-        std::map<Spin, Eigen::MatrixXd> reconstructed;
-        reconstructed.emplace(Spin::Alpha, pa);
-        reconstructed.emplace(Spin::Beta, pb);
-        reconstructed.emplace(Spin::Total, pa + pb);
-        reconstructed.emplace(Spin::Difference, pa - pb);
-        std::map<Spin, Eigen::MatrixXd> original;
-        original.emplace(Spin::Total, m.total_);
-        original.emplace(Spin::Difference, m.spin_);
-        original.emplace(Spin::Alpha, 0.5 * (m.total_ + m.spin_));
-        original.emplace(Spin::Beta, 0.5 * (m.total_ - m.spin_));
+        std::map<DensityComponent, Eigen::MatrixXd> reconstructed;
+        reconstructed.emplace(DensityComponent::Alpha, pa);
+        reconstructed.emplace(DensityComponent::Beta, pb);
+        reconstructed.emplace(DensityComponent::Total, pa + pb);
+        reconstructed.emplace(DensityComponent::Difference, pa - pb);
+        std::map<DensityComponent, Eigen::MatrixXd> original;
+        original.emplace(DensityComponent::Total, m.total_);
+        original.emplace(DensityComponent::Difference, m.spin_);
+        original.emplace(DensityComponent::Alpha, 0.5 * (m.total_ + m.spin_));
+        original.emplace(DensityComponent::Beta, 0.5 * (m.total_ - m.spin_));
         return std::make_pair(std::move(reconstructed), std::move(original));
     }
 
@@ -118,12 +118,12 @@ struct Comparison {
     }
 };
 
-const char* spin_name(Spin s) {
+const char* spin_name(DensityComponent s) {
     switch (s) {
-    case Spin::Total: return "total";
-    case Spin::Alpha: return "alpha";
-    case Spin::Beta: return "beta";
-    case Spin::Difference: return "spin";
+    case DensityComponent::Total: return "total";
+    case DensityComponent::Alpha: return "alpha";
+    case DensityComponent::Beta: return "beta";
+    case DensityComponent::Difference: return "spin";
     }
     return "unknown";
 }
@@ -136,7 +136,9 @@ int main(int argc, char** argv) {
     }
     try {
         std::cout << std::scientific << std::setprecision(16);
-        const std::vector<Spin> spins{Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
+        const std::vector<DensityComponent> spins{DensityComponent::Total, DensityComponent::Alpha,
+                                                  DensityComponent::Beta,
+                                                  DensityComponent::Difference};
         Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, 19);
         for (int j = 0; j < 19; ++j)
             points.col(j) = Eigen::Vector3d(0.17 * j - 1.2, 0.09 * j - 0.8, 0.13 * j + 0.2);
@@ -146,7 +148,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(std::string("AO-MO ineligible: ") + argv[arg]);
             const auto [reconstructed, original] = detail::AoMoTestAccess::matrices(m);
             std::cout << "file=" << argv[arg] << " basis=" << m.basis_size() << '\n';
-            for (Spin spin : spins) {
+            for (DensityComponent spin : spins) {
                 const auto& pm = reconstructed.at(spin);
                 const auto& pf = original.at(spin);
                 std::cout << "spin=" << spin_name(spin) << " matrix_frobenius=" << (pm - pf).norm()
@@ -155,7 +157,7 @@ int main(int argc, char** argv) {
             for (std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}}) {
                 const auto mo = detail::AoMoTestAccess::run(m, points, spins, block, 2);
                 std::cout << "block=" << block << '\n';
-                for (Spin spin : spins) {
+                for (DensityComponent spin : spins) {
                     Comparison algorithm, representation, total;
                     for (std::size_t j = 0; j < static_cast<std::size_t>(points.cols()); ++j) {
                         const auto rec = detail::AoMoTestAccess::reference(

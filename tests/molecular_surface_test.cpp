@@ -337,7 +337,8 @@ void test_molecule(const char* path) {
     Points points(3, static_cast<Eigen::Index>(mesh.vertices.size()));
     for (std::size_t v = 0; v < mesh.vertices.size(); ++v)
         points.col(static_cast<Eigen::Index>(v)) = mesh.vertices[v];
-    const auto density = mol.density_derivatives_blocked(points, chem::kumo::Spin::Total, 128, 0.0);
+    const auto density =
+        mol.density_derivatives_blocked(points, chem::kumo::DensityComponent::Total, 128, 0.0);
     double worst = 0.0;
     for (const auto& d : density)
         worst = std::max(worst, std::abs(d.value - 1e-3) / d.gradient.norm());
@@ -352,7 +353,7 @@ void test_molecule(const char* path) {
     // Potential at the vertices within the tolerance of the exact one.
     const chem::kumo::BasisSet basis{chem::kumo::FormattedCheckpoint(path)};
     const chem::kumo::detail::ElectrostaticPotential exact(
-        basis, mol.density_matrix(chem::kumo::Spin::Total), mol.atoms());
+        basis, mol.density_matrix(chem::kumo::DensityComponent::Total), mol.atoms());
     std::vector<double> expected(mesh.vertices.size());
     exact.evaluate(points, expected);
     const double difference = kumo_test::max_abs_diff(reference.potential, expected, name);
@@ -410,12 +411,11 @@ double ionization_energy(const chem::kumo::Molecule& mol, const Eigen::Vector3d&
                          double& density) {
     double weighted = 0.0;
     density = 0.0;
-    for (auto channel : {chem::kumo::Spin::Alpha, chem::kumo::Spin::Beta}) {
+    for (auto channel : {chem::kumo::SpinChannel::Alpha, chem::kumo::SpinChannel::Beta}) {
         const auto& energies = mol.orbital_energies(channel);
-        for (int i = 0; i < mol.occupied_count(channel); ++i) {
-            const double phi =
-                mol.orbital_derivatives(point, static_cast<std::size_t>(i) + 1, channel).value;
-            weighted += std::abs(energies[static_cast<std::size_t>(i)]) * phi * phi;
+        for (std::size_t i = 0; i < mol.occupied_count(channel); ++i) {
+            const double phi = mol.orbital_derivatives(point, i + 1, channel).value;
+            weighted += std::abs(energies[i]) * phi * phi;
             density += phi * phi;
         }
     }
@@ -423,7 +423,8 @@ double ionization_energy(const chem::kumo::Molecule& mol, const Eigen::Vector3d&
 }
 
 void test_ionization_energy(const char* path) {
-    using chem::kumo::Spin;
+    using chem::kumo::DensityComponent;
+    using chem::kumo::SpinChannel;
     const std::string name = path;
     const auto mol = chem::kumo::Molecule::from_fchk(path);
     kumo_test::set_threads(1);
@@ -482,9 +483,9 @@ void test_ionization_energy(const char* path) {
 
     // A weighted average of the occupied |e_i|.
     double lowest = std::numeric_limits<double>::infinity(), highest = 0.0;
-    for (auto channel : {Spin::Alpha, Spin::Beta})
-        for (int i = 0; i < mol.occupied_count(channel); ++i) {
-            const double e = std::abs(mol.orbital_energies(channel)[static_cast<std::size_t>(i)]);
+    for (auto channel : {SpinChannel::Alpha, SpinChannel::Beta})
+        for (std::size_t i = 0; i < mol.occupied_count(channel); ++i) {
+            const double e = std::abs(mol.orbital_energies(channel)[i]);
             lowest = std::min(lowest, e);
             highest = std::max(highest, e);
         }

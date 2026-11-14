@@ -164,15 +164,17 @@ int main(int argc, char** argv) {
         checksum += fused(0, 0);
 
         // Density-only reference uses the existing blocked Eigen implementation.
-        chem::kumo::Field density = mol.density(data.grid, chem::kumo::Spin::Total);
-        const double density_only =
-            measure(repeats, [&] { density = mol.density(data.grid, chem::kumo::Spin::Total); });
+        chem::kumo::Field density = mol.density(data.grid, chem::kumo::DensityComponent::Total);
+        const double density_only = measure(repeats, [&] {
+            density = mol.density(data.grid, chem::kumo::DensityComponent::Total);
+        });
         checksum += density.values()[count / 2];
 
         chem::kumo::DensityDerivatives pointwise;
         const double pointwise_time = measure(repeats, [&] {
             for (Eigen::Index i = 0; i < data.points.cols(); ++i)
-                pointwise = mol.density_derivatives(data.points.col(i), chem::kumo::Spin::Total);
+                pointwise = mol.density_derivatives(data.points.col(i),
+                                                    chem::kumo::DensityComponent::Total);
         });
         checksum += pointwise.value + pointwise.tau;
 
@@ -195,8 +197,8 @@ int main(int argc, char** argv) {
         for (std::size_t block : {16u, 32u, 64u, 128u, 256u}) {
             std::vector<chem::kumo::DensityDerivatives> result;
             const double t = measure(repeats, [&] {
-                result =
-                    mol.density_derivatives_blocked(data.points, chem::kumo::Spin::Total, block);
+                result = mol.density_derivatives_blocked(
+                    data.points, chem::kumo::DensityComponent::Total, block);
             });
             checksum += sample(result);
             std::cout << "derivatives_block_" << block << "_s=" << t

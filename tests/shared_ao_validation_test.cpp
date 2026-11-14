@@ -12,8 +12,10 @@ using namespace chem::kumo;
 namespace {
 constexpr std::array<DensityComponent, 4> components{
     DensityComponent::Total, DensityComponent::Alpha, DensityComponent::Beta,
-    DensityComponent::Spin};
-constexpr std::array<Spin, 4> spins{Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
+    DensityComponent::Difference};
+constexpr std::array<DensityComponent, 4> spins{DensityComponent::Total, DensityComponent::Alpha,
+                                                DensityComponent::Beta,
+                                                DensityComponent::Difference};
 
 // Both finite and within 5e-11 * max(1, |got|, |expected|).
 void close(double got, double expected, const char* name) {
@@ -79,7 +81,7 @@ void validate(const Molecule& molecule, std::size_t block_size) {
         const auto& total = fused.get(Property{kind, DensityComponent::Total});
         const auto& alpha = fused.get(Property{kind, DensityComponent::Alpha});
         const auto& beta = fused.get(Property{kind, DensityComponent::Beta});
-        const auto& spin = fused.get(Property{kind, DensityComponent::Spin});
+        const auto& spin = fused.get(Property{kind, DensityComponent::Difference});
         for (std::size_t a = 0; a < total.components.size(); ++a)
             for (std::size_t p = 0; p < n; ++p) {
                 close(total.component(a)[p], alpha.component(a)[p] + beta.component(a)[p],

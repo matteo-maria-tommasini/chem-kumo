@@ -14,7 +14,7 @@ namespace chem::kumo::detail {
 struct AoMoTestAccess {
     static auto run(const Molecule& m,
                     const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
-                    const std::vector<Spin>& components, std::size_t block, int order) {
+                    const std::vector<DensityComponent>& components, std::size_t block, int order) {
         return m.density_derivatives_mo(points, components, block, order);
     }
 
@@ -23,11 +23,11 @@ struct AoMoTestAccess {
         const Eigen::MatrixXd pa =
             m.alpha_mos_.leftCols(m.nalpha_) * m.alpha_mos_.leftCols(m.nalpha_).transpose();
         const Eigen::MatrixXd pb = cb.leftCols(m.nbeta_) * cb.leftCols(m.nbeta_).transpose();
-        std::map<Spin, Eigen::MatrixXd> result;
-        result.emplace(Spin::Alpha, pa);
-        result.emplace(Spin::Beta, pb);
-        result.emplace(Spin::Total, pa + pb);
-        result.emplace(Spin::Difference, pa - pb);
+        std::map<DensityComponent, Eigen::MatrixXd> result;
+        result.emplace(DensityComponent::Alpha, pa);
+        result.emplace(DensityComponent::Beta, pb);
+        result.emplace(DensityComponent::Total, pa + pb);
+        result.emplace(DensityComponent::Difference, pa - pb);
         return result;
     }
 
@@ -57,15 +57,15 @@ using namespace chem::kumo;
 namespace {
 constexpr double algorithm_tol = 2e-10;
 
-std::string where(const char* file, Spin spin, std::size_t block, std::size_t point) {
+std::string where(const char* file, DensityComponent spin, std::size_t block, std::size_t point) {
     return std::string(" file=") + file + " spin=" + std::to_string(static_cast<int>(spin)) +
            " block=" + std::to_string(block) + " point=" + std::to_string(point);
 }
 
 // AO-MO result vs the AO-P contraction of the reconstructed MO density
 // matrix: both finite and within algorithm_tol * max(1, |actual|, |reference|).
-void check(double actual, double reference, const std::string& label, const char* file, Spin spin,
-           std::size_t block, std::size_t point) {
+void check(double actual, double reference, const std::string& label, const char* file,
+           DensityComponent spin, std::size_t block, std::size_t point) {
     const double scale = std::max({1.0, std::abs(actual), std::abs(reference)});
     const double error = std::abs(actual - reference);
     if (std::isfinite(actual) && std::isfinite(reference) && !(error > algorithm_tol * scale))
@@ -75,8 +75,8 @@ void check(double actual, double reference, const std::string& label, const char
                                where(file, spin, block, point));
 }
 
-void compare(const DensityDerivatives& x, const DensityDerivatives& y, const char* file, Spin spin,
-             std::size_t block, std::size_t point, int order) {
+void compare(const DensityDerivatives& x, const DensityDerivatives& y, const char* file,
+             DensityComponent spin, std::size_t block, std::size_t point, int order) {
     const auto test = [&](double a, double b, const std::string& name) {
         check(a, b, name, file, spin, block, point);
     };
@@ -129,7 +129,9 @@ void compare(const DensityDerivatives& x, const DensityDerivatives& y, const cha
 int main(int argc, char** argv) {
     if (!kumo_test::require_args(argc, argv, 1, kumo_test::unlimited, "FILE.fchk...")) return 2;
     return kumo_test::run([&] {
-        const std::vector<Spin> spins{Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference};
+        const std::vector<DensityComponent> spins{DensityComponent::Total, DensityComponent::Alpha,
+                                                  DensityComponent::Beta,
+                                                  DensityComponent::Difference};
         Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, 19);
         for (int j = 0; j < 19; ++j)
             points.col(j) = Eigen::Vector3d(0.17 * j - 1.2, 0.09 * j - 0.8, 0.13 * j + 0.2);
@@ -142,7 +144,7 @@ int main(int argc, char** argv) {
             for (int order : {1, 2})
                 for (std::size_t block : {std::size_t{1}, std::size_t{7}, std::size_t{32}}) {
                     const auto mo = detail::AoMoTestAccess::run(m, points, spins, block, order);
-                    for (Spin spin : spins)
+                    for (DensityComponent spin : spins)
                         for (std::size_t j = 0; j < static_cast<std::size_t>(points.cols()); ++j) {
                             const auto ref = detail::AoMoTestAccess::ao_p_reference(
                                 m, points.col(static_cast<Eigen::Index>(j)), matrices.at(spin));

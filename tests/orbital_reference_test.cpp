@@ -15,10 +15,10 @@ int main(int argc, char** argv) {
     if (!kumo_test::require_args(argc, argv, 4, 4, "fchk cube alpha|beta index")) return 2;
     try {
         const std::size_t index = std::stoul(argv[4]);
-        const Spin channel = std::string(argv[3]) == "alpha" ? Spin::Alpha
-                             : std::string(argv[3]) == "beta"
-                                 ? Spin::Beta
-                                 : throw std::invalid_argument("invalid channel");
+        const SpinChannel channel = std::string(argv[3]) == "alpha" ? SpinChannel::Alpha
+                                    : std::string(argv[3]) == "beta"
+                                        ? SpinChannel::Beta
+                                        : throw std::invalid_argument("invalid channel");
         std::ifstream in(argv[2]);
         if (!in) throw std::runtime_error("cannot open cube");
         std::string line;

@@ -206,8 +206,8 @@ int main(int argc, char** argv) {
                 density::total.potential_energy_density(), "water V", energy);
         compare(water, directory / "h2o_energy_density.cube.gz", density::total.energy_density(),
                 "water H", energy);
-        compare(o2, directory / "o2_spin_polarization.cube.gz", density::spin.spin_polarization(),
-                "O2 spin polarization", polarization);
+        compare(o2, directory / "o2_spin_polarization.cube.gz",
+                density::difference.spin_polarization(), "O2 spin polarization", polarization);
         compare(water, directory / "h2o_shannon.cube.gz", density::total.shannon_entropy_density(),
                 "water Shannon entropy density", shannon);
         compare(water, directory / "h2o_fisher.cube.gz",

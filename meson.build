@@ -78,6 +78,7 @@ install_headers(
     'include/chem/kumo/subspace_projector.hpp',
     'include/chem/kumo/weighted_overlap.hpp',
     'include/chem/kumo/surface.hpp',
+    'include/chem/kumo/spin.hpp',
     subdir: 'chem/kumo',
 )
 executable('kumo-example', 'examples/fchk_to_cube.cpp', dependencies: kumo_dep)

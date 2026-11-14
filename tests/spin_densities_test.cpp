@@ -14,10 +14,10 @@ int main(int argc, char** argv) {
             const auto molecule = chem::kumo::Molecule::from_fchk(argv[t]);
             auto grid = chem::kumo::Grid::around(molecule.atoms(), 1.5, 0.6);
             auto all = molecule.spin_densities(grid);
-            const auto a = molecule.density(grid, chem::kumo::Spin::Alpha);
-            const auto b = molecule.density(grid, chem::kumo::Spin::Beta);
-            const auto total = molecule.density(grid, chem::kumo::Spin::Total);
-            const auto spin = molecule.density(grid, chem::kumo::Spin::Difference);
+            const auto a = molecule.density(grid, chem::kumo::DensityComponent::Alpha);
+            const auto b = molecule.density(grid, chem::kumo::DensityComponent::Beta);
+            const auto total = molecule.density(grid, chem::kumo::DensityComponent::Total);
+            const auto spin = molecule.density(grid, chem::kumo::DensityComponent::Difference);
             double worst = 0.0;
             for (std::size_t i = 0; i < all.total.values().size(); ++i) {
                 const double av = all.alpha.values()[i], bv = all.beta.values()[i];

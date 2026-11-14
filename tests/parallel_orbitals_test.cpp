@@ -24,7 +24,8 @@ int main(int argc, char** argv) {
                 points.col(j) =
                     Eigen::Vector3d(0.21 + 0.043 * j, -0.37 + 0.017 * j, 0.14 - 0.031 * j);
             kumo_test::set_threads(1);
-            for (const auto spin : {chem::kumo::Spin::Alpha, chem::kumo::Spin::Beta}) {
+            for (const auto spin :
+                 {chem::kumo::SpinChannel::Alpha, chem::kumo::SpinChannel::Beta}) {
                 const auto n = mol.orbital_count(spin);
                 if (!kumo_test::check(n != 0, name + ": molecular orbitals of spin " +
                                                   std::to_string(static_cast<int>(spin)) +
@@ -105,7 +106,8 @@ int main(int argc, char** argv) {
             }
             kumo_test::check_throws<std::invalid_argument>(
                 [&] {
-                    (void)mol.orbital_derivatives_blocked(points, 1, chem::kumo::Spin::Alpha, 0);
+                    (void)mol.orbital_derivatives_blocked(points, 1, chem::kumo::SpinChannel::Alpha,
+                                                          0);
                 },
                 name + ": orbital_derivatives_blocked rejects block size 0");
             if (kumo_test::failures == failures_before)

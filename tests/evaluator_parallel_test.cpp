@@ -16,7 +16,7 @@ namespace {
 
 Request full_request() {
     Request request;
-    for (auto d : {density::total, density::alpha, density::beta, density::spin})
+    for (auto d : {density::total, density::alpha, density::beta, density::difference})
         request.add(d.value()).add(d.gradient()).add(d.hessian()).add(d.laplacian()).add(d.tau());
     request.add(orbital::alpha(1).value());
     return request;

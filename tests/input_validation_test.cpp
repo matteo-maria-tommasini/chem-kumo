@@ -25,13 +25,13 @@ int main(int argc, char** argv) {
         auto g = Grid::around(mol.atoms(), 2.0, 0.5);
         expect_invalid(
             [&] {
-                auto x = mol.densities_blocked(g, {Spin::Total}, 0);
+                auto x = mol.densities_blocked(g, {DensityComponent::Total}, 0);
                 (void)x;
             },
             "zero block");
         expect_invalid(
             [&] {
-                auto x = mol.densities_blocked(g, {Spin::Total}, 65537);
+                auto x = mol.densities_blocked(g, {DensityComponent::Total}, 65537);
                 (void)x;
             },
             "large block");
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
             "zero spacing");
         auto empty = mol.densities(g, {});
         if (!empty.empty()) throw std::runtime_error("empty request returned fields");
-        auto dedup = mol.densities(g, {Spin::Total, Spin::Total});
+        auto dedup = mol.densities(g, {DensityComponent::Total, DensityComponent::Total});
         if (dedup.size() != 1) throw std::runtime_error("duplicate request not deduplicated");
         std::cout << "input validation OK\n";
     } catch (const std::exception& e) {

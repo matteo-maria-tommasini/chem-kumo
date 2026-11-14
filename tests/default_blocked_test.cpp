@@ -15,7 +15,8 @@ int main(int argc, char** argv) {
             auto molecule = Molecule::from_fchk(argv[n]);
             auto grid = Grid::around(molecule.atoms(), 2.0, 0.65);
             double max_abs = 0.0;
-            for (auto spin : {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference}) {
+            for (auto spin : {DensityComponent::Total, DensityComponent::Alpha,
+                              DensityComponent::Beta, DensityComponent::Difference}) {
                 const auto reference = molecule.density_pointwise(grid, spin);
                 const auto current = molecule.density(grid, spin);
                 const auto explicit_block = molecule.densities_blocked(grid, {spin}, 128).at(spin);
@@ -33,12 +34,13 @@ int main(int argc, char** argv) {
                                     kumo_test::max_abs_diff(d, a, name + " densities()")});
             }
             const auto combined = molecule.spin_densities(grid);
-            for (auto spin : {Spin::Total, Spin::Alpha, Spin::Beta, Spin::Difference}) {
+            for (auto spin : {DensityComponent::Total, DensityComponent::Alpha,
+                              DensityComponent::Beta, DensityComponent::Difference}) {
                 const auto reference_field = molecule.density_pointwise(grid, spin);
-                const auto& field = spin == Spin::Total   ? combined.total
-                                    : spin == Spin::Alpha ? combined.alpha
-                                    : spin == Spin::Beta  ? combined.beta
-                                                          : combined.spin;
+                const auto& field = spin == DensityComponent::Total   ? combined.total
+                                    : spin == DensityComponent::Alpha ? combined.alpha
+                                    : spin == DensityComponent::Beta  ? combined.beta
+                                                                      : combined.spin;
                 max_abs = std::max(max_abs,
                                    kumo_test::max_abs_diff(field.values(), reference_field.values(),
                                                            name + " spin_densities()"));

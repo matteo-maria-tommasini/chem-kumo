@@ -8,9 +8,6 @@
 #include <vector>
 
 namespace chem::kumo {
-/// Density component: total, alpha, beta, or spin difference (alpha - beta).
-enum class DensityComponent { Total, Alpha, Beta, Spin };
-
 /// Kind of property. Number of components in the result: Gradient 3 (x, y,
 /// z), Hessian 6 (xx, xy, xz, yy, yz, zz), all others 1. Orbital is the
 /// signed amplitude of a molecular orbital (MO); the other kinds are
@@ -20,7 +17,7 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///
 /// Derived kinds (see docs/API.md for the formulas and conventions):
 ///  - Elf: electron localization function, in [0, 1]. Total (spin-resolved
-///    form, from the alpha and beta densities), Alpha or Beta; not Spin.
+///    form, from the alpha and beta densities), Alpha or Beta; not Difference.
 ///  - ReducedGradient: reduced density gradient s of the total density,
 ///    capped at reduced_gradient_cap. Total only.
 ///  - SignLambda2Density: sign(lambda2) * rho of the total density, where
@@ -28,7 +25,7 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///  - Lol: localized orbital locator t / (1 + t), with t = D0 / tau and D0
 ///    the Thomas-Fermi kinetic-energy density of a uniform electron gas of
 ///    the same density; in [0, 1]. Total (spin-resolved form, as Elf), Alpha
-///    or Beta; not Spin.
+///    or Beta; not Difference.
 ///  - InteractionRegionIndicator: IRI = |grad rho| / rho^1.1 of the total
 ///    density, capped at interaction_region_indicator_cap. Total only.
 ///  - DensityOverlapRegionsIndicator: DORI = theta / (1 + theta) of the
@@ -42,7 +39,7 @@ enum class DensityComponent { Total, Alpha, Beta, Spin };
 ///  - EnergyDensity: H = tau + V = laplacian / 4 - tau = -K, in
 ///    hartree/bohr^3. Total only.
 ///  - SpinPolarization: (rho_alpha - rho_beta) / (rho_alpha + rho_beta), in
-///    [-1, 1]; 0 where the total density is not positive. Spin only.
+///    [-1, 1]; 0 where the total density is not positive. Difference only.
 ///  - ShannonEntropyDensity: -rho ln rho of the total density; 0 where rho is
 ///    not positive. Total only.
 ///  - FisherInformationDensity: |grad rho|^2 / rho of the total density; 0
@@ -116,10 +113,6 @@ inline constexpr double interaction_region_indicator_cap = 100.0;
 /// aligned with the Cartesian axes, with corners at multiples of this edge,
 /// and the points in one cube share one far-field expansion.
 inline constexpr double potential_cluster_edge = 1.6;
-
-/// Spin channel of an MO. A restricted calculation has one set of MOs,
-/// returned for both channels.
-enum class SpinChannel { Alpha, Beta };
 
 /// Key of one requested property. Build it with the density:: and orbital::
 /// helpers below rather than by hand.
@@ -197,7 +190,7 @@ struct DensityDescriptor {
     /// Electronic energy density H = tau + V (Total only).
     constexpr Property energy_density() const { return {PropertyKind::EnergyDensity, component}; }
 
-    /// Spin polarization (rho_alpha - rho_beta) / rho (Spin only).
+    /// Spin polarization (rho_alpha - rho_beta) / rho (Difference only).
     constexpr Property spin_polarization() const {
         return {PropertyKind::SpinPolarization, component};
     }
@@ -241,7 +234,7 @@ namespace density {
 inline constexpr DensityDescriptor total{DensityComponent::Total};
 inline constexpr DensityDescriptor alpha{DensityComponent::Alpha};
 inline constexpr DensityDescriptor beta{DensityComponent::Beta};
-inline constexpr DensityDescriptor spin{DensityComponent::Spin};
+inline constexpr DensityDescriptor difference{DensityComponent::Difference};
 } // namespace density
 
 /// One molecular orbital, e.g. orbital::alpha(5).value().

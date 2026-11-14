@@ -23,8 +23,9 @@ int main(int argc, char** argv) {
                     Eigen::Vector3d(0.11 + 0.073 * i, -1.3 + 0.041 * i, 0.27 - 0.037 * i);
             }
             kumo_test::set_threads(1);
-            for (auto spin : {chem::kumo::Spin::Total, chem::kumo::Spin::Alpha,
-                              chem::kumo::Spin::Beta, chem::kumo::Spin::Difference}) {
+            for (auto spin :
+                 {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
+                  chem::kumo::DensityComponent::Beta, chem::kumo::DensityComponent::Difference}) {
                 const auto reference = mol.density_derivatives_blocked(points, spin, 32);
                 // Single-thread results by block size: with the same blocks,
                 // other thread counts must give identical values.
