@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -48,6 +49,43 @@ void expect_failure(const std::filesystem::path& path) {
     throw std::runtime_error("corrupt gzip was accepted: " + path.string());
 }
 
+// Without a "Nuclear charges" record the nuclear charges fall back to the
+// atomic numbers, which is right for all-electron files. With an ECP record the
+// effective charges are unknown, so loading must fail.
+void verify_nuclear_charge_fallback(const std::filesystem::path& plain,
+                                    const std::filesystem::path& directory) {
+    std::ifstream input(plain, std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(input)),
+                           std::istreambuf_iterator<char>());
+    // Drop the "Nuclear charges" header and its data lines (which start with a
+    // space, while every record header starts with a letter).
+    const auto begin = text.find("\nNuclear charges ");
+    require(begin != std::string::npos, "fixture has no Nuclear charges record");
+    auto end = text.find('\n', begin + 1);
+    while (end != std::string::npos && end + 1 < text.size() && text[end + 1] == ' ')
+        end = text.find('\n', end + 1);
+    require(end != std::string::npos, "Nuclear charges record is not terminated");
+    const std::string without_charges = text.substr(0, begin) + text.substr(end);
+
+    const auto all_electron = directory / (plain.filename().string() + ".no-charges.fchk");
+    std::ofstream(all_electron, std::ios::binary) << without_charges;
+    const auto mol = chem::kumo::Molecule::from_fchk(all_electron);
+    for (const auto& atom : mol.atoms())
+        kumo_test::check(atom.nuclear_charge == static_cast<double>(atom.atomic_number),
+                         plain.filename().string() +
+                             ": without Nuclear charges, the nuclear charge is Z = " +
+                             std::to_string(atom.atomic_number) + " (got " +
+                             kumo_test::num(atom.nuclear_charge) + ")");
+
+    const auto with_ecp = directory / (plain.filename().string() + ".ecp.fchk");
+    std::ofstream(with_ecp, std::ios::binary)
+        << without_charges << "ECP-LMax                                   I   N=           1\n"
+        << "           0\n";
+    kumo_test::check_throws<std::runtime_error>(
+        [&] { (void)chem::kumo::Molecule::from_fchk(with_ecp); },
+        plain.filename().string() + ": an ECP file without Nuclear charges is rejected");
+}
+
 void verify(const std::filesystem::path& zipped, const std::filesystem::path& directory) {
     require(zipped.extension() == ".gz", "expected a compressed FCHK fixture");
     const auto plain_path = directory / zipped.stem();
@@ -63,6 +101,7 @@ void verify(const std::filesystem::path& zipped, const std::filesystem::path& di
     require(a == b, "FCHK coordinates mismatch");
     const auto mol_a = chem::kumo::Molecule::from_fchk(plain_path);
     const auto mol_b = chem::kumo::Molecule::from_fchk(zipped);
+    verify_nuclear_charge_fallback(plain_path, directory);
     const Eigen::Vector3d point(0.2, -0.3, 0.4);
     for (const auto spin :
          {chem::kumo::DensityComponent::Total, chem::kumo::DensityComponent::Alpha,
@@ -134,7 +173,7 @@ int main(int argc, char** argv) {
         for (int i = 3; i < argc; ++i)
             verify_large_reference(argv[i]);
         std::filesystem::remove_all(directory);
-        return 0;
+        return kumo_test::failures == 0 ? 0 : 1;
     } catch (const std::exception& e) {
         std::filesystem::remove_all(directory);
         std::cerr << "FAIL: " << e.what() << '\n';

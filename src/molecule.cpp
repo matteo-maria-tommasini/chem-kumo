@@ -49,6 +49,17 @@ std::vector<Atom> read_atoms(const FormattedCheckpoint& f) {
             throw std::runtime_error("invalid FCHK nuclear charge count");
         nuclear_charges = &charges;
     }
+    // Gaussian writes "ECP-..." records only when an effective core potential
+    // (ECP) replaces core electrons. The reduced nuclear charges of those atoms
+    // are then known only from "Nuclear charges": falling back to Z would make
+    // the electrostatic potential wrong, so such a file is rejected.
+    if (nuclear_charges == nullptr)
+        for (const char* label : {"ECP-LMax", "ECP-LPSkip", "ECP-RNFroz", "ECP-NLP", "ECP-CLP1",
+                                  "ECP-CLP2", "ECP-ZLP", "ECP-KFirst", "ECP-KLast"})
+            if (f.contains(label))
+                throw std::runtime_error(
+                    "FCHK has an effective core potential (ECP) but no \"Nuclear charges\" "
+                    "record, so the effective nuclear charges are unknown");
     std::vector<Atom> atoms;
     for (std::size_t i = 0; i < zs.size(); ++i) {
         if (zs[i] <= 0 || zs[i] > 118 || !std::isfinite(xyz[3 * i]) ||
