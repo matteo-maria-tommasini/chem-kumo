@@ -254,7 +254,20 @@ test(
 )
 
 # Command-line interface, built entirely on the public library API.
-kumo_cli = executable('kumo', 'src/kumo_main.cpp', dependencies: kumo_dep, install: true)
+kumo_cli = executable(
+    'kumo',
+    'src/kumo_main.cpp',
+    'src/cli/density_output.cpp',
+    'src/cli/options.cpp',
+    'src/cli/orbital_output.cpp',
+    'src/cli/properties.cpp',
+    'src/cli/sampling_output.cpp',
+    'src/cli/summary.cpp',
+    'src/cli/surface_output.cpp',
+    include_directories: include_directories('src'),
+    dependencies: kumo_dep,
+    install: true,
+)
 
 # Signed molecular-orbital amplitudes against Gaussian Cubegen references.
 orbital_reference_test = executable(
