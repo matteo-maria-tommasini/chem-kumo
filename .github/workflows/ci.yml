@@ -18,6 +18,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         sanitize: [false]
+        # openmp is a matrix dimension so that the OpenMP entry below is an
+        # extra job; without it, include would turn the serial Ubuntu job
+        # into the OpenMP one.
+        openmp: [false]
         # AddressSanitizer and UndefinedBehaviorSanitizer (GCC on Ubuntu):
         # memory errors such as use-after-free and undefined behaviour abort
         # the test that triggers them (meson test sets halt_on_error=1).
