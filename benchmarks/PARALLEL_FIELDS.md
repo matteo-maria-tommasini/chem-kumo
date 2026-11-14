@@ -1,18 +1,22 @@
 # Parallel spatial-derivative and orbital benchmarks (Stage 03c)
 
-This optional benchmark exercises the **public API** without changing numerical
-kernels. It measures four independent workloads:
+This optional benchmark measures four independent workloads. Since 2.0 the
+grid and blocked kernels are private to `Molecule`; the benchmark reaches them
+through the test access header `tests/molecule_test_access.hpp`, and the MO
+derivatives through the `Evaluator`:
 
-- `density-derivatives`: total-density value, gradient, full Hessian, Laplacian and tau.
-- `mo-single`: one occupied alpha MO, evaluated using `Molecule::orbitals()`.
+- `density-derivatives`: total-density value, gradient, full Hessian, Laplacian
+  and tau (the private blocked AO-P kernel).
+- `mo-single`: one occupied alpha MO on the grid (the private orbital kernel).
 - `mo-multiple`: eight alpha MOs (or fewer if unavailable), evaluated together.
-- `mo-derivatives`: one occupied alpha MO value, gradient and full Hessian via
-  `Molecule::orbital_derivatives_blocked()`.
+- `mo-derivatives`: one occupied alpha MO value, gradient and Hessian, with the
+  `Evaluator` (`orbital::alpha(i).value()`, `.gradient()`, `.hessian()`) at
+  points.
 
 All runs use identical coordinates for a given invocation. The density-derivative
 and MO-derivative APIs accept arbitrary point matrices; MO amplitude evaluation
 uses the matching regular grid. `block_size` affects derivative paths; the
-current `orbitals()` implementation has an internal fixed block size of 128.
+orbital kernel on grids has an internal fixed block size of 128.
 
 Parsing the compressed FCHK, constructing the molecule and grid, and generating
 point coordinates are excluded from timed sections. Timings **include** field

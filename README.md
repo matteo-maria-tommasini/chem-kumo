@@ -259,95 +259,81 @@ electrons/bohr^3; orbital amplitudes are in bohr^(-3/2).
 
 ## C++ library API
 
-```cpp
-#include <chem/kumo.hpp>
-
-int main()
-{
-    auto mol = chem::kumo::Molecule::from_fchk("molecule.fchk");
-    auto grid = chem::kumo::Grid::around(mol.atoms(), 5.0, 0.2); // bohr
-
-    mol.density(grid, chem::kumo::Spin::Total).write_cube("density.cube");
-    auto spin_fields = mol.spin_densities(grid);
-    spin_fields.spin.write_cube("spin.cube");
-
-    // Orbital numbers are 1-based; Alpha/Beta select MO channels.
-    auto homo = mol.orbital(grid, 15, chem::kumo::Spin::Alpha);
-    homo.write_orbital_cube("homo.cube", 15);
-    return 0;
-}
-```
-
-The default density evaluator uses blocked Eigen contractions (128 points per
-block). `density_pointwise()` is retained as a regression reference;
-`densities_blocked()` allows an explicit block size. `orbitals()` evaluates
-multiple MOs using shared AO batches. The API does not silently normalize
-orbital fields or change their phase.
-
-The grid origin, axis-step vectors, and atomic coordinates are in **bohr**.
-`Grid::steps` stores the three axis vectors in its **columns**. Density
-`Spin::Difference` means `rho_alpha - rho_beta`. The field index order is
-`(i,j,k)` and a Cube file stores values on the specified regular grid.
-
-### Spatial derivatives (since 1.2.0)
-
-The C++ API evaluates analytic **spatial** derivatives at arbitrary points,
-with nuclear geometry and FCHK wavefunction data held fixed. The
-`BasisEvaluator` provides AO values, Cartesian gradients and all six unique
-Hessian components. `Molecule::orbital_derivatives()` returns signed MO
-amplitude, gradient and Hessian for a 1-based orbital index and alpha/beta
-channel. `Molecule::density_derivatives()` returns density, gradient,
-full Hessian, Laplacian and positive kinetic-energy density `tau` for any
-density component. The blocked variant accepts a 3 x N point matrix:
+A `Molecule` holds the data of an FCHK file (atoms, basis set, density
+matrices, molecular orbitals and their energies); an `Evaluator` evaluates
+its fields on a grid or at arbitrary points.
 
 ```cpp
 #include <chem/kumo.hpp>
 
 int main()
 {
-    auto mol = chem::kumo::Molecule::from_fchk("molecule.fchk");
-    const Eigen::Vector3d point(0.0, 0.0, 1.0); // bohr
-    const auto d = mol.density_derivatives(point, chem::kumo::Spin::Total);
-    const double laplacian = d.laplacian;
-    const double kinetic_density = d.tau;
+    namespace kumo = chem::kumo;
+    const auto mol = kumo::Molecule::from_fchk("molecule.fchk");
+    const auto grid = kumo::Grid::around(mol.atoms(), 5.0, 0.2); // bohr
+    const kumo::Evaluator evaluator(mol);
+
+    // One property, as a Field ready to be written as a Cube file.
+    evaluator.field(grid, kumo::density::total.value()).write_cube("density.cube");
+    evaluator.field(grid, kumo::density::difference.value()).write_cube("spin.cube");
+
+    // Orbital numbers are 1-based; orbital::alpha / orbital::beta select the channel.
+    evaluator.field(grid, kumo::orbital::alpha(15).value())
+        .write_orbital_cube("homo.cube", 15);
+
+    // Several properties at arbitrary points (bohr), one point per column.
+    Eigen::Matrix<double, 3, Eigen::Dynamic> points(3, 2);
+    points << 0.0, 0.5, 0.0, 0.0, 1.0, 1.2;
+    const auto results = evaluator.evaluate(
+        points, kumo::Request()
+                    .add(kumo::density::total.laplacian())
+                    .add(kumo::density::total.tau())
+                    .add(kumo::orbital::alpha(15).gradient()));
+    const auto laplacian = results.get(kumo::density::total.laplacian()).component();
     (void)laplacian;
-    (void)kinetic_density;
     return 0;
 }
 ```
 
-No derivatives with respect to nuclear displacements, SCF steps, or
-response calculations are performed. The current `kumo` CLI still writes
-density and MO Cube files; the new derivative methods are **C++ API only**.
+`kumo::DensityComponent` (`Total`, `Alpha`, `Beta`, `Difference`, the last
+being `rho_alpha - rho_beta`) selects a density and `kumo::SpinChannel`
+(`Alpha`, `Beta`) the orbitals of one spin. The grid origin, axis-step
+vectors and atomic coordinates are in **bohr**; `Grid::steps` stores the
+three axis vectors in its **columns**. Orbital fields are signed amplitudes,
+never normalized or rephased.
+
+Version 2.0 changed the API: `Molecule` no longer evaluates fields, and the
+spin enumerations and the AO Hessian order changed. See the migration table
+in [docs/API.md](docs/API.md).
+
+### Evaluator, spatial derivatives and backends
+
+The `Evaluator` evaluates typed requests: the four density components with
+their gradients, Hessians, Laplacians and positive kinetic-energy density
+`tau`; the derived descriptors (ELF, LOL, the reduced density gradient,
+sign(lambda2) rho, IRI, DORI, energy and information densities, spin
+polarization); the orbital-energy fields; the electrostatic potential; and
+MO amplitudes with their gradients and Hessians. All derivatives are
+analytic **spatial** derivatives, with nuclear geometry and FCHK data held
+fixed; no derivatives with respect to nuclear displacements, SCF steps or
+response calculations are computed.
+
+`EvaluationOptions::backend` selects `Backend::AUTO` (default),
+`Backend::AO_P` or `Backend::AO_MO`. `AUTO` uses the occupied-orbital
+(AO-MO) contraction when the orbitals reproduce the density matrices of the
+file, and the AO density matrix (AO-P) otherwise. An explicitly requested
+ineligible AO-MO backend is rejected. `Results::backend_used()` reports the
+backend used. The AO-MO advantage is workload-dependent, not a universal
+guarantee.
+
+The `threads` option accepts `0` (runtime default) and `1`; in OpenMP builds
+use `OMP_NUM_THREADS`. Points are evaluated in blocks of `block_size`.
 
 For the mathematical definitions, see
-[Mathematical Foundations](docs/mathematics/chem-kumo-mathematics.tex).
-For numerical organization and performance measurements, see
-[Spatial derivative benchmark](benchmarks/SPATIAL_DERIVATIVES.md).
-For a method-by-method guide and contracts, see [docs/API.md](docs/API.md).
-
-### Typed Evaluator and electronic backends (1.4.0)
-
-The C++ `chem::kumo::Evaluator` provides typed requests for total, alpha, beta,
-and spin-difference electron density, gradients, Hessians, Laplacians and
-positive kinetic-energy density (`tau`), the derived ELF, reduced density
-gradient and sign(lambda2) rho (1.8.0), the electrostatic potential, as well
-as orbital amplitudes. It
-returns component arrays on the requested grid. This API is separate from the
-existing `Molecule` convenience methods; the CLI uses it for all density
-output.
-
-`EvaluationOptions::backend` selects `Backend::AUTO` (default), `Backend::AO_P`
-or `Backend::AO_MO`. `AUTO` prefers occupied-orbital AO-MO contractions when
-orbital representation checks permit them; otherwise it uses the AO density
-matrix (AO-P). An explicitly requested ineligible AO-MO backend is rejected.
-`Results::backend_used()` reports the selected density backend. The AO-MO
-performance advantage is workload-dependent, not a universal guarantee.
-
-The Evaluator's `threads` option currently accepts `0` (runtime default) and
-`1`; explicit values above one are rejected. For OpenMP-enabled builds, use
-the runtime environment such as `OMP_NUM_THREADS` to control parallelism.
-The grid evaluation uses bounded coordinate blocks controlled by `block_size`.
+[Mathematical Foundations](docs/mathematics/chem-kumo-mathematics.tex);
+for performance measurements,
+[Spatial derivative benchmark](benchmarks/SPATIAL_DERIVATIVES.md); for a
+method-by-method guide, [docs/API.md](docs/API.md).
 
 ### AO screening, shell cutoff and performance (1.5.0, 1.6.0)
 
@@ -355,7 +341,6 @@ Grid densities and density derivatives skip, in each block of grid points,
 the AOs that are negligible at every point of the block (value and
 derivatives at most `default_screening_threshold` = 1e-12). The results
 change only at rounding level; `EvaluationOptions::screening_threshold`
-(and a parameter of `densities_blocked` and `density_derivatives_blocked`)
 sets the threshold, and 0 gives the exact contraction. Together with batched
 AO derivative evaluation, this makes 1.5.0 several times faster than 1.4.1
 for large basis sets: on HBC def2-TZVP (1410 AOs), the total density is

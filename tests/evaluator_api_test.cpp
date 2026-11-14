@@ -23,6 +23,21 @@ int main(int argc, char** argv) {
         const auto results = evaluator.evaluate(grid, request);
         const auto legacy = kumo_test::Kernels::density(molecule, grid);
         auto rho = results.get(density::total.value()).component();
+        // Evaluator::field: the same values as evaluate(), on the same grid,
+        // with the atoms of the molecule; multi-component properties rejected.
+        const Field laplacian = evaluator.field(grid, density::total.laplacian());
+        const auto expected = results.get(density::total.laplacian()).component();
+        bool same = laplacian.values().size() == expected.size() &&
+                    laplacian.atoms().size() == molecule.atoms().size() &&
+                    laplacian.grid().counts == grid.counts;
+        for (std::size_t i = 0; same && i < expected.size(); ++i)
+            same = laplacian.values()[i] == expected[i];
+        kumo_test::check(same, "Evaluator::field equals evaluate() on the same grid, with the "
+                               "molecule's atoms");
+        kumo_test::check_throws<std::invalid_argument>(
+            [&] { (void)evaluator.field(grid, density::total.gradient()); },
+            "Evaluator::field rejects a multi-component property");
+
         // Both paths contract the same AO density matrix and differ only by
         // rounding: 1e-12 absolute is a few thousand ulps of an O(1) density.
         for (std::size_t i = 0; i < rho.size(); ++i)

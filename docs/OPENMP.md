@@ -27,10 +27,9 @@ prevents Eigen from starting threads of its own inside these loops.
 
 | Computation | Pieces |
 |---|---|
-| Densities on grids (`densities_blocked`), orbital amplitudes on grids | blocks of grid points |
+| AO-P densities and orbital amplitudes on grids (`Evaluator` grid path) | blocks of grid points |
 | Density derivatives and AO-MO densities (`Evaluator` point path), with ELF, LOL, the reduced gradient and the other derived fields | blocks of `block_size` points |
-| Blocked density and orbital derivatives (`density_derivatives_blocked`, `orbital_derivatives_blocked`) | blocks of points |
-| Orbital-energy fields (ALIE, LEA, LEAE, local electronegativity and hardness) and orbitals at arbitrary points (1.13.0) | blocks of `block_size` points |
+| Orbital-energy fields (ALIE, LEA, LEAE, local electronegativity and hardness), orbitals at arbitrary points (1.13.0) and orbital gradients and Hessians (2.0) | blocks of `block_size` points |
 | Electrostatic potential on grids (1.9.0) | tiles of 8 x 8 x 8 grid points |
 | Electrostatic potential on isosurface vertices (1.10.0) | vertices on the edges of a block of 8 x 8 x 8 grid cells |
 | Electrostatic potential at arbitrary points (1.13.0) | points in the same cube of 1.6 bohr |
@@ -39,9 +38,7 @@ prevents Eigen from starting threads of its own inside these loops.
 The isosurface mesh is built serially, and its vertices are placed on the
 surface with the blocked density path. Mapping fields on a surface
 (`map_on_density_isosurface`, 1.13.0) evaluates the vertices with the
-`Evaluator` at points, so it uses the loops above. The pointwise derivative
-functions (`density_derivatives`, `orbital_derivatives` at one point) are
-serial. AO screening is decided per block of points and the AO shell
+`Evaluator` at points, so it uses the loops above. AO screening is decided per block of points and the AO shell
 cutoff per point, so neither depends on the number of threads; see
 [API.md](API.md).
 
@@ -83,7 +80,7 @@ warm-up; compare speedups only within the same platform and workload.
 See [density benchmarks](../benchmarks/PARALLEL_DENSITY.md) and
 [field benchmarks](../benchmarks/PARALLEL_FIELDS.md).
 
-Blocked density (`densities_blocked`), release build on the Apple M3
+Blocked AO-P density (the kernel behind the `Evaluator` grid path), release build on the Apple M3
 (4P+4E), HBC with 103,823 points and block size 256, with
 `schedule(dynamic)`: 3.7x (def2-SVP) and 3.5x (def2-TZVP) with 4 threads,
 5.0x and 4.8x with 8 threads. The 1.10.0 release, with `schedule(static)`,
