@@ -425,6 +425,31 @@ The LOL of Schmider and Becke uses the same ingredients:
 \end{equation}
 with $\tau$ and $D^0$ summed over the two channels for the total LOL.
 
+\subsection{ELF and LOL of Tsirelson and Stash}
+Tsirelson and Stash (Chem.\ Phys.\ Lett.\ 351, 142 (2002); Acta
+Cryst.\ B58, 780 (2002)) replaced $\tau$ by its second-order gradient
+expansion, so that ELF and LOL depend on the density alone and can be
+computed from densities fitted to X-ray data. For a spin channel,
+\begin{equation}
+ \tau^{\mathrm{GE}}_\sigma=D^0_\sigma+\frac{|\nabla\rho_\sigma|^2}{72\rho_\sigma}
+ +\frac{\nabla^2\rho_\sigma}{6},\qquad
+ D^{\mathrm{GE}}_\sigma=\tau^{\mathrm{GE}}_\sigma-\frac{|\nabla\rho_\sigma|^2}{8\rho_\sigma}
+ =D^0_\sigma-\frac{|\nabla\rho_\sigma|^2}{9\rho_\sigma}+\frac{\nabla^2\rho_\sigma}{6},
+\end{equation}
+and, with the sums over the channels as for ELF and LOL,
+\begin{equation}
+ \mathrm{ELF}_{\mathrm{TS}}=\frac{1}{1+(D^{\mathrm{GE}}/D^0)^2},\qquad
+ \mathrm{LOL}_{\mathrm{TS}}=\frac{t}{1+t}=\frac{D^0}{\tau^{\mathrm{GE}}+D^0},\quad
+ t=\frac{D^0}{\tau^{\mathrm{GE}}}.
+\end{equation}
+For a closed shell the total reduces to Multiwfn's form, with
+$\frac3{10}(3\pi^2)^{2/3}\rho^{5/3}$ and the total gradient and Laplacian
+(each channel carries half of $\rho$, so $|\nabla\rho_\sigma|^2/\rho_\sigma$
+sums to $|\nabla\rho|^2/\rho$). Near the nuclei the Laplacian is large and
+negative, $\tau^{\mathrm{GE}}<0$, and $\mathrm{LOL}_{\mathrm{TS}}$ leaves
+$[0,1]$; it is set to 0 where $\tau^{\mathrm{GE}}+D^0=0$. Both are 0
+without density. $\mathrm{ELF}_{\mathrm{TS}}$ stays in $[0,1]$.
+
 \subsection{Non-covalent interactions}
 The reduced density gradient of the total density,
 \begin{equation}
@@ -506,6 +531,8 @@ DORI & 1 at critical points of $\rho$ ($\mathbf q=0$, the limit);\\
 spin polarization & 0 where $\rho\le0$\\
 Shannon and Fisher densities & 0 where $\rho\le0$\\
 $|\mathcal V|/G$ & 0 where $G\le0$\\
+$\mathrm{ELF}_{\mathrm{TS}}$, $\mathrm{LOL}_{\mathrm{TS}}$ & 0 where there is no density;\\
+    & $\mathrm{LOL}_{\mathrm{TS}}=0$ where $\tau^{\mathrm{GE}}+D^0=0$\\
 $\mathcal H/\rho$, $G/\rho$ & 0 where $\rho\le0$\\
 \bottomrule
 \end{tabular}

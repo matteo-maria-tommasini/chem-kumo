@@ -482,6 +482,45 @@ Validation (tests `point-evaluation`, `multiwfn-reference`,
   [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)). The largest
   difference is 54% of its tolerance.
 
+## Tsirelson-Stash ELF and LOL (2.1.0)
+
+Tsirelson and Stash replaced the kinetic energy density tau of ELF and LOL
+by its second-order gradient expansion, so that both depend on the density
+alone and can be computed from experimental (X-ray) densities
+(Chem. Phys. Lett. 351, 142 (2002); Acta Cryst. B58, 780 (2002)). For each
+spin channel s with rho_s > 0, with D0_s = (3/10) (6 pi^2)^(2/3) rho_s^(5/3)
+the Thomas-Fermi reference of ELF:
+
+    tau_GE,s = D0_s + |grad rho_s|^2 / (72 rho_s) + lap rho_s / 6
+    D_s      = tau_GE,s - |grad rho_s|^2 / (8 rho_s)
+
+and, with D, D0 and tau_GE summed over the channels:
+
+- `elf_tsirelson_stash()` (`PropertyKind::ElfTsirelsonStash`):
+  `1 / (1 + (D / D0)^2)`, in [0, 1];
+- `lol_tsirelson_stash()` (`PropertyKind::LolTsirelsonStash`):
+  `t / (1 + t) = D0 / (tau_GE + D0)` with `t = D0 / tau_GE`.
+
+As for `elf()` and `lol()`, the total is the spin-resolved form from the
+alpha and beta channels, a spin channel uses only itself, and the spin
+difference is rejected. For a closed shell the total equals Multiwfn's
+(`ELFLOL_type= 1`); for an open shell Multiwfn uses the spin-polarized D0
+with the gradient and Laplacian of the total density, a mixed form that
+kumo does not reproduce. The gradient expansion of tau is poor close to
+the nuclei, where it is negative: there LOL_TS leaves [0, 1] (from -3.6
+to 2.1 on the water and acrolein reference grids; Multiwfn gives the same
+values), and where
+tau_GE + D0 = 0 exactly it is set to 0. Both fields are 0 without density.
+They need the density, its gradient and Laplacian, with either backend.
+
+Validation (tests `density-fields`, `point-evaluation`,
+`multiwfn-reference`, `cli-end-to-end`): both match their spin-resolved
+formulas from the Evaluator's own value, gradient and Laplacian to 1e-12
+for water, O2 and acrolein (total, alpha, beta), and for the closed shells
+the total equals the spin-unpolarized form; Multiwfn 2026.9.1 Cube files of
+water and acrolein agree point by point within 2e-5 relative (largest
+difference 42% of the tolerance).
+
 ## Energy densities: Cartesian terms of G and K, |V| / G, H / rho, G / rho (2.1.0)
 
 `tau()` is Bader's Lagrangian kinetic energy density G (Multiwfn's

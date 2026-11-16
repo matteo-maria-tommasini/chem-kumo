@@ -155,6 +155,9 @@ More fields follow Multiwfn's definitions:
 - `kinetic-k` is the kinetic energy density K = tau - lap rho / 4, for any
   `--spin`; `potential-energy` (V = lap rho / 4 - 2 tau) and
   `energy-density` (H = lap rho / 4 - tau) are for the total density.
+- `elf-ts` and `lol-ts` are the ELF and LOL of Tsirelson and Stash, which
+  replace tau by its gradient expansion and so depend on the density alone
+  (total, alpha or beta); `lol-ts` leaves [0, 1] near the nuclei.
 - `kinetic-g` is tau, Bader's Lagrangian kinetic energy density G;
   `kinetic-g-x`, `kinetic-g-y`, `kinetic-g-z` and `kinetic-k-x`,
   `kinetic-k-y`, `kinetic-k-z` are the Cartesian terms of G and K (any

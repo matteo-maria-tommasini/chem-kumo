@@ -390,6 +390,17 @@ if "$KUMO" "$FCHK" --surface-map --property kinetic-g-x > "$TMP/error.log" 2>&1;
     fail '--surface-map of a Cartesian term unexpectedly accepted'
 fi
 
+# Tsirelson-Stash ELF and LOL: the ELF lies in [0, 1] for total, alpha and
+# beta; --spin difference is rejected.
+run_kumo "$FCHK" --point @1 --point 0,0.3,1 --spin total --property elf-ts,lol-ts > "$TMP/ts.txt"
+grep -Fxq '# x y z elf-ts_total lol-ts_total' "$TMP/ts.txt" ||
+    fail 'Tsirelson-Stash table lacks the expected column names'
+data "$TMP/ts.txt" | awk 'NF != 5 || $4 < 0 || $4 > 1 { bad = 1 } END { exit bad || NR != 2 }' ||
+    fail 'Tsirelson-Stash ELF outside [0, 1]'
+if "$KUMO" "$FCHK" --point @1 --spin difference --property elf-ts > "$TMP/error.log" 2>&1; then
+    fail '--property elf-ts with --spin difference unexpectedly accepted'
+fi
+
 # Orbital-weighted Fukui functions (closed shell only): f0 = (f+ + f-) / 2,
 # dual descriptor f+ - f-, f+ and f- positive; --fukui-delta changes them.
 # O2 (open shell), --fukui-delta without an ow-* property and a nonpositive
