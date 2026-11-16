@@ -168,6 +168,13 @@ More fields follow Multiwfn's definitions:
   functions, while `leae` uses only the virtual orbitals with negative
   energy and is 0 everywhere if there are none. See
   [docs/API.md](docs/API.md) for the formulas.
+- `ow-fukui-plus`, `ow-fukui-minus`, `ow-fukui-zero` and `ow-dual-descriptor`
+  are the orbital-weighted Fukui functions f+, f-, f0 = (f+ + f-) / 2 and
+  the dual descriptor f+ - f- of Pino-Rios et al. (2017), in bohr^-3: the
+  virtual (f+) or occupied (f-) orbital densities weighted by Gaussians of
+  their energy distance from the middle of the HOMO-LUMO gap, of width
+  `--fukui-delta` (default 0.1 hartree, as in Multiwfn). Total density of
+  a restricted closed-shell SCF file only.
 
 `esp` writes the molecular electrostatic potential (nuclear plus
 electronic, in hartree/e) to `PREFIX_density_esp.cube`, for the total

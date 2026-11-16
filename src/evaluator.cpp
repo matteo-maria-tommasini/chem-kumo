@@ -93,7 +93,11 @@ bool is_orbital_energy_field(PropertyKind kind) {
     return kind == PropertyKind::AverageLocalIonizationEnergy ||
            kind == PropertyKind::LocalElectronAffinity ||
            kind == PropertyKind::LocalElectronAttachmentEnergy ||
-           kind == PropertyKind::LocalElectronegativity || kind == PropertyKind::LocalHardness;
+           kind == PropertyKind::LocalElectronegativity || kind == PropertyKind::LocalHardness ||
+           kind == PropertyKind::OrbitalWeightedFukuiPlus ||
+           kind == PropertyKind::OrbitalWeightedFukuiMinus ||
+           kind == PropertyKind::OrbitalWeightedFukuiZero ||
+           kind == PropertyKind::OrbitalWeightedDualDescriptor;
 }
 
 // Whether this field is computed and stored by the point path.
@@ -401,8 +405,9 @@ void evaluate_electrostatic_potential(
 
 // Average local ionization energy (ALIE), local electron affinity (LEA),
 // local electron attachment energy (LEAE), local electronegativity and
-// hardness from the orbital sums (see detail::OrbitalEnergySums), 0 where a
-// denominator vanishes.
+// hardness (0 where a denominator vanishes), and the orbital-weighted Fukui
+// functions f+, f-, f0 = (f+ + f-) / 2 and dual descriptor f+ - f-, from the
+// orbital sums (see detail::OrbitalEnergySums).
 void store_orbital_energy_block(std::map<Property, PropertyField>& fields,
                                 const detail::OrbitalEnergySums& sums, std::size_t count,
                                 std::size_t start) {
@@ -417,13 +422,22 @@ void store_orbital_energy_block(std::map<Property, PropertyField>& fields,
                 lea = vir > 0.0 ? -sums.virtual_energy[t] / vir : 0.0;
                 attachment = rho > 0.0 ? sums.attachment_energy[t] / rho : 0.0;
             }
+            double plus = 0.0, minus = 0.0;
+            if (!sums.fukui_plus.empty()) {
+                plus = sums.fukui_plus[t];
+                minus = sums.fukui_minus[t];
+            }
             double value = 0.0;
             switch (key.kind) {
             case PropertyKind::AverageLocalIonizationEnergy: value = alie; break;
             case PropertyKind::LocalElectronAffinity: value = lea; break;
             case PropertyKind::LocalElectronAttachmentEnergy: value = attachment; break;
             case PropertyKind::LocalElectronegativity: value = 0.5 * (alie + lea); break;
-            default: value = 0.5 * (alie - lea); break;
+            case PropertyKind::LocalHardness: value = 0.5 * (alie - lea); break;
+            case PropertyKind::OrbitalWeightedFukuiPlus: value = plus; break;
+            case PropertyKind::OrbitalWeightedFukuiMinus: value = minus; break;
+            case PropertyKind::OrbitalWeightedFukuiZero: value = 0.5 * (plus + minus); break;
+            default: value = plus - minus; break;
             }
             output.components[0][start + t] = value;
         }
@@ -440,6 +454,8 @@ Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
     detail::validate_screening_threshold(options.screening_threshold);
     if (!std::isfinite(options.potential_tolerance) || options.potential_tolerance < 0.0)
         throw std::invalid_argument("potential tolerance must be finite and nonnegative");
+    if (!std::isfinite(options.fukui_delta) || options.fukui_delta <= 0.0)
+        throw std::invalid_argument("fukui_delta must be finite and positive");
     if (options.backend != Backend::AUTO && options.backend != Backend::AO_P &&
         options.backend != Backend::AO_MO)
         throw std::invalid_argument("unknown evaluation backend");
@@ -485,12 +501,21 @@ public:
         // Check the orbitals (and the orbital indices) before any pass.
         std::optional<detail::OrbitalEnergyFields> orbital_energies;
         if (plan_.orbital_energies) {
-            const char* what = plan_.virtual_orbitals
+            // Name the most restrictive group in the error messages: the
+            // orbital-weighted Fukui functions need a closed shell, the
+            // virtual-orbital fields virtual orbitals.
+            const char* what = plan_.orbital_weighted_fukui
+                                   ? "the orbital-weighted Fukui function or dual descriptor"
+                               : plan_.virtual_orbitals
                                    ? "the local electron affinity and related fields"
                                    : "the average local ionization energy";
-            orbital_energies.emplace(
-                molecule_, molecule_.evaluator_, molecule_.mo_coefficients(SpinChannel::Alpha),
-                molecule_.mo_coefficients(SpinChannel::Beta), plan_.virtual_orbitals, what);
+            detail::OrbitalEnergyNeeds needs;
+            needs.virtuals = plan_.virtual_orbitals;
+            needs.fukui = plan_.orbital_weighted_fukui;
+            needs.fukui_delta = options_.fukui_delta;
+            orbital_energies.emplace(molecule_, molecule_.evaluator_,
+                                     molecule_.mo_coefficients(SpinChannel::Alpha),
+                                     molecule_.mo_coefficients(SpinChannel::Beta), needs, what);
         }
         const auto orbitals = checked_orbitals();
 

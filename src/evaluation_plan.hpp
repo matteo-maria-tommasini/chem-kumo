@@ -73,10 +73,12 @@ struct EvaluationPlan {
     bool orbitals = false;
     /// A field weighted by orbital energies is requested (average local
     /// ionization energy, local electron affinity, local electron attachment
-    /// energy, local electronegativity or hardness); these come from the SCF
-    /// orbitals and energies in a pass of their own (orbital_energy_fields.hpp).
+    /// energy, local electronegativity or hardness, orbital-weighted Fukui
+    /// functions or dual descriptor); these come from the SCF orbitals and
+    /// energies in a pass of their own (orbital_energy_fields.hpp).
     bool orbital_energies = false;
-    bool virtual_orbitals = false; ///< the virtual-orbital sums are needed too
+    bool virtual_orbitals = false;       ///< the virtual-orbital sums are needed too
+    bool orbital_weighted_fukui = false; ///< the orbital-weighted Fukui sums are needed too
     /// Highest AO derivative order over all components and orbitals (-1: none).
     int maximum_ao_order = -1;
 
@@ -101,7 +103,14 @@ struct EvaluationPlan {
         case PropertyKind::LocalElectronAttachmentEnergy:
             return "the local electron attachment energy";
         case PropertyKind::LocalElectronegativity: return "the local electronegativity";
-        default: return "the local hardness";
+        case PropertyKind::LocalHardness: return "the local hardness";
+        case PropertyKind::OrbitalWeightedFukuiPlus:
+            return "the orbital-weighted Fukui function f+";
+        case PropertyKind::OrbitalWeightedFukuiMinus:
+            return "the orbital-weighted Fukui function f-";
+        case PropertyKind::OrbitalWeightedFukuiZero:
+            return "the orbital-weighted Fukui function f0";
+        default: return "the orbital-weighted dual descriptor";
         }
     }
 
@@ -209,6 +218,14 @@ struct EvaluationPlan {
                 require_total(property, orbital_energy_name(property.kind));
                 plan.orbital_energies = true;
                 plan.virtual_orbitals = true;
+                break;
+            case PropertyKind::OrbitalWeightedFukuiPlus:
+            case PropertyKind::OrbitalWeightedFukuiMinus:
+            case PropertyKind::OrbitalWeightedFukuiZero:
+            case PropertyKind::OrbitalWeightedDualDescriptor:
+                require_total(property, orbital_energy_name(property.kind));
+                plan.orbital_energies = true;
+                plan.orbital_weighted_fukui = true;
                 break;
             case PropertyKind::Orbital: break;
             default: throw std::invalid_argument("unknown property kind");

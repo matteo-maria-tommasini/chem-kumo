@@ -62,6 +62,18 @@ namespace chem::kumo {
 ///    FCHK (Gaussian formatted checkpoint file); the last four also need
 ///    virtual orbitals and are not defined for a restricted open-shell
 ///    calculation. Each is 0 where its denominator vanishes.
+///  - OrbitalWeightedFukuiPlus, OrbitalWeightedFukuiMinus: the
+///    orbital-weighted Fukui functions of Pino-Rios et al. (2017),
+///    f+ = sum_vir g_i |phi_i|^2 and f- = sum_occ g_i |phi_i|^2, in bohr^-3,
+///    with g_i = exp(-((mu - e_i) / delta)^2) normalized to sum 1 over the
+///    virtual (f+) or occupied (f-) orbitals, mu = (e_HOMO + e_LUMO) / 2 and
+///    delta = EvaluationOptions::fukui_delta. Each integrates to 1. Every
+///    orbital enters the sums (Multiwfn drops the orbitals whose
+///    unnormalized Gaussian is below 1e-3). Total only.
+///  - OrbitalWeightedFukuiZero, OrbitalWeightedDualDescriptor:
+///    f0 = (f+ + f-) / 2 and the dual descriptor f+ - f-. Total only.
+///    These four need the same orbitals as the fields above, and a
+///    restricted closed-shell calculation with at least one virtual orbital.
 ///  - ElectrostaticPotential: molecular electrostatic potential (ESP) in
 ///    hartree/e, nuclear plus electronic, from the nuclear charges and the
 ///    total density matrix over atomic orbitals (AOs), within
@@ -98,7 +110,13 @@ enum class PropertyKind {
     /// Gradient (x, y, z) and Hessian (xx, xy, xz, yy, yz, zz) of the signed
     /// amplitude of a molecular orbital, in bohr^(-5/2) and bohr^(-7/2).
     OrbitalGradient,
-    OrbitalHessian
+    OrbitalHessian,
+    /// Orbital-weighted Fukui functions and dual descriptor (2.1), described
+    /// above with the other orbital-energy fields.
+    OrbitalWeightedFukuiPlus,
+    OrbitalWeightedFukuiMinus,
+    OrbitalWeightedFukuiZero,
+    OrbitalWeightedDualDescriptor
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -231,6 +249,26 @@ struct DensityDescriptor {
 
     /// Local hardness (ALIE - LEA) / 2 (Total only).
     constexpr Property local_hardness() const { return {PropertyKind::LocalHardness, component}; }
+
+    /// Orbital-weighted Fukui function f+ (Total only).
+    constexpr Property orbital_weighted_fukui_plus() const {
+        return {PropertyKind::OrbitalWeightedFukuiPlus, component};
+    }
+
+    /// Orbital-weighted Fukui function f- (Total only).
+    constexpr Property orbital_weighted_fukui_minus() const {
+        return {PropertyKind::OrbitalWeightedFukuiMinus, component};
+    }
+
+    /// Orbital-weighted Fukui function f0 = (f+ + f-) / 2 (Total only).
+    constexpr Property orbital_weighted_fukui_zero() const {
+        return {PropertyKind::OrbitalWeightedFukuiZero, component};
+    }
+
+    /// Orbital-weighted dual descriptor f+ - f- (Total only).
+    constexpr Property orbital_weighted_dual_descriptor() const {
+        return {PropertyKind::OrbitalWeightedDualDescriptor, component};
+    }
 };
 
 /// The four density components: density::total, alpha, beta, difference.
@@ -321,6 +359,10 @@ struct EvaluationOptions {
     /// (see docs/API.md). The default 1e-8 is below the six significant
     /// digits of Cube files wherever |V| >= 2e-3.
     double potential_tolerance = 1e-8;
+    /// Width delta (hartree) of the Gaussian orbital weights of the
+    /// orbital-weighted Fukui functions and dual descriptor; must be finite
+    /// and > 0. The default 0.1 is Multiwfn's.
+    double fukui_delta = 0.1;
     /// Optional progress report (see ProgressCallback). One evaluate() call
     /// makes several passes over all points, and `total` is the number of
     /// points times the number of passes: one pass for the density

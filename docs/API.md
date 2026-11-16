@@ -193,6 +193,9 @@ const std::span<const double> rho =
     the exact contraction;
   - `potential_tolerance`: error bound of the electrostatic potential,
     default 1e-8 hartree/e, 0 for the exact sum;
+  - `fukui_delta`: width of the orbital weights of the orbital-weighted
+    Fukui functions, default 0.1 hartree; it must be finite and positive
+    (2.1.0);
   - `progress`: a progress callback (see below);
   - `threads`: only 0 and 1 are accepted; in OpenMP builds the number of
     threads is set with `OMP_NUM_THREADS`.
@@ -478,6 +481,72 @@ Validation (tests `point-evaluation`, `multiwfn-reference`,
   (|I| + |EA_L|) / 2 (see
   [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)). The largest
   difference is 54% of its tolerance.
+
+## Orbital-weighted Fukui functions and dual descriptor (2.1.0)
+
+The Fukui function f(r) = (d rho(r) / dN) at fixed nuclei measures where the
+density changes when an electron is added (f+, sites of nucleophilic
+attack) or removed (f-, sites of electrophilic attack). The frontier-orbital
+approximation replaces it by the LUMO or HOMO density, which fails when
+other orbitals lie close in energy. The orbital-weighted Fukui functions of
+Pino-Rios, Yanez, Cardenas, Ayers and Fuentealba (J. Comput. Chem. 38, 481
+(2017)) spread the weight over the orbitals near the frontier, with
+Gaussian weights of their distance from the chemical potential
+mu = (e_HOMO + e_LUMO) / 2:
+
+    f+(r) = sum_vir g_i |phi_i(r)|^2,   f-(r) = sum_occ g_i |phi_i(r)|^2,
+    g_i   = exp(-((mu - e_i) / delta)^2) / sum_j exp(-((mu - e_j) / delta)^2),
+
+where the normalizing sum over j runs over the virtual orbitals for f+ and
+over the occupied ones for f-, so that f+ and f- each integrate to 1
+(bohr^-3). They are Multiwfn's user functions 95 and 96, with the same
+default width delta = 0.1 hartree (`EvaluationOptions::fukui_delta`). As
+delta goes to 0, f+ and f- tend to the LUMO and HOMO densities; a larger
+delta mixes in more orbitals.
+
+- `orbital_weighted_fukui_plus()`, `orbital_weighted_fukui_minus()`: f+ and
+  f-;
+- `orbital_weighted_fukui_zero()`: f0 = (f+ + f-) / 2 (radical attack;
+  Multiwfn's user function 97);
+- `orbital_weighted_dual_descriptor()`: f+ - f- (Multiwfn's user function
+  98), positive at electrophilic and negative at nucleophilic sites.
+
+All four are for the total density of a restricted closed-shell SCF
+calculation with at least one virtual orbital, whose occupied MOs
+reproduce the density matrices (as the fields above). Spin components,
+unrestricted or restricted open-shell files and a `fukui_delta` that is
+not finite and positive throw `std::invalid_argument`. The orbitals are
+evaluated exactly, whatever the backend.
+
+Every orbital enters the sums. Multiwfn instead keeps only the orbitals
+whose unnormalized Gaussian exp(-((mu - e_i) / delta)^2) is at least 1e-3,
+scanning outwards from the LUMO (f+) or the HOMO (f-) and stopping at the
+first orbital below, and normalizes over those. The two definitions differ
+by the weight that Multiwfn drops: for acrolein at the default delta,
+0.4% of f+ and 0.3% of f-. Multiwfn's cut is absolute, not relative: when
+the HOMO-LUMO gap exceeds about 5.3 delta, even the frontier orbitals
+fall below it and Multiwfn returns 0, while kumo still gives the
+frontier-orbital limit. To avoid underflow for small delta, kumo shifts the
+exponents by their largest value before exponentiation, which leaves the
+normalized weights unchanged.
+
+Validation (tests `point-evaluation`, `multiwfn-reference`,
+`cli-end-to-end`):
+
+- for water and acrolein, the four fields equal their formulas evaluated
+  from the pointwise MO amplitudes and orbital energies to 1e-12 of
+  |f+| + |f-| for delta = 0.05, 0.1 and 0.3 hartree; with delta = 1e-3,
+  where every unshifted Gaussian underflows, f+ and f- equal the LUMO and
+  HOMO densities to 1e-12; they are 0 far from the molecule, and O2
+  (unrestricted), spin components and invalid widths are rejected;
+- Multiwfn 2026.9.1 Cube files of acrolein (user functions 95 to 98) and
+  water (95 and 96) agree point by point within 2e-5 relative + 1e-8
+  bohr^-3 (the dual descriptor, which crosses zero, on the scale
+  |f+| + |f-|), and within 2e-5 relative alone where |value| >= 1e-4
+  bohr^-3 (largest difference there 9.4e-6), once the test has added to
+  each Cube value the weight that Multiwfn drops, computed from the
+  orbitals (see [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)).
+  The largest difference is 47% of its tolerance.
 
 ## Electrostatic potential (1.9.0)
 

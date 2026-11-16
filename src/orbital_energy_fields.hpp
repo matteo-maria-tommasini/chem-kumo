@@ -22,6 +22,8 @@ namespace chem::kumo::detail {
 ///   virtual_density    = sum_vir |phi_i|^2
 ///   virtual_energy     = sum_vir e_i |phi_i|^2
 ///   attachment_energy  = sum_(vir, e_i < 0) w e_i |phi_i|^2
+///   fukui_plus         = sum_vir g_i |phi_i|^2
+///   fukui_minus        = sum_occ g_i |phi_i|^2
 ///
 /// where w = 2 in a restricted calculation (each spatial orbital counts for
 /// both spins) and 1 in an unrestricted one. From these sums (Multiwfn's
@@ -36,28 +38,80 @@ namespace chem::kumo::detail {
 ///   local electronegativity chi_L = (I + EA_L) / 2 and
 ///   local hardness eta_L = (I - EA_L) / 2.
 ///
+/// The last two sums are the orbital-weighted Fukui functions f+ and f- of
+/// Pino-Rios et al. (J. Comput. Chem. 38, 481 (2017); Multiwfn's user
+/// functions 95 and 96), defined for a restricted closed-shell calculation.
+/// The weights g_i are Gaussians of the distance of e_i from the chemical
+/// potential mu = (e_HOMO + e_LUMO) / 2, normalized over the virtual
+/// orbitals (f+) or over the occupied ones (f-):
+///
+///   g_i = exp(-((mu - e_i) / delta)^2) / sum_j exp(-((mu - e_j) / delta)^2)
+///
+/// so that f+ and f- each integrate to one electron. Every orbital enters
+/// the sums: unlike Multiwfn, which drops the orbitals whose unnormalized
+/// Gaussian is below 1e-3, nothing is cut off.
+///
 /// The orbitals are evaluated exactly (no atomic-orbital screening). Virtual
-/// orbitals are
-/// those above the occupied ones in each channel, among the MOs of the FCHK
-/// (fewer than the basis functions if Gaussian removed linear dependencies).
+/// orbitals are those above the occupied ones in each channel, among the MOs
+/// of the FCHK (fewer than the basis functions if Gaussian removed linear
+/// dependencies).
 struct OrbitalEnergySums {
     std::vector<double> occupied_density, occupied_energy, virtual_density, virtual_energy,
-        attachment_energy;
+        attachment_energy, fukui_plus, fukui_minus;
 };
+
+/// Which orbital sums an OrbitalEnergyFields computes besides the occupied
+/// ones (always needed).
+struct OrbitalEnergyNeeds {
+    /// The virtual-orbital sums (LEA, LEAE, local electronegativity and
+    /// hardness).
+    bool virtuals = false;
+    /// The orbital-weighted Fukui sums, with Gaussian width `fukui_delta`
+    /// (hartree).
+    bool fukui = false;
+    double fukui_delta = 0.1;
+};
+
+/// Normalized orbital-weighted Fukui weights g_i (see OrbitalEnergySums) of
+/// the orbitals with the given energies. The exponents are shifted by their
+/// largest value before exponentiation, which leaves the ratios unchanged
+/// and keeps the largest weight away from underflow however small delta is.
+inline std::vector<double> orbital_weights(const std::vector<double>& energies, double mu,
+                                           double delta) {
+    std::vector<double> exponents(energies.size());
+    for (std::size_t i = 0; i < energies.size(); ++i) {
+        const double x = (mu - energies[i]) / delta;
+        exponents[i] = -x * x;
+    }
+    const double largest = *std::max_element(exponents.begin(), exponents.end());
+    std::vector<double> weights(energies.size());
+    double sum = 0.0;
+    for (std::size_t i = 0; i < energies.size(); ++i) {
+        weights[i] = std::exp(exponents[i] - largest);
+        sum += weights[i];
+    }
+    for (double& w : weights)
+        w /= sum;
+    return weights;
+}
 
 class OrbitalEnergyFields {
 public:
     /// `alpha` and `beta` are the MO coefficients (one MO per column);
-    /// `virtuals` says whether the virtual sums are needed. Throws
+    /// `needs` says which sums are needed besides the occupied ones. Throws
     /// std::invalid_argument if the orbitals do not reproduce the FCHK density
-    /// matrices or the orbital energies are missing; with `virtuals`, also for
-    /// a restricted open-shell calculation (where, as in Multiwfn, the
-    /// virtual-orbital fields are not defined) or if there are no virtual
-    /// MOs. `what` names the quantity in the error messages.
+    /// matrices or the orbital energies are missing; with `needs.virtuals`,
+    /// also for a restricted open-shell calculation (where, as in Multiwfn,
+    /// the virtual-orbital fields are not defined) or if there are no virtual
+    /// MOs; with `needs.fukui`, also unless the calculation is restricted and
+    /// closed-shell with at least one virtual MO, or if `needs.fukui_delta` is
+    /// not finite and positive. `what` names the quantity in the error
+    /// messages.
     OrbitalEnergyFields(const Molecule& molecule, const BasisEvaluator& basis,
-                        const Eigen::MatrixXd& alpha, const Eigen::MatrixXd& beta, bool virtuals,
-                        const std::string& what)
-        : basis_(&basis), virtuals_(virtuals) {
+                        const Eigen::MatrixXd& alpha, const Eigen::MatrixXd& beta,
+                        const OrbitalEnergyNeeds& needs, const std::string& what)
+        : basis_(&basis), virtuals_(needs.virtuals), fukui_(needs.fukui) {
+        const bool virtuals = needs.virtuals;
         // Molecule::from_fchk() already rejects open-shell files without beta
         // MOs, so this cannot happen today; the check keeps the restriction
         // explicit here in case that changes.
@@ -66,6 +120,13 @@ public:
                 molecule.occupied_count(SpinChannel::Beta))
             throw std::invalid_argument(what +
                                         " is not defined for a restricted open-shell calculation");
+        if (needs.fukui &&
+            (molecule.unrestricted() || molecule.occupied_count(SpinChannel::Alpha) !=
+                                            molecule.occupied_count(SpinChannel::Beta)))
+            throw std::invalid_argument(
+                what + " is defined only for a restricted closed-shell calculation");
+        if (needs.fukui && (!std::isfinite(needs.fukui_delta) || needs.fukui_delta <= 0.0))
+            throw std::invalid_argument(what + ": the Fukui delta must be finite and positive");
         if (!molecule.electronic_structure_info().ao_mo_eligible())
             throw std::invalid_argument(what +
                                         " needs occupied MOs that reproduce the FCHK density "
@@ -129,6 +190,7 @@ public:
         attachment_energies_.conservativeResize(a);
         if (virtuals && v == 0)
             throw std::invalid_argument(what + " needs virtual orbitals, and the FCHK has none");
+        if (needs.fukui) fukui_columns(alpha, alpha_energies, nalpha, needs.fukui_delta, what);
     }
 
     /// The sums at the columns of `points` (one block).
@@ -154,13 +216,47 @@ public:
             std::vector<double> unused;
             weighted(attachment_, attachment_energies_, unused, &sums.attachment_energy);
         }
+        if (fukui_) {
+            weighted(fukui_plus_, Eigen::VectorXd(), sums.fukui_plus, nullptr);
+            weighted(fukui_minus_, Eigen::VectorXd(), sums.fukui_minus, nullptr);
+        }
         return sums;
     }
 
 private:
+    // The columns of the orbital-weighted Fukui sums of a restricted
+    // closed-shell calculation (one set of spatial orbitals, the first
+    // `occupied` of them doubly occupied): each MO scaled by sqrt(g_i), so
+    // that its squared amplitude carries the weight. Orbitals whose weight
+    // underflows to zero are left out; they would add exactly zero.
+    void fukui_columns(const Eigen::MatrixXd& mos, const std::vector<double>& energies,
+                       int occupied, double delta, const std::string& what) {
+        const auto count = static_cast<std::size_t>(mos.cols());
+        const auto homo = static_cast<std::size_t>(occupied);
+        if (homo == 0 || homo >= count)
+            throw std::invalid_argument(what +
+                                        " needs occupied and virtual orbitals, and the FCHK lacks "
+                                        "one kind");
+        const double mu = 0.5 * (energies[homo - 1] + energies[homo]);
+        const auto columns = [&](std::size_t first, std::size_t last, Eigen::MatrixXd& out) {
+            const std::vector<double> range(energies.begin() + static_cast<std::ptrdiff_t>(first),
+                                            energies.begin() + static_cast<std::ptrdiff_t>(last));
+            const auto weights = orbital_weights(range, mu, delta);
+            out.resize(mos.rows(), static_cast<Eigen::Index>(range.size()));
+            Eigen::Index n = 0;
+            for (std::size_t i = 0; i < range.size(); ++i)
+                if (weights[i] > 0.0)
+                    out.col(n++) =
+                        std::sqrt(weights[i]) * mos.col(static_cast<Eigen::Index>(first + i));
+            out.conservativeResize(Eigen::NoChange, n);
+        };
+        columns(homo, count, fukui_plus_);
+        columns(0, homo, fukui_minus_);
+    }
+
     const BasisEvaluator* basis_;
-    bool virtuals_;
-    Eigen::MatrixXd occupied_, virtual_, attachment_;
+    bool virtuals_, fukui_;
+    Eigen::MatrixXd occupied_, virtual_, attachment_, fukui_plus_, fukui_minus_;
     Eigen::VectorXd occupied_energies_, virtual_energies_, attachment_energies_;
 };
 } // namespace chem::kumo::detail

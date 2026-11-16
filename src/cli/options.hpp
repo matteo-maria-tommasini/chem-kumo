@@ -37,6 +37,8 @@ struct Options {
     double margin = 5.0;
     double esp_tolerance = 1e-8; // EvaluationOptions::potential_tolerance default
     bool esp_tolerance_set = false;
+    double fukui_delta = 0.1; // EvaluationOptions::fukui_delta default, hartree
+    bool fukui_delta_set = false;
     double isovalue = 1e-3; // density isosurface of the surface modes, e/bohr^3
     bool isovalue_set = false;
     bool spacing_set = false;
