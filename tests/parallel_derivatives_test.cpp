@@ -1,3 +1,10 @@
+// Blocked density derivatives (value, gradient, Hessian, Laplacian, tau of
+// the total, alpha, beta and spin densities) at 137 points with 1, 2 and 4
+// OpenMP threads and block sizes 1, 16, 32 and 64: finite and within 1e-10 of
+// the 1-thread, block-32 reference, and bit-identical to 1 thread with the
+// same block size. Also runs in serial builds.
+//
+// Usage: kumo-parallel-derivatives-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
 #include "molecule_test_access.hpp"

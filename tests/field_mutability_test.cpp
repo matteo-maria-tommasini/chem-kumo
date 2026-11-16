@@ -1,3 +1,7 @@
+// Field::mutable_values(): it views the same storage as values(); a write is
+// seen by operator() and by a FieldSampler built earlier (interpolated values
+// within 1e-14), and keeps the grid; copies own separate storage and moves
+// keep the values. No arguments.
 #include "chem/kumo/field_sampler.hpp"
 #include "test_support.hpp"
 

@@ -1,3 +1,11 @@
+// Fused Evaluator request with the AO_P backend (density matrix contraction),
+// sharing one set of atomic orbital values among all properties, against the
+// blocked density-derivative kernel on a skewed 140-point grid with block
+// sizes 1, 7, 128 and 256: gradient, Hessian, Laplacian and tau of the total,
+// alpha, beta and spin densities, Laplacian = Hessian trace, total = alpha +
+// beta and spin = alpha - beta, all within 5e-11 * max(1, |values|).
+//
+// Usage: kumo-shared-ao-validation-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

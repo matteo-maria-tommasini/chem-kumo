@@ -39,10 +39,12 @@ double integer_power(double x, int n) noexcept {
 // Chem. 54, 83-87 (1995). In the code:
 //   a: ratio of Cartesian to pure normalization constants;
 //   b: sqrt((l-|m|)!/(l+|m|)!) / (2^l l!);
-//   c: sum over i of binom(l, i) binom(i, j) (-1)^i (2l-2i)! / (l-|m|-2i)!,
+//   c: the i-th term binom(l, i) binom(i, j) (-1)^i (2l-2i)! / (l-|m|-2i)!,
 //      with j = (l - |m| - lz) / 2, which must be an integer;
-//   d, e: sum over k of binom(j, k) binom(|m|, lx-2k) times the sign/sqrt(2)
-//      factor that selects the cosine (m > 0) or sine (m < 0) part.
+//   d: binom(j, k) binom(|m|, lx-2k), for each k;
+//   e: the sign and sqrt(2) factor that selects the zonal (m = 0), cosine
+//      (m > 0) or sine (m < 0) part;
+//   g: the sum over i and k of c d e; the coefficient is a b g.
 // Returns 0 for components that do not contribute.
 double c2pcff(int l, int m, int lx, int ly) {
     const int lz = l - lx - ly;
@@ -437,6 +439,8 @@ void BasisEvaluator::evaluate_into_impl(const Eigen::Vector3d& point,
         // Compute the powers x^n, y^n, z^n once and reuse them for all the
         // Cartesian components of this shell. The primitives are summed in
         // the same order as in evaluate_into_impl_reference().
+        // Powers up to l fit in the 32-entry stack arrays for l <= 31;
+        // higher l uses the heap.
         const int l = block.angular_momentum;
         double xp_stack[32], yp_stack[32], zp_stack[32];
         std::vector<double> xp_heap, yp_heap, zp_heap;

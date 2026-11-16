@@ -44,6 +44,9 @@ public:
         const double determinant = normalized_.determinant();
         if (!std::isfinite(determinant) || std::abs(determinant) < 1e-12)
             throw std::invalid_argument("singular or ill-conditioned field grid");
+        // inverse_ maps a displacement from the origin (bohr) to fractional
+        // grid indices: the inverse of the unit axis directions, with row a
+        // divided by the step length along axis a.
         inverse_ = normalized_.inverse();
         for (int axis = 0; axis < 3; ++axis)
             inverse_.row(axis) /= lengths_[axis];
@@ -64,6 +67,9 @@ public:
         Eigen::Vector3i lower;
         Eigen::Vector3d fraction;
         for (int axis = 0; axis < 3; ++axis) {
+            // A point outside the grid by at most a few rounding units (64
+            // machine epsilons, scaled by the index range) is clamped onto
+            // it, so that points on the boundary count as inside.
             const double upper = static_cast<double>(field_.grid().counts[axis] - 1);
             const double epsilon =
                 64.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, upper);

@@ -282,11 +282,13 @@ The test `multiwfn-reference` compares them like the other files:
 H_aa is the diagonal of the density Hessian. K_a, |V| / G and H / rho
 cancel terms as K, V and H do, and are compared on the scale of those
 terms with the tolerance of K, V and H. The O2 grid contains one nucleus,
-at (0, 0, -1.143284): the six decimals of the Cube header move it by up to
-5e-7 bohr, and on the nuclear cusp G changes by about 2Z = 32 relative per
-bohr, so G differs there by 2.9e-5. That point is skipped for O2 G (points
-within 1e-3 bohr of a nucleus, as for the ESP); every other point agrees
-within 5.5e-6. The largest difference is 0.47 of its tolerance
+at z = -1.14328431 bohr, but the six decimals of the Cube header place that
+grid point at z = -1.143284, 3.1e-7 bohr away. On the nuclear cusp G
+changes steeply (by about 90 relative per bohr there): kumo gives 45.35611
+at the header's point and 45.35738 at the nucleus, where Multiwfn
+evaluated it (45.3574), a difference of 2.9e-5. That point is skipped for
+O2 G (points within 1e-3 bohr of a nucleus, as for the ESP); every other
+point agrees within 5.5e-6. The largest difference is 0.47 of its tolerance
 (O2 |V| / G).
 
 ### Orbital-weighted Fukui functions of 2.1.0

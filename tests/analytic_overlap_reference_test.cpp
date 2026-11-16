@@ -1,3 +1,11 @@
+// Analytic atomic orbital (AO) overlap matrix against an independent
+// reference: for up to 12 AO blocks of distinct angular momentum and center
+// (SP shells, s and p sharing exponents, split in two), every pair of blocks
+// is integrated primitive by primitive with a 12-point Gauss-Hermite rule
+// per axis, then transformed to pure functions where needed. Every element
+// must agree with BasisEvaluator::overlap_matrix() within 2e-11 absolute.
+//
+// Usage: kumo-analytic-overlap-reference-test FILE.fchk...
 #include "chem/kumo/basis_evaluator.hpp"
 #include "test_support.hpp"
 #include <Eigen/Eigenvalues>

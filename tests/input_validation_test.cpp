@@ -1,3 +1,9 @@
+// Input validation of the density kernels and Grid::around(): block sizes 0
+// and 65537, a grid with zero points, a NaN origin or zero steps, a negative
+// margin and a zero spacing are rejected with std::invalid_argument; an empty
+// request returns no fields and a repeated component is evaluated once.
+//
+// Usage: kumo-input-validation-test FILE.fchk
 #include <chem/kumo.hpp>
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

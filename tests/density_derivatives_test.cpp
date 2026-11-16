@@ -1,3 +1,12 @@
+// Analytic density derivatives (Molecule::density_derivatives) at 9 points,
+// for the total, alpha, beta and spin densities:
+//  - finite, Laplacian = Hessian trace and symmetric Hessian (1e-12);
+//  - gradient and Hessian match central differences (step 1e-4 bohr) within
+//    2e-4 + 2e-5 relative and 3e-3 + 3e-5 relative;
+//  - total = alpha + beta and spin = alpha - beta for every field (1e-8 to
+//    1e-10), and the value equals density_pointwise(); nonfinite points throw.
+//
+// Usage: kumo-density-spatial-derivatives-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

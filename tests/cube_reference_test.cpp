@@ -1,3 +1,11 @@
+// Electron density on the grid of a Gaussian reference Cube file (see
+// tests/REFERENCE_CUBES.md) against the Cube values: maximum absolute error
+// <= 2e-3, relative L1 error <= 1e-5, and the integrated electron counts
+// within 0.5. The component is total (default), alpha, beta or spin; error
+// statistics by distance from the nuclei are printed as diagnostics.
+//
+// Usage: kumo-cube-reference-test molecule.fchk reference.cube
+//            [total|alpha|beta|spin]
 #include <chem/kumo.hpp>
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

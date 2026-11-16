@@ -1,3 +1,10 @@
+// Molecular quadrupole moment from the total density matrix and the atomic
+// orbital second-moment matrices, plus the nuclear contribution, made
+// traceless, against the "Quadrupole Moment" record that Gaussian writes in
+// the checkpoint: all six components within 2e-5 atomic units. The
+// Buckingham (3/2-scaled) error is printed only as a diagnostic.
+//
+// Usage: kumo-gaussian-quadrupole-reference-test file.fchk[.gz]...
 #include "chem/kumo/basis_evaluator.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"

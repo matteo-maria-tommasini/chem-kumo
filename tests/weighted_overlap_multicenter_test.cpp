@@ -1,5 +1,8 @@
-// Diagnostic molecular Becke quadrature against analytic AO overlap.
-// Test-only quadrature. No production grid policy or density backend changes.
+// Diagnostic: molecular Becke quadrature (20 radial points, Lebedev rules of
+// 194 to 770 points) of the AO overlap matrix, printed against the analytic
+// overlap. Checked: the Lebedev rules integrate 1, x, x^2 and x^4 within
+// 2e-12, the Becke weights sum to 1 within 1e-13, and every result is
+// finite. The quadrature exists only in this test.
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
 #include "test_support.hpp"

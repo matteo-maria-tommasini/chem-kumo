@@ -1,4 +1,7 @@
 #!/bin/sh
+# Install chem-kumo into a temporary prefix, build and run the external
+# consumer in tests/installed-consumer against it, and check that the
+# installed kumo reports the Meson project version.
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/kumo-install.XXXXXXXX")

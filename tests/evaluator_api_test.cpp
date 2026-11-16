@@ -1,3 +1,10 @@
+// Evaluator basics on a 2x2x2 grid with the AO_P backend (density matrix
+// contraction): the density equals Molecule::density() within 1e-12, the
+// Laplacian equals the trace of the Hessian within 1e-10, Evaluator::field()
+// returns exactly the evaluate() values with the molecule's atoms, and a
+// multi-component property is rejected by field().
+//
+// Usage: kumo-evaluator-api-test FILE.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

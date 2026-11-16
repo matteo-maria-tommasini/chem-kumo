@@ -8,8 +8,8 @@
 
 namespace chem::kumo::detail {
 /// Backend chosen by validate_orbital_backend(): AoP contracts with the FCHK
-/// atomic-orbital (AO) density matrix P, AoMo with the occupied molecular-
-/// orbital (MO) coefficients.
+/// atomic-orbital (AO) density matrix P, AoMo with the coefficients of the
+/// occupied molecular orbitals (MOs).
 enum class ElectronicBackend { AoP, AoMo };
 
 /// Outcome of validate_orbital_backend(), with the Frobenius-norm errors of

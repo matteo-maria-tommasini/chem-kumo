@@ -70,8 +70,10 @@ struct PointSet {
 //    explicit blocks of points, used for all density derivatives and, with
 //    AO-MO or at arbitrary points, also for densities;
 //  - grid path (grids only): the validated Molecule::densities_blocked and
-//    Molecule::orbitals kernels, used for AO-P densities and for orbitals;
-//  - at arbitrary points, orbitals come from their own pass;
+//    Molecule::orbitals kernels, used for AO-P densities and orbital
+//    amplitudes;
+//  - the orbital pass: orbital derivatives on grids, and all orbital
+//    properties at arbitrary points;
 //  - the electrostatic potential and the orbital-energy fields come from
 //    their own passes.
 bool uses_point_path(const detail::ComponentPlan& component, Backend backend, bool grid) {
@@ -84,8 +86,8 @@ bool uses_point_path(const detail::EvaluationPlan& plan, Backend backend, bool g
 }
 
 // Fields evaluated on the grid path: orbital amplitudes (not their
-// derivatives) always, densities with AO-P
-// (`backend` is the resolved backend, AO_P or AO_MO).
+// derivatives) always, and densities when the resolved `backend` (AO_P or
+// AO_MO) is AO_P.
 bool on_grid_path(const Property& key, Backend backend, bool grid) {
     return grid && (key.kind == PropertyKind::Orbital ||
                     (key.kind == PropertyKind::Density && backend == Backend::AO_P));
@@ -546,8 +548,10 @@ Evaluator::Evaluator(const Molecule& molecule, EvaluationOptions options)
 //    arbitrary points, densities;
 //  - the electrostatic potential;
 //  - the orbital-energy fields;
-//  - the orbitals at arbitrary points;
-//  - the grid path: one pass per AO-P density or orbital on a grid.
+//  - the orbital pass: orbital derivatives on grids and all orbital
+//    properties at arbitrary points;
+//  - the grid path: one pass per AO-P density, and one per spin channel for
+//    the orbital amplitudes on a grid.
 // Progress is reported over all of them, in this order.
 class Evaluator::Run {
 public:
@@ -704,7 +708,8 @@ private:
                     const auto c = molecule_.mo_coefficients(key.channel)
                                        .col(static_cast<Eigen::Index>(key.orbital_index - 1));
                     auto& output = result_.fields_.at(key);
-                    // Component `component` of the result from AO panel `panel`.
+                    // Store, as component `component` of the result, the
+                    // orbital contracted with the AO panel `ao`.
                     const auto store = [&](const Eigen::Ref<const Eigen::MatrixXd>& ao,
                                            std::size_t component) {
                         const Eigen::VectorXd psi = ao.transpose() * c;
@@ -806,7 +811,8 @@ Results Evaluator::evaluate(const Grid& grid, const Request& request) const {
 Field Evaluator::field(const Grid& grid, Property property) const {
     if (channels(property.kind) != 1)
         throw std::invalid_argument(
-            "Evaluator::field needs a one-component property (not a gradient or Hessian)");
+            "Evaluator::field needs a one-component property (not a gradient, a Hessian or "
+            "the Cartesian terms of G or K)");
     const auto results = evaluate(grid, Request().add(property));
     const auto values = results.get(property).component();
     return Field(grid, molecule_->atoms(), std::vector<double>(values.begin(), values.end()));

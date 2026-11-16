@@ -17,7 +17,8 @@ using ScalarFunction = std::function<void(const Eigen::Matrix<double, 3, Eigen::
                                           Eigen::Matrix<double, 3, Eigen::Dynamic>& gradients)>;
 
 /// Isosurface mesh with, for each vertex, the grid point (i, j, k) at the
-/// lower end of the grid edge it lies on.
+/// lower end of the tetrahedron edge it lies on: a cell edge, a face
+/// diagonal or the main diagonal of a grid cell.
 struct Isosurface {
     TriangleMesh mesh;
     std::vector<Eigen::Vector3i> vertex_cells;

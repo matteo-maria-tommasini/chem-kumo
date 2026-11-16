@@ -1,3 +1,9 @@
+// Densities (total, alpha, beta, spin) on a grid around the molecule with 1,
+// 2 and 4 OpenMP threads and block sizes 1, 32, 64 and 128: finite and within
+// 1e-10 of the 1-thread, block-64 reference, and bit-identical to 1 thread
+// with the same block size. Also runs in serial builds.
+//
+// Usage: kumo-parallel-density-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
 #include "molecule_test_access.hpp"

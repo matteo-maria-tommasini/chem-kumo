@@ -22,7 +22,8 @@ namespace chem::kumo::detail {
 ///    gradient and Laplacian of each channel (`gradient_expansion_input`);
 ///  - the reduced density gradient from the total value and gradient;
 ///  - sign(lambda2) rho from the total value and Hessian (lambda2 is the
-///    second eigenvalue of the density Hessian);
+///    middle eigenvalue, lambda1 <= lambda2 <= lambda3, of the density
+///    Hessian);
 ///  - the interaction region indicator (IRI) and the Shannon entropy and
 ///    Fisher information densities from the total value and gradient;
 ///  - the density overlap regions indicator (DORI) from the total value,
@@ -78,6 +79,9 @@ struct ComponentPlan {
     }
 };
 
+/// What a whole Request needs: one ComponentPlan per DensityComponent
+/// (indexed by index()), whether the orbital and orbital-energy passes run,
+/// and the highest AO derivative order over all of them.
 struct EvaluationPlan {
     std::array<ComponentPlan, 4> components{};
     bool orbitals = false;

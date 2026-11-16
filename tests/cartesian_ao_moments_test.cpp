@@ -1,3 +1,11 @@
+// Atomic orbital (AO) Cartesian moment matrices (overlap, first and second
+// moments) from BasisEvaluator::cartesian_moments():
+//  - the overlap equals overlap_matrix() within 2e-12;
+//  - all ten matrices are square, finite and symmetric within 2e-12;
+//  - the diagonal first moment of each AO equals its center times its
+//    self-overlap within 5e-10, and its variance about the center is positive.
+//
+// Usage: kumo-cartesian-ao-moments-test FILE.fchk
 #include "chem/kumo/basis_evaluator.hpp"
 #include "test_support.hpp"
 

@@ -8,8 +8,9 @@
 // a grid spacing of 0.05 bohr, near its converged limit. kumo runs with its
 // default spacing of 0.25 bohr, so the differences are kumo's discretization
 // error at that spacing, which falls as the spacing squared, plus Multiwfn's
-// at 0.05 bohr. The tolerances allow about three times the largest observed
-// differences:
+// at 0.05 bohr. Below are the largest observed differences; the tolerances
+// in the code are about three times these, and 0.4 bohr for every extremum
+// position:
 //
 // - ESP: 1.6e-3 relative for areas and averages (the small potential of O2),
 //   3.4e-3 for variances (O2, where kumo itself moves by 5e-3 from 0.25 to

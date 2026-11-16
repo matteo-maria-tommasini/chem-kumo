@@ -8,8 +8,10 @@
 #include <vector>
 
 namespace chem::kumo {
-/// Kind of property. Number of components in the result: Gradient 3 (x, y,
-/// z), Hessian 6 (xx, xy, xz, yy, yz, zz), all others 1. Orbital is the
+/// Kind of property. Number of components in the result: 3 (x, y, z) for
+/// Gradient, OrbitalGradient, TauComponents and
+/// HamiltonianKineticEnergyComponents; 6 (xx, xy, xz, yy, yz, zz) for
+/// Hessian and OrbitalHessian; 1 for all others. Orbital is the
 /// signed amplitude of a molecular orbital (MO); the other kinds are
 /// properties of a DensityComponent. Density, Gradient, Hessian, Laplacian
 /// and Tau (the positive kinetic-energy density tau, see DensityDerivatives)
@@ -133,19 +135,19 @@ enum class PropertyKind {
     /// amplitude of a molecular orbital, in bohr^(-5/2) and bohr^(-7/2).
     OrbitalGradient,
     OrbitalHessian,
-    /// Orbital-weighted Fukui functions and dual descriptor (2.1), described
+    /// Orbital-weighted Fukui functions and dual descriptor (added in 2.1), described
     /// above with the other orbital-energy fields.
     OrbitalWeightedFukuiPlus,
     OrbitalWeightedFukuiMinus,
     OrbitalWeightedFukuiZero,
     OrbitalWeightedDualDescriptor,
-    /// Energy densities (2.1), described above with K, V and H.
+    /// Energy densities (added in 2.1), described above with K, V and H.
     TauComponents,
     HamiltonianKineticEnergyComponents,
     PotentialKineticRatio,
     EnergyDensityPerElectron,
     KineticEnergyPerElectron,
-    /// ELF and LOL of Tsirelson and Stash (2.1), described above with ELF.
+    /// ELF and LOL of Tsirelson and Stash (added in 2.1), described above with ELF.
     ElfTsirelsonStash,
     LolTsirelsonStash
 };
@@ -153,7 +155,7 @@ enum class PropertyKind {
 /// Upper bound of the reduced density gradient returned by the Evaluator.
 /// Larger values, and points where the density is not positive (where s is
 /// undefined), are reported as this value; it is far above the isovalues
-/// used in NCI analysis (about 0.3 to 0.6).
+/// used in noncovalent-interaction (NCI) analysis (about 0.3 to 0.6).
 inline constexpr double reduced_gradient_cap = 100.0;
 
 /// Upper bound of the interaction region indicator, as reduced_gradient_cap:
@@ -432,8 +434,9 @@ struct EvaluationOptions {
     /// points times the number of passes: one pass for the density
     /// derivatives (and densities with AO_MO or at arbitrary points), one
     /// for the electrostatic potential, one for the orbital-energy fields,
-    /// one for all orbitals at arbitrary points, and one per AO_P density or
-    /// orbital on a grid, each only if needed.
+    /// one for the orbital derivatives on a grid and all orbital properties
+    /// at arbitrary points, one per AO_P density on a grid, and one per spin
+    /// channel for the orbital amplitudes on a grid, each only if needed.
     ProgressCallback progress = {};
 };
 
@@ -485,7 +488,8 @@ class Evaluator {
 public:
     /// Throws std::invalid_argument for invalid options: block_size outside
     /// 1 to max_block_size, threads < 0 or > 1, a negative or nonfinite
-    /// screening_threshold or potential_tolerance, an unknown backend, or
+    /// screening_threshold or potential_tolerance, a nonfinite or nonpositive
+    /// fukui_delta, an unknown backend, or
     /// AO_MO for a molecule whose MOs do not reproduce its density matrices
     /// (ElectronicStructureInfo::ao_mo_eligible() is false).
     explicit Evaluator(const Molecule& molecule, EvaluationOptions options = {});
@@ -494,8 +498,9 @@ public:
     /// order (third axis fastest). Throws std::invalid_argument for an invalid
     /// grid (see Grid), an orbital index of 0 (indices are one-based), a
     /// derived property requested for a component it is not defined for, or
-    /// an orbital-energy field (ALIE and the four after it) whose
-    /// requirements are not met; std::out_of_range for an orbital index past
+    /// an orbital-energy field (ALIE, LEA, LEAE, local electronegativity and
+    /// hardness, or an orbital-weighted Fukui function or dual descriptor)
+    /// whose requirements are not met; std::out_of_range for an orbital index past
     /// the last MO; std::runtime_error for an orbital request when the FCHK
     /// has no MOs.
     [[nodiscard]] Results evaluate(const Grid& grid, const Request& request) const;
@@ -519,7 +524,8 @@ public:
     ///
     /// Equivalent to evaluate(grid, Request().add(property)). Throws
     /// std::invalid_argument for a property with several components
-    /// (Gradient, Hessian, OrbitalGradient, OrbitalHessian), and as
+    /// (Gradient, Hessian, OrbitalGradient, OrbitalHessian, TauComponents,
+    /// HamiltonianKineticEnergyComponents), and as
     /// evaluate(Grid).
     [[nodiscard]] Field field(const Grid& grid, Property property) const;
 

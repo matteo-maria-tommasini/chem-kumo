@@ -6,7 +6,11 @@
 //    (BasisEvaluator::cartesian_moments, a separate code path);
 //  - the Poisson equation, laplacian(V_el) = 4 pi rho, by finite differences,
 //    with rho from the density evaluator; this covers every shell type;
-//  - the nuclear term, and the potential at a nucleus (its own term left out).
+//  - the nuclear term, and the potential at a nucleus (its own term left out);
+//  - the Evaluator returns these values on grids for any block size and
+//    request (default tolerance 1e-8);
+//  - far-field cluster evaluation stays within the tolerance, tolerance 0 is
+//    exact, and invalid use is rejected.
 #include "chem/kumo.hpp"
 #include "chem/kumo/basis_evaluator.hpp"
 #include "electrostatic_potential.hpp"

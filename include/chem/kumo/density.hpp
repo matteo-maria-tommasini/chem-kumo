@@ -170,8 +170,11 @@ enum class OrbitalRepresentationStatus { Valid, Inconsistent, Unavailable };
 /// matrices (see ElectronicStructureInfo): the total and the spin density
 /// matrices are each reproduced if the Frobenius norm of the difference is
 /// at most orbital_check_absolute_tolerance + orbital_check_relative_tolerance
-/// times the norm of the total density matrix (the larger of the FCHK and
-/// rebuilt ones, and never less than that of the spin matrix).
+/// times a scale. For the total matrix the scale is the larger of the norms
+/// of the FCHK and rebuilt total matrices; for the spin matrix it is the
+/// largest of that value and the norms of the FCHK and rebuilt spin
+/// matrices (the spin matrix is a difference of two matrices as large as the
+/// total one, so its rounding error scales with the total norm).
 inline constexpr double orbital_check_relative_tolerance = 1e-8;
 inline constexpr double orbital_check_absolute_tolerance = 1e-10;
 
@@ -282,7 +285,8 @@ private:
         const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
         const std::vector<DensityComponent>& components, std::size_t block_size, int ao_order = 2,
         double screening_threshold = default_screening_threshold) const;
-    /// The same from the occupied MOs (AO_MO), for an eligible molecule.
+    /// The same from the occupied MOs (AO_MO), for an eligible molecule;
+    /// ao_order may also be 0 (density values only).
     [[nodiscard]] std::map<DensityComponent, std::vector<detail::DensityDerivatives>>
     density_derivatives_mo(const Eigen::Ref<const Eigen::Matrix<double, 3, Eigen::Dynamic>>& points,
                            const std::vector<DensityComponent>& components, std::size_t block_size,

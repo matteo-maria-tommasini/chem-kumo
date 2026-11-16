@@ -1,7 +1,7 @@
 // Gaussian Cube input and output. Two writers serve two purposes:
 // Field::write_cube() and write_orbital_cube() write the fixed-width format
-// of Gaussian cubegen (5 significant digits), for visualization programs;
-// write_cube(CubeData) writes 12 significant digits and the original
+// of Gaussian cubegen (6 significant digits), for visualization programs;
+// write_cube(CubeData) writes 13 significant digits and the original
 // metadata, so that read_cube() reproduces the field.
 
 #include "chem/kumo/cube.hpp"
@@ -45,6 +45,8 @@ void end_row(std::istringstream& row) {
 }
 
 std::size_t sample_count(const Grid& grid) {
+    // Sanity limit against a corrupt header: at most 1e9 samples (8 GB of
+    // doubles).
     std::size_t count = 1;
     for (int axis = 0; axis < 3; ++axis) {
         const int n = grid.counts[axis];
@@ -142,6 +144,7 @@ CubeData parse_cube(std::istream& input) {
 
     Grid grid;
     auto header = header_row(input);
+    // Sanity limit against a corrupt header: at most 1e6 atoms.
     long long atom_count = 0;
     if (!(header >> atom_count >> grid.origin[0] >> grid.origin[1] >> grid.origin[2]) ||
         atom_count < 0 || atom_count > 1000000)

@@ -1,3 +1,8 @@
+// The optimized atomic orbital (AO) kernel BasisEvaluator::evaluate_into()
+// against the original pointwise kernel evaluate_into_reference() at 1000
+// points: all AO values agree within 1e-12 absolute.
+//
+// Usage: kumo-ao-optimized-test FILE1.fchk FILE2.fchk
 #include "chem/kumo/basis_evaluator.hpp"
 #include "test_support.hpp"
 #include <algorithm>

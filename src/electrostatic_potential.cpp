@@ -441,7 +441,8 @@ double taylor_remainder_bound(int L, int K, double rho, double d) {
     // infinity keeps such pairs exact.
     if (!(d > 1.25 * rho)) return std::numeric_limits<double>::infinity();
     const double q = rho / d;
-    double term = 1.0 / std::pow(d, L + 1); // n = 0 term without (n+L)!/n!
+    // Start from the n = 0 term L! / d^(L+1), then advance to n = K + 1.
+    double term = 1.0 / std::pow(d, L + 1);
     for (int j = 1; j <= L; ++j)
         term *= j;
     for (int n = 1; n <= K + 1; ++n)
@@ -459,7 +460,9 @@ double taylor_remainder_bound(int L, int K, double rho, double d) {
 }
 
 // Smallest d on [low, high] with bound(d) <= allowed, for a bound that
-// decreases with d; infinity if bound(high) > allowed.
+// decreases with d, found by bisection to a relative 1e-3 and rounded up (the
+// returned d always satisfies the bound). `high` is doubled up to 1e4 bohr if
+// needed; infinity if the bound is still too large there.
 template <typename Bound>
 double smallest_distance(const Bound& bound, double low, double high, double allowed) {
     while (high < 1e4 && !(bound(high) <= allowed))

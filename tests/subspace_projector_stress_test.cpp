@@ -1,3 +1,11 @@
+// SubspaceProjector with the atomic orbital (AO) overlap matrix of each file
+// as metric S and the first k = 2, 10, 50 and 100 AOs as subspace (when they
+// fit): S-orthonormal basis, preserved subspace, idempotence, S-orthogonal
+// residual and invariance under a change of basis, all within 2e-7; exactly
+// and nearly (1e-9) linearly dependent input is rejected. The Gram matrix
+// condition numbers are printed as diagnostics.
+//
+// Usage: kumo-subspace-projector-stress-test FILE.fchk...
 #include "chem/kumo/subspace_projector.hpp"
 #include "chem/kumo/density.hpp"
 #include "test_support.hpp"

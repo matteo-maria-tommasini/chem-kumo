@@ -1,7 +1,8 @@
 // Shell cutoff of the AO evaluators: wherever evaluate() returns an exact zero
 // for an AO that the reference evaluator (no cutoff) does not, the true value
 // is at most BasisEvaluator::ao_cutoff, finite differences of the reference
-// show that the gradient and the diagonal second derivatives are as small,
+// show that the gradient and the diagonal second derivatives are at most
+// 2 ao_cutoff (the factor 2 covers the finite-difference error),
 // and evaluate_derivatives_batch() returns exact zeros in every panel. The
 // test also checks that the cutoff is exercised.
 #include "chem/kumo/basis.hpp"
@@ -70,10 +71,10 @@ int main(int argc, char** argv) {
                                  kumo_test::num(value_bound) + ")");
             // Finite differences add a small truncation error, hence the factor 2.
             kumo_test::check(gradient_bound <= 2.0 * cutoff,
-                             name + ": cut AO gradients are at most ao_cutoff (max " +
+                             name + ": cut AO gradients are at most 2 ao_cutoff (max " +
                                  kumo_test::num(gradient_bound) + ")");
             kumo_test::check(second_bound <= 2.0 * cutoff,
-                             name + ": cut AO second derivatives are at most ao_cutoff (max " +
+                             name + ": cut AO second derivatives are at most 2 ao_cutoff (max " +
                                  kumo_test::num(second_bound) + ")");
             kumo_test::check(derivative_zeros,
                              name + ": evaluate_derivatives_batch() returns zeros for cut AOs");

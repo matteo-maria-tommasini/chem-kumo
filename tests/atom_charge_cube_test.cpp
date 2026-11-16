@@ -1,3 +1,8 @@
+// Cube output keeps an atom's atomic number and nuclear charge distinct (an
+// iron atom, Z = 26, with an effective core potential charge of 16): both
+// Field::write_cube() and write_orbital_cube() write Z = 26 and charge 16
+// (within 1e-6), with atom count 1 (density) or -1 (orbital) and 2 points per
+// axis. Self-contained: no command-line arguments.
 #include "chem/kumo/density.hpp"
 #include "test_support.hpp"
 

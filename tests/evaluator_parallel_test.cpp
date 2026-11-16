@@ -1,7 +1,10 @@
 // Evaluator point path across OpenMP worker counts: the blocks of grid points
 // run on worker threads, and the results must be bit-identical to the
 // single-thread evaluation for every block size, backend and property.
-// In serial builds the same comparisons run on the calling thread.
+// In serial builds the same comparisons run on the calling thread. Thread
+// counts 2, 4 and 7 are compared with 1. Also: an exception in a worker block
+// reaches the caller, and block sizes outside [1, max_block_size] are
+// rejected.
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
 #include "test_support.hpp"

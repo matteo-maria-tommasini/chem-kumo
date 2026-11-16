@@ -1,5 +1,6 @@
-// Density components on a coarse grid: the total density is finite and
-// non-negative, total = alpha + beta and spin = alpha - beta at every point.
+// Density components on a coarse grid: the total density is finite and not
+// below -1e-8 (rounding), and total = alpha + beta and spin = alpha - beta
+// within 1e-9 at every point.
 #include <chem/kumo.hpp>
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

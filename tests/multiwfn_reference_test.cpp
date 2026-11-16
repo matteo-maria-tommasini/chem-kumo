@@ -4,10 +4,14 @@
 // point by point.
 //
 // The Cube files store six significant digits, so rounding alone allows a
-// relative difference of 5e-6. The tolerance, 2e-5 relative, also covers the
-// largest differences observed: 1.2e-5 for the reduced gradient near the O-H
-// bond critical point, where |grad rho| nearly cancels, and 9e-6 for
-// sign(lambda2) rho at the oxygen nucleus.
+// relative difference of 5e-6. The default tolerance, 2e-5 relative, covers
+// the largest differences observed with it: 1.2e-5 for the reduced gradient
+// near the O-H bond critical point, where |grad rho| nearly cancels, and
+// 9e-6 for sign(lambda2) rho at the oxygen nucleus. Fields with cancellation
+// get their own tolerance, set and explained in main(): 5e-5 for IRI, K, V,
+// H and the Cartesian terms and ratios of G and K (on the scale of their
+// terms), 1e-4 for the Fisher density, and an added absolute term for DORI
+// (1e-5), the spin polarization (1e-6) and LEAE (1e-10 hartree).
 //
 // The electrostatic potential also has an absolute tolerance of 1e-7
 // hartree/e, for small values: the grid points are read from the Cube header,
@@ -349,8 +353,10 @@ int main(int argc, char** argv) {
                 "water electrostatic potential", potential);
         compare(o2, directory / "o2_esp.cube.gz", density::total.electrostatic_potential(),
                 "O2 electrostatic potential", potential);
-        // DORI is in [0, 1]; theta combines the Hessian and the gradient with
-        // cancellation, so an absolute term covers small values.
+        // DORI = theta / (1 + theta) lies in [0, 1], with
+        // theta = |grad f|^2 / f^3 and f = |grad rho|^2 / rho^2; theta
+        // combines the Hessian and the gradient with cancellation, so an
+        // absolute term covers small values.
         const Tolerance dori{relative_tolerance, 1e-5};
         // K, V and H combine tau and lap rho / 4 with cancellation.
         Tolerance energy{5e-5};
@@ -422,7 +428,8 @@ int main(int argc, char** argv) {
                 electronegativity);
         compare(acrolein, directory / "acrolein_local_hardness.cube.gz",
                 density::total.local_hardness(), "acrolein local hardness", orbital);
-        // Tsirelson-Stash ELF and LOL (closed shells; Multiwfn's ELFLOL_type= 1).
+        // Tsirelson-Stash ELF and LOL (closed shells; Multiwfn setting
+        // ELFLOL_type= 1, Tsirelson's definitions).
         compare(water, directory / "h2o_elf_ts.cube.gz", density::total.elf_tsirelson_stash(),
                 "water Tsirelson-Stash ELF");
         compare(acrolein, directory / "acrolein_elf_ts.cube.gz",
@@ -431,12 +438,14 @@ int main(int argc, char** argv) {
                 "water Tsirelson-Stash LOL");
         compare(acrolein, directory / "acrolein_lol_ts.cube.gz",
                 density::total.lol_tsirelson_stash(), "acrolein Tsirelson-Stash LOL");
-        // Energy densities of 2.1 (Multiwfn function 7 and user functions
-        // 81-86, 35, 17, 13).
-        // The Cartesian terms of G reach 1.7e-5 relative (water G_x, where
-        // it is 0.02 hartree/bohr^3): 5e-5, as for K, V and H. K_a, H / rho
-        // and |V| / G cancel terms as K, V and H do and are compared on the
-        // scale of those terms, with the same 5e-5.
+        // Energy densities of 2.1, against Multiwfn function 7 (G, kumo's
+        // tau) and user functions 81-83 (K_x, K_y, K_z), 84-86 (G_x, G_y,
+        // G_z), 35 (|V| / G), 17 (H / rho) and 13 (G / rho). The Cartesian
+        // terms of G differ from Multiwfn by up to 1.7e-5 relative (water
+        // G_x, where G_x is 0.02 hartree/bohr^3), so they use 5e-5, as K, V
+        // and H do. K_a, H / rho and |V| / G cancel terms as K, V and H do,
+        // and are compared on the scale of those terms (Tolerance::Scale),
+        // also with 5e-5.
         const Tolerance energy_term{5e-5};
         Tolerance energy_axis{5e-5};
         energy_axis.scale = Tolerance::Scale::EnergyAxis;
@@ -445,11 +454,12 @@ int main(int argc, char** argv) {
         Tolerance virial{5e-5};
         virial.scale = Tolerance::Scale::VirialRatio;
         compare(water, directory / "h2o_kinetic_g.cube.gz", density::total.tau(), "water G");
-        // The O2 grid contains one nucleus. The six decimals of the Cube
-        // header move it by up to 5e-7 bohr, and on the nuclear cusp G
-        // changes by about 2Z = 32 relative per bohr: 2.9e-5 at the nucleus,
-        // above the tolerance. That point is skipped (as for the ESP); every
-        // other point agrees within 2e-5.
+        // The O2 grid contains one nucleus (z = -1.14328431 bohr), which the
+        // six decimals of the Cube header move to z = -1.143284, 3.1e-7 bohr
+        // away. G is steep on the nuclear cusp, so the value there differs
+        // from Multiwfn's, computed at the nucleus, by 2.9e-5, above the
+        // tolerance. That point is skipped (as for the ESP); every other
+        // point agrees within 2e-5.
         compare(o2, directory / "o2_kinetic_g.cube.gz", density::total.tau(), "O2 G",
                 Tolerance{relative_tolerance, 0.0, 1e-3});
         const char* axes[] = {"x", "y", "z"};

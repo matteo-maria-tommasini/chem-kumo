@@ -85,8 +85,8 @@ surface_statistics(const TriangleMesh& mesh, std::span<const double> values,
 
 /// Smallest density isovalue accepted, e/bohr^3. Leaving negligible atomic
 /// orbitals out of the density (BasisEvaluator::ao_cutoff and
-/// default_screening_threshold) changes it by up to about 1e-13 e/bohr^3,
-/// which would move isosurfaces of much lower density noticeably.
+/// default_screening_threshold) changes the density by up to about 1e-13
+/// e/bohr^3, which would noticeably move isosurfaces of much lower density.
 inline constexpr double minimum_density_isovalue = 1e-8;
 
 /// Isosurface rho(r) = isovalue (e/bohr^3) of the total electron density.

@@ -69,6 +69,8 @@ public:
     /// target points within `radius` of its centre. See 'Far-field
     /// approximations' in docs/mathematics/chem-kumo-mathematics.tex.
     struct FarFieldPlan {
+        /// Error levels pair_tolerance * 10^(-j/2), j = 0, ..., 32: sixteen
+        /// decades in half-decade steps.
         static constexpr int level_count = 33;
         static constexpr double cell_size = 2.0; ///< bohr, edge of the source cells
         double radius = 0.0;                     ///< bohr, radius of the target clusters
@@ -160,13 +162,14 @@ private:
     std::vector<std::vector<int>> hermite_indices_;
     int max_order_ = 0; ///< largest la + lb
     int side_ = 1;      ///< max_order_ + multipole_order + 1
-    /// Terms beta = (t, u, v), |beta| <= multipole_order, of the local
-    /// expansion: their table offsets, factors (-1)^|beta| / beta! and powers.
+    /// The next three members describe the terms beta = (t, u, v),
+    /// |beta| <= multipole_order, of the local expansion: their table
+    /// offsets, factors (-1)^|beta| / beta! and powers.
     std::vector<int> local_offsets_;
-    /// Table offsets of the moment indices nu, |nu| <= max_order_ + multipole_order.
-    std::vector<int> moment_offsets_;
     std::vector<double> local_factors_;
     std::vector<std::array<int, 3>> local_powers_;
+    /// Table offsets of the moment indices nu, |nu| <= max_order_ + multipole_order.
+    std::vector<int> moment_offsets_;
     std::vector<Atom> atoms_;
 };
 } // namespace chem::kumo::detail

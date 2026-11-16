@@ -1,3 +1,11 @@
+// Weighted atomic orbital (AO) overlap matrix M = sum_j w_j f_j phi(r_j)
+// phi(r_j)^T at 17 points, from weighted_overlap_matrix() and
+// WeightedOverlapAccumulator, against the dense product of AO values: equal
+// with any block size, symmetric, linear in the field (doubled, negated) and
+// positive semidefinite on test vectors, within 3e-12 * max(1, |M|); a zero
+// field and reset() give exactly zero; block size 0 is rejected.
+//
+// Usage: kumo-weighted-overlap-test FILE.fchk...
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
 #include "test_support.hpp"

@@ -108,6 +108,11 @@ FormattedCheckpoint::FormattedCheckpoint(const std::filesystem::path& path) {
                                  path.string());
     }
 
+    // Each record header has the label in its first 43 columns, then the
+    // type letter (I = integer, R = real, C = character, L = logical, H =
+    // Hollerith) and, for arrays, "N=" and the count. Only I and R records
+    // are read; the others, the data lines that follow a record and lines too
+    // short to be a header are skipped.
     while (std::getline(input, line)) {
         if (line.size() < 44U) continue;
         const std::string label = trim_right(line.substr(0, 43));
