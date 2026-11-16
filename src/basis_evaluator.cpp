@@ -46,7 +46,7 @@ double integer_power(double x, int n) noexcept {
 //      (m > 0) or sine (m < 0) part;
 //   g: the sum over i and k of c d e; the coefficient is a b g.
 // Returns 0 for components that do not contribute.
-double c2pcff(int l, int m, int lx, int ly) {
+double cartesian_to_pure_coefficient(int l, int m, int lx, int ly) {
     const int lz = l - lx - ly;
     const int ma = std::abs(m);
     if (ma > l || lz < 0) return 0.0;
@@ -163,10 +163,12 @@ Eigen::MatrixXd gaussian_cartesian_to_pure(int l) {
 
     for (std::size_t g = 0; g < gaussian.size(); ++g) {
         const auto& p = gaussian[g];
-        transform(0, static_cast<Eigen::Index>(g)) = c2pcff(l, 0, p.x, p.y);
+        transform(0, static_cast<Eigen::Index>(g)) = cartesian_to_pure_coefficient(l, 0, p.x, p.y);
         for (int m = 1; m <= l; ++m) {
-            transform(2 * m - 1, static_cast<Eigen::Index>(g)) = c2pcff(l, m, p.x, p.y);
-            transform(2 * m, static_cast<Eigen::Index>(g)) = c2pcff(l, -m, p.x, p.y);
+            transform(2 * m - 1, static_cast<Eigen::Index>(g)) =
+                cartesian_to_pure_coefficient(l, m, p.x, p.y);
+            transform(2 * m, static_cast<Eigen::Index>(g)) =
+                cartesian_to_pure_coefficient(l, -m, p.x, p.y);
         }
     }
     return transform;
