@@ -422,6 +422,15 @@ int main(int argc, char** argv) {
                 electronegativity);
         compare(acrolein, directory / "acrolein_local_hardness.cube.gz",
                 density::total.local_hardness(), "acrolein local hardness", orbital);
+        // Tsirelson-Stash ELF and LOL (closed shells; Multiwfn's ELFLOL_type= 1).
+        compare(water, directory / "h2o_elf_ts.cube.gz", density::total.elf_tsirelson_stash(),
+                "water Tsirelson-Stash ELF");
+        compare(acrolein, directory / "acrolein_elf_ts.cube.gz",
+                density::total.elf_tsirelson_stash(), "acrolein Tsirelson-Stash ELF");
+        compare(water, directory / "h2o_lol_ts.cube.gz", density::total.lol_tsirelson_stash(),
+                "water Tsirelson-Stash LOL");
+        compare(acrolein, directory / "acrolein_lol_ts.cube.gz",
+                density::total.lol_tsirelson_stash(), "acrolein Tsirelson-Stash LOL");
         // Energy densities of 2.1 (Multiwfn function 7 and user functions
         // 81-86, 35, 17, 13).
         // The Cartesian terms of G reach 1.7e-5 relative (water G_x, where

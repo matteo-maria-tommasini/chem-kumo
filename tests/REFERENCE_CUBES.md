@@ -220,6 +220,30 @@ relative tolerance alone there, so it cannot pass on near-zero values only.
 
 The largest difference is 0.54 of its tolerance (O2 LEAE).
 
+### Tsirelson-Stash ELF and LOL of 2.1.0
+
+Cube files of ELF (function 9) and LOL (function 10) in the Tsirelson-Stash
+form were computed on 2026-11-16 with the same Multiwfn build
+(`Multiwfn_noGUI`, 2026.9.1 macOS port), grid extension (3 bohr), spacing
+(0.3 bohr) and input sequence, from a scratch copy of the distributed
+`settings.ini` with only `ELFLOL_type= 1` (Tsirelson's definitions; the
+banner reads "defined by Tsirelson"). Only closed shells are compared:
+for open shells Multiwfn mixes the spin-polarized D0 with the total
+gradient and Laplacian, while kumo uses the spin-resolved form.
+
+| File | FCHK | Multiwfn function |
+|------|------|-------------------|
+| `h2o_elf_ts.cube.gz` | water | 9 with `ELFLOL_type= 1` |
+| `h2o_lol_ts.cube.gz` | water | 10 with `ELFLOL_type= 1` |
+| `acrolein_elf_ts.cube.gz` | acrolein | 9 with `ELFLOL_type= 1` |
+| `acrolein_lol_ts.cube.gz` | acrolein | 10 with `ELFLOL_type= 1` |
+
+The Tsirelson-Stash LOL ranges from -0.84 to 2.06 on the water grid and
+from -3.6 to 1.56 on the acrolein grid (the gradient expansion of tau is
+negative near the nuclei), in both programs. The test `multiwfn-reference`
+compares all four files within 2e-5 relative; the largest difference is
+8.5e-6 relative (water ELF), 0.42 of the tolerance.
+
 ### Energy densities of 2.1.0
 
 Cube files of the Lagrangian kinetic energy density G (Multiwfn function 7,

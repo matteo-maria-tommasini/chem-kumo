@@ -18,6 +18,8 @@ namespace chem::kumo::detail {
 ///    Alpha and Beta with `elf_input` and needs no Total derivatives itself;
 ///  - the localized orbital locator (LOL) like ELF, from the value and tau of
 ///    each channel (`lol_input`);
+///  - the ELF and LOL of Tsirelson and Stash like ELF, from the value,
+///    gradient and Laplacian of each channel (`gradient_expansion_input`);
 ///  - the reduced density gradient from the total value and gradient;
 ///  - sign(lambda2) rho from the total value and Hessian (lambda2 is the
 ///    second eigenvalue of the density Hessian);
@@ -43,11 +45,13 @@ struct ComponentPlan {
     bool sign_lambda2 = false;     ///< Total only
     bool lol = false;              ///< LOL of this component is requested
     bool lol_input = false;        ///< value and tau feed a LOL
-    bool gradient_input = false;   ///< value and gradient feed IRI, Shannon, Fisher
-    bool hessian_input = false;    ///< value, gradient and Hessian feed DORI
-    bool energy_input = false;     ///< Hessian and tau feed K, V, H and related fields
-    bool tau_input = false;        ///< value and tau feed its terms and tau / rho
-    bool value_input = false;      ///< the value feeds the spin polarization
+    /// value, gradient and Laplacian feed a Tsirelson-Stash ELF or LOL
+    bool gradient_expansion_input = false;
+    bool gradient_input = false; ///< value and gradient feed IRI, Shannon, Fisher
+    bool hessian_input = false;  ///< value, gradient and Hessian feed DORI
+    bool energy_input = false;   ///< Hessian and tau feed K, V, H and related fields
+    bool tau_input = false;      ///< value and tau feed its terms and tau / rho
+    bool value_input = false;    ///< the value feeds the spin polarization
     /// Total only; computed from the density matrix by its own pass, so it
     /// needs no AO values or derivatives.
     bool electrostatic_potential = false;
@@ -57,12 +61,14 @@ struct ComponentPlan {
     [[nodiscard]] bool derivatives() const noexcept {
         return gradient || hessian || laplacian || tau || elf_input || reduced_gradient ||
                sign_lambda2 || lol_input || gradient_input || hessian_input || energy_input ||
-               tau_input || value_input;
+               tau_input || gradient_expansion_input || value_input;
     }
 
     /// Highest AO derivative order this component needs (-1: none).
     [[nodiscard]] int ao_order() const noexcept {
-        if (hessian || laplacian || sign_lambda2 || hessian_input || energy_input) return 2;
+        if (hessian || laplacian || sign_lambda2 || hessian_input || energy_input ||
+            gradient_expansion_input)
+            return 2;
         // value_input needs only values, but the density-matrix (AO-P)
         // derivative kernel always computes at least first derivatives.
         if (gradient || tau || elf_input || reduced_gradient || lol_input || gradient_input ||
@@ -178,6 +184,14 @@ struct EvaluationPlan {
             case PropertyKind::Lol:
                 c.lol = true;
                 plan.require_spin_inputs(property, &ComponentPlan::lol_input, "LOL");
+                break;
+            case PropertyKind::ElfTsirelsonStash:
+                plan.require_spin_inputs(property, &ComponentPlan::gradient_expansion_input,
+                                         "the Tsirelson-Stash ELF");
+                break;
+            case PropertyKind::LolTsirelsonStash:
+                plan.require_spin_inputs(property, &ComponentPlan::gradient_expansion_input,
+                                         "the Tsirelson-Stash LOL");
                 break;
             case PropertyKind::InteractionRegionIndicator:
                 require_total(property, "the interaction region indicator");

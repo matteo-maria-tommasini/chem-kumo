@@ -59,7 +59,11 @@ Request full_request(const Molecule& molecule) {
         request.add(d.hamiltonian_kinetic_energy())
             .add(d.tau_components())
             .add(d.hamiltonian_kinetic_energy_components());
-        if (d.component != DensityComponent::Difference) request.add(d.elf()).add(d.lol());
+        if (d.component != DensityComponent::Difference)
+            request.add(d.elf())
+                .add(d.lol())
+                .add(d.elf_tsirelson_stash())
+                .add(d.lol_tsirelson_stash());
     }
     const auto& t = density::total;
     request.add(t.reduced_gradient())

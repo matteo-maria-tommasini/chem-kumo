@@ -26,6 +26,14 @@ namespace chem::kumo {
 ///    the Thomas-Fermi kinetic-energy density of a uniform electron gas of
 ///    the same density; in [0, 1]. Total (spin-resolved form, as Elf), Alpha
 ///    or Beta; not Difference.
+///  - ElfTsirelsonStash, LolTsirelsonStash: ELF and LOL of Tsirelson and
+///    Stash, with tau replaced by its second-order gradient expansion
+///    tau_GE = D0 + |grad rho|^2 / (72 rho) + lap rho / 6 (per spin channel),
+///    so that they depend on the density alone: ELF_TS = 1 / (1 + (D / D0)^2)
+///    with D = tau_GE - |grad rho|^2 / (8 rho), in [0, 1], and
+///    LOL_TS = D0 / (tau_GE + D0), which leaves [0, 1] near the nuclei, where
+///    tau_GE < 0 (0 where tau_GE + D0 = 0). Both are 0 without density.
+///    Total (spin-resolved, as Elf), Alpha or Beta; not Difference.
 ///  - InteractionRegionIndicator: IRI = |grad rho| / rho^1.1 of the total
 ///    density, capped at interaction_region_indicator_cap. Total only.
 ///  - DensityOverlapRegionsIndicator: DORI = theta / (1 + theta) of the
@@ -136,7 +144,10 @@ enum class PropertyKind {
     HamiltonianKineticEnergyComponents,
     PotentialKineticRatio,
     EnergyDensityPerElectron,
-    KineticEnergyPerElectron
+    KineticEnergyPerElectron,
+    /// ELF and LOL of Tsirelson and Stash (2.1), described above with ELF.
+    ElfTsirelsonStash,
+    LolTsirelsonStash
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -248,6 +259,16 @@ struct DensityDescriptor {
     /// Energy density per electron H / rho (Total only).
     constexpr Property energy_density_per_electron() const {
         return {PropertyKind::EnergyDensityPerElectron, component};
+    }
+
+    /// Tsirelson-Stash ELF (Total, Alpha or Beta).
+    constexpr Property elf_tsirelson_stash() const {
+        return {PropertyKind::ElfTsirelsonStash, component};
+    }
+
+    /// Tsirelson-Stash LOL (Total, Alpha or Beta).
+    constexpr Property lol_tsirelson_stash() const {
+        return {PropertyKind::LolTsirelsonStash, component};
     }
 
     /// Kinetic energy per electron G / rho = tau / rho (Total only).

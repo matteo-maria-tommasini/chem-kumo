@@ -1,7 +1,8 @@
 // Density fields of the Evaluator added in 1.12.0: LOL, IRI, DORI, the
 // kinetic and energy densities K, V and H, the spin polarization, and the
 // Shannon and Fisher densities; and those of 2.1: the Cartesian terms of
-// G = tau and of K, |V| / G, H / rho and G / rho.
+// G = tau and of K, |V| / G, H / rho and G / rho, and the Tsirelson-Stash
+// ELF and LOL.
 //
 //  - Each value equals its formula applied to the Evaluator's own density,
 //    gradient, Hessian, Laplacian and tau of the same request.
@@ -11,6 +12,9 @@
 //  - K agrees with the orbital form -(1/2) sum_i phi_i lap phi_i, evaluated
 //    from Molecule::orbital_derivatives(), and DORI with central finite
 //    differences of |grad rho|^2 / rho^2 from Molecule::density_derivatives().
+//  - The Tsirelson-Stash ELF and LOL equal their spin-resolved formulas from
+//    the value, gradient and Laplacian of each channel; for a closed shell
+//    the total equals Multiwfn's spin-unpolarized form.
 //  - For a closed shell the spin-resolved total LOL equals the
 //    spin-unpolarized formula with the (3 pi^2)^(2/3) constant, and the spin
 //    polarization vanishes.
@@ -21,6 +25,7 @@
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <iostream>
@@ -51,7 +56,7 @@ Request full_request() {
             .add(d.tau_components())
             .add(d.hamiltonian_kinetic_energy_components());
     for (const auto& d : {density::total, density::alpha, density::beta})
-        request.add(d.lol());
+        request.add(d.lol()).add(d.elf_tsirelson_stash()).add(d.lol_tsirelson_stash());
     request.add(density::total.interaction_region_indicator())
         .add(density::total.density_overlap_regions_indicator())
         .add(density::total.potential_energy_density())
@@ -96,6 +101,23 @@ double lol_formula(std::initializer_list<std::pair<double, double>> channels) {
     return ratio / (1.0 + ratio);
 }
 
+// Tsirelson-Stash ELF (lol false) or LOL from (rho_s, |grad rho_s|^2,
+// lap rho_s) of the channels given.
+double gradient_expansion_formula(std::initializer_list<std::array<double, 3>> channels, bool lol) {
+    const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
+    double uniform = 0.0, pauli = 0.0, kinetic = 0.0;
+    for (const auto& [rho, g2, lap] : channels) {
+        if (!(rho > 0.0)) continue;
+        const double d0 = fermi * std::pow(rho, 5.0 / 3.0);
+        uniform += d0;
+        pauli += d0 - g2 / (9.0 * rho) + lap / 6.0;
+        kinetic += d0 + g2 / (72.0 * rho) + lap / 6.0;
+    }
+    if (!(uniform > 0.0)) return 0.0;
+    if (lol) return kinetic + uniform != 0.0 ? uniform / (kinetic + uniform) : 0.0;
+    return 1.0 / (1.0 + (pauli / uniform) * (pauli / uniform));
+}
+
 // Largest |a - b| / (scale + floor) over the points, for the report.
 struct Worst {
     double ratio = 0.0;
@@ -115,7 +137,8 @@ void check_molecule(const std::string& name) {
         molecule.occupied_count(SpinChannel::Alpha) == molecule.occupied_count(SpinChannel::Beta);
 
     // Formulas applied to the Evaluator's own inputs, to rounding.
-    Worst energy, lol, iri, dori, polarization, shannon, fisher, terms, ratios;
+    Worst energy, lol, iri, dori, polarization, shannon, fisher, terms, ratios, tsirelson,
+        unpolarized;
     bool ranges = true;
     for (std::size_t p = 0; p < n; ++p) {
         for (const auto& d : all_components) {
@@ -164,6 +187,43 @@ void check_molecule(const std::string& name) {
         lol.add(at(r, density::alpha.lol(), p), lol_formula({{ra, ta}}), 1.0);
         lol.add(at(r, density::beta.lol(), p), lol_formula({{rb, tb}}), 1.0);
 
+        // Tsirelson-Stash: the LOL is compared on the scale of its value
+        // (it leaves [0, 1] near the nuclei), the ELF on 1.
+        const auto inputs = [&](const DensityDescriptor& d) {
+            return std::array<double, 3>{at(r, d.value(), p), gradient_at(r, d, p).squaredNorm(),
+                                         at(r, d.laplacian(), p)};
+        };
+        const auto ia = inputs(density::alpha), ib = inputs(density::beta);
+        for (const bool is_lol : {false, true}) {
+            const auto key = [&](const DensityDescriptor& d) {
+                return is_lol ? d.lol_tsirelson_stash() : d.elf_tsirelson_stash();
+            };
+            const auto add = [&](double actual, double expected) {
+                tsirelson.add(actual, expected, is_lol ? std::abs(expected) + 1.0 : 1.0);
+            };
+            add(at(r, key(density::total), p), gradient_expansion_formula({ia, ib}, is_lol));
+            add(at(r, key(density::alpha), p), gradient_expansion_formula({ia}, is_lol));
+            add(at(r, key(density::beta), p), gradient_expansion_formula({ib}, is_lol));
+            if (!is_lol) {
+                const double v = at(r, key(density::total), p);
+                ranges = ranges && v >= 0.0 && v <= 1.0;
+            }
+            if (closed_shell && rho > 0.0) {
+                // Multiwfn's form: Fc = (3/10) (3 pi^2)^(2/3) and the total
+                // density's gradient and Laplacian.
+                const double fc = 0.3 * std::pow(3.0 * pi * pi, 2.0 / 3.0);
+                const double d0 = fc * std::pow(rho, 5.0 / 3.0);
+                const double g2 = gradient_at(r, density::total, p).squaredNorm();
+                const double lap_total = at(r, density::total.laplacian(), p);
+                const double expected =
+                    is_lol ? d0 / (d0 + d0 + g2 / (72.0 * rho) + lap_total / 6.0)
+                           : 1.0 / (1.0 +
+                                    std::pow((d0 - g2 / (9.0 * rho) + lap_total / 6.0) / d0, 2.0));
+                unpolarized.add(at(r, key(density::total), p), expected,
+                                is_lol ? std::abs(expected) + 1.0 : 1.0);
+            }
+        }
+
         const Eigen::Vector3d g = gradient_at(r, density::total, p);
         const double expected_iri =
             rho > 0.0 ? std::min(g.norm() / std::pow(rho, 1.1), interaction_region_indicator_cap)
@@ -205,6 +265,15 @@ void check_molecule(const std::string& name) {
     formula("K, V and H", energy);
     formula("the Cartesian terms of G and K", terms);
     formula("|V| / G, H / rho and G / rho", ratios);
+    check(tsirelson.ratio <= 1e-12,
+          name + ": the Tsirelson-Stash ELF and LOL match their formulas to 1e-12 (worst " +
+              num(tsirelson.ratio) + ")");
+    if (closed_shell)
+        check(unpolarized.ratio <= 1e-12,
+              name +
+                  ": closed shell: the total Tsirelson-Stash ELF and LOL equal the "
+                  "spin-unpolarized forms to 1e-12 (worst " +
+                  num(unpolarized.ratio) + ")");
     formula("LOL", lol);
     formula("IRI", iri);
     formula("the spin polarization", polarization);
@@ -212,7 +281,7 @@ void check_molecule(const std::string& name) {
     formula("the Fisher density", fisher);
     check(dori.ratio <= 1e-12,
           name + ": DORI matches its formula to 1e-12 (worst " + num(dori.ratio) + ")");
-    check(ranges, name + ": LOL and DORI lie in [0, 1], |zeta| <= 1" +
+    check(ranges, name + ": LOL, DORI and the Tsirelson-Stash ELF lie in [0, 1], |zeta| <= 1" +
                       (closed_shell ? ", and zeta = 0 for a closed shell" : std::string()));
 
     // Closed shell: the spin-resolved total LOL is the unpolarized formula.
@@ -334,9 +403,12 @@ void check_molecule(const std::string& name) {
                    at(empty, density::total.hamiltonian_kinetic_energy(), p) == 0.0 &&
                    at(empty, density::total.potential_kinetic_ratio(), p) == 0.0 &&
                    at(empty, density::total.energy_density_per_electron(), p) == 0.0 &&
-                   at(empty, density::total.kinetic_energy_per_electron(), p) == 0.0;
+                   at(empty, density::total.kinetic_energy_per_electron(), p) == 0.0 &&
+                   at(empty, density::total.elf_tsirelson_stash(), p) == 0.0 &&
+                   at(empty, density::total.lol_tsirelson_stash(), p) == 0.0;
     check(defaults, name + ": without density LOL, DORI, zeta, Shannon, Fisher, K, |V| / G, "
-                           "H / rho and G / rho are 0 and IRI is the cap");
+                           "H / rho, G / rho and the Tsirelson-Stash ELF and LOL are 0 and IRI "
+                           "is the cap");
 
     // Components the fields are not defined for.
     const Evaluator evaluator(molecule);
@@ -347,7 +419,8 @@ void check_molecule(const std::string& name) {
           density::total.spin_polarization(), density::alpha.spin_polarization(),
           density::beta.shannon_entropy_density(), density::difference.fisher_information_density(),
           density::alpha.potential_kinetic_ratio(), density::beta.energy_density_per_electron(),
-          density::difference.kinetic_energy_per_electron()}) {
+          density::difference.kinetic_energy_per_electron(),
+          density::difference.elf_tsirelson_stash(), density::difference.lol_tsirelson_stash()}) {
         Request bad;
         bad.add(key);
         kumo_test::check_throws<std::invalid_argument>(

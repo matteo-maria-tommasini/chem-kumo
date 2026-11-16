@@ -176,6 +176,42 @@ double lol(std::initializer_list<const detail::DensityDerivatives*> channels) {
     return uniform / (tau + uniform);
 }
 
+// ELF and LOL of Tsirelson and Stash (Chem. Phys. Lett. 351, 142 (2002);
+// Acta Cryst. B58, 780 (2002)), which replace tau by its second-order
+// gradient expansion, so that they depend on the density alone. Each spin
+// channel s with rho_s > 0 contributes
+//   tau_GE,s = D0_s + |grad rho_s|^2 / (72 rho_s) + lap rho_s / 6,
+//   D_s      = tau_GE,s - |grad rho_s|^2 / (8 rho_s)
+//            = D0_s - |grad rho_s|^2 / (9 rho_s) + lap rho_s / 6,
+// with D0_s the Thomas-Fermi reference of ELF; then, with the sums over the
+// channels given, ELF_TS = 1 / (1 + (D / D0)^2) and
+// LOL_TS = t / (1 + t) = D0 / (tau_GE + D0) with t = D0 / tau_GE. For a
+// closed shell these are Multiwfn's (ELFLOL_type= 1) spin-unpolarized forms.
+// tau_GE is negative close to the nuclei, where LOL_TS leaves [0, 1] (as in
+// Multiwfn); where tau_GE + D0 = 0 exactly LOL_TS is set to 0. Both are 0
+// with no density.
+double gradient_expansion_locator(std::initializer_list<const detail::DensityDerivatives*> channels,
+                                  bool lol) {
+    constexpr double pi = std::numbers::pi;
+    static const double fermi = 0.3 * std::pow(6.0 * pi * pi, 2.0 / 3.0);
+    double uniform = 0.0, pauli = 0.0, kinetic = 0.0;
+    for (const detail::DensityDerivatives* d : channels) {
+        if (!(d->value > 0.0)) continue;
+        const double reference = fermi * std::pow(d->value, 5.0 / 3.0);
+        const double weizsacker = d->gradient.squaredNorm() / d->value;
+        uniform += reference;
+        pauli += reference - weizsacker / 9.0 + d->laplacian / 6.0;
+        kinetic += reference + weizsacker / 72.0 + d->laplacian / 6.0;
+    }
+    if (!(uniform > 0.0)) return 0.0;
+    if (lol) {
+        const double denominator = kinetic + uniform;
+        return denominator != 0.0 ? uniform / denominator : 0.0;
+    }
+    const double chi = pauli / uniform;
+    return 1.0 / (1.0 + chi * chi);
+}
+
 // Interaction region indicator (Lu and Chen 2021), |grad rho| / rho^1.1,
 // capped at interaction_region_indicator_cap (also where rho <= 0).
 double interaction_region_indicator(const detail::DensityDerivatives& d) {
@@ -209,14 +245,25 @@ using BlockDerivatives = std::map<DensityComponent, std::vector<detail::DensityD
 // Hessians use row-major upper-triangle order: xx, xy, xz, yy, yz, zz.
 void store_block(PropertyField& output, const Property& key, const BlockDerivatives& block,
                  std::size_t count, std::size_t start) {
-    if ((key.kind == PropertyKind::Elf || key.kind == PropertyKind::Lol) &&
+    if ((key.kind == PropertyKind::Elf || key.kind == PropertyKind::Lol ||
+         key.kind == PropertyKind::ElfTsirelsonStash ||
+         key.kind == PropertyKind::LolTsirelsonStash) &&
         key.component == DensityComponent::Total) {
         const auto& alpha = block.at(DensityComponent::Alpha);
         const auto& beta = block.at(DensityComponent::Beta);
-        for (std::size_t local = 0; local < count; ++local)
-            output.components[0][start + local] = key.kind == PropertyKind::Elf
-                                                      ? elf({&alpha[local], &beta[local]})
-                                                      : lol({&alpha[local], &beta[local]});
+        for (std::size_t local = 0; local < count; ++local) {
+            const auto channels = {&alpha[local], &beta[local]};
+            double value = 0.0;
+            switch (key.kind) {
+            case PropertyKind::Elf: value = elf(channels); break;
+            case PropertyKind::Lol: value = lol(channels); break;
+            case PropertyKind::ElfTsirelsonStash:
+                value = gradient_expansion_locator(channels, false);
+                break;
+            default: value = gradient_expansion_locator(channels, true); break;
+            }
+            output.components[0][start + local] = value;
+        }
         return;
     }
     if (key.kind == PropertyKind::SpinPolarization) {
@@ -253,6 +300,12 @@ void store_block(PropertyField& output, const Property& key, const BlockDerivati
             output.components[0][p] = sign_lambda2_density(d);
             break;
         case PropertyKind::Lol: output.components[0][p] = lol({&d}); break;
+        case PropertyKind::ElfTsirelsonStash:
+            output.components[0][p] = gradient_expansion_locator({&d}, false);
+            break;
+        case PropertyKind::LolTsirelsonStash:
+            output.components[0][p] = gradient_expansion_locator({&d}, true);
+            break;
         case PropertyKind::InteractionRegionIndicator:
             output.components[0][p] = interaction_region_indicator(d);
             break;
