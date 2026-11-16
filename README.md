@@ -1,4 +1,4 @@
-# chem-kumo 2.0.3
+# chem-kumo 2.1.0
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -433,8 +433,8 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 2.0.3 release registers **83 Meson tests**, all passing in the
-serial and OpenMP builds reported on macOS ARM64 on 2026-11-14, with both
+The 2.1.0 release registers **83 Meson tests**, all passing in the
+serial and OpenMP builds reported on macOS ARM64 on 2026-11-16, with both
 Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
 AddressSanitizer and UndefinedBehaviorSanitizer (except the three HBC cases
 of the `slow` suite). Coverage
@@ -455,7 +455,10 @@ and its far-field approximations against their error bounds; molecular
 surfaces and their ESP and average local ionization energy statistics
 against closed forms, the orbital formula and Multiwfn; the orbital-energy
 fields (ALIE, LEA, LEAE, local electronegativity and hardness) against
-Multiwfn Cube files and surface statistics; evaluation at arbitrary points
+Multiwfn Cube files and surface statistics; the orbital-weighted Fukui
+functions and dual descriptor, the Cartesian terms of G and K, the energy
+ratios |V| / G, H / rho and G / rho, and the Tsirelson-Stash ELF and LOL
+against their formulas and Multiwfn Cube files; evaluation at arbitrary points
 against grid evaluation, and the construction of lines and planes;
 fields mapped on surfaces and PLY output; end-to-end runs of the
 command-line program;
@@ -561,9 +564,12 @@ surface, with PLY output; all validated against Multiwfn), version
 1.13.1 (a code, consistency and documentation audit: a fix of the
 evaluation block-size check, a reorganization of the CLI and of the
 library with byte-identical outputs, and a rewritten mathematics
-document) and version 2.0.0 (a cleaner public API: one Evaluator for all
+document), version 2.0.0 (a cleaner public API: one Evaluator for all
 evaluations, two spin enumerations and one Hessian order, with numerical
-results unchanged).
+results unchanged) and version 2.1.0 (orbital-weighted Fukui functions,
+Cartesian terms of the kinetic energy densities and energy ratios, and the
+Tsirelson-Stash ELF and LOL, from the functions collected by Tian Lu in
+J. Chem. Phys. 2024, all validated against Multiwfn).
 
 ## License
 

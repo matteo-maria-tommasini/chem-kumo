@@ -1,3 +1,60 @@
+# chem-kumo 2.1.0 — release notes
+
+A feature release with the first group of real-space functions collected by
+Tian Lu in J. Chem. Phys. 161, 082503 (2024). Every new function is
+validated against Multiwfn reference Cube files. The public API only grows
+(new enumerators are appended to `PropertyKind`), and the results of the
+properties of 2.0.3 are unchanged.
+
+New functions (library and `kumo --property`):
+
+- Orbital-weighted Fukui functions and dual descriptor (Pino-Rios et al.,
+  J. Comput. Chem. 38, 481, 2017): `ow-fukui-plus`, `ow-fukui-minus`,
+  `ow-fukui-zero` and `ow-dual-descriptor`. The orbitals are weighted by
+  exp(-((mu - eps_i) / delta)^2), normalized over the virtual (f+) or
+  occupied (f-) orbitals, with mu the midpoint of the HOMO-LUMO gap; the
+  sums are exact (Multiwfn drops weights below 1e-3). Restricted
+  closed-shell wavefunctions only. The width is set with
+  `EvaluationOptions::fukui_delta` or `--fukui-delta` (default 0.1
+  hartree).
+- Cartesian terms of the kinetic energy densities: G_a = (1/2) sum_i n_i
+  (d_a psi_i)^2 (`kinetic-g-x`, `-y`, `-z`; `PropertyKind::TauComponents`)
+  and K_a = G_a - H_aa / 4 (`kinetic-k-x`, `-y`, `-z`;
+  `PropertyKind::HamiltonianKineticEnergyComponents`). `kinetic-g` is a
+  new CLI name for tau, Bader's G.
+- Energy ratios: |V| / G (`potential-kinetic-ratio`), H / rho
+  (`energy-density-per-electron`) and G / rho (`kinetic-g-per-electron`),
+  set to 0 where the denominator vanishes.
+- Tsirelson-Stash ELF and LOL (`elf-ts`, `lol-ts`), which replace the
+  exact kinetic energy density with its second-order gradient expansion.
+  They are resolved by spin like ELF and LOL. The Tsirelson-Stash LOL is
+  not bounded to [0, 1] near the nuclei, in kumo as in Multiwfn.
+
+Library:
+
+- `DensityDerivatives` has a new member `tau_axes` with the three
+  Cartesian terms of tau; `tau` is still their sum, bit for bit.
+- `map_on_density_isosurface()` now rejects, besides the density gradient
+  and Hessian, the orbital gradient and Hessian and the Cartesian terms of
+  G and K, with a clear error; `--surface-map` rejects the single Cartesian
+  terms `kinetic-g-x` ... `kinetic-k-z`.
+
+Refactoring:
+
+- The internal helper `c2pcff` that gives the Cartesian-to-pure
+  transformation coefficients is renamed `cartesian_to_pure_coefficient`.
+
+Documentation:
+
+- The mathematics notes define every new function, add a section on the
+  auxiliary numerical tools (AO overlaps and moments, grid integrals,
+  trilinear interpolation, weighted overlaps, subspace projector) and
+  complete the units, notation and conventions tables.
+- Source comments throughout the library, CLI and tests were reviewed for
+  clarity; every test file opens with a description of what it checks.
+- `docs/API.md` and `tests/REFERENCE_CUBES.md` describe the new functions
+  and how their Multiwfn reference files were made.
+
 # chem-kumo 2.0.3 — release notes
 
 A small fix and documentation release. Results and the public API are
