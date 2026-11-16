@@ -1,4 +1,4 @@
-# chem-kumo 2.0.2
+# chem-kumo 2.0.3
 
 <p align="center">
   <img src="assets/chem-kumo-logo.png" alt="chem-kumo logo" width="280">
@@ -16,6 +16,9 @@ I am deeply grateful to Tian Lu, the author of
 inspiration to me and that provided a solid reference throughout the
 development of chem-kumo. Without Multiwfn, chem-kumo would have been much
 harder to conceive and to build.
+Multiwfn is described in T. Lu and F. Chen, J. Comput. Chem. 33, 580 (2012),
+<https://doi.org/10.1002/jcc.22885>, and T. Lu, J. Chem. Phys. 161, 082503
+(2024), <https://doi.org/10.1063/5.0216272>.
 
 ## Overview
 
@@ -413,7 +416,7 @@ from FCHK input; it is not a general Cube inspection CLI.
 
 ## Validation and supported scope
 
-The 2.0.2 release registers **83 Meson tests**, all passing in the
+The 2.0.3 release registers **83 Meson tests**, all passing in the
 serial and OpenMP builds reported on macOS ARM64 on 2026-11-14, with both
 Clang 22 and GCC 15, without compiler warnings. CI also runs the suite with
 AddressSanitizer and UndefinedBehaviorSanitizer (except the three HBC cases

@@ -1,3 +1,37 @@
+# chem-kumo 2.0.3 — release notes
+
+A small fix and documentation release. Results and the public API are
+unchanged from 2.0.2; apart from the version in the first line of Cube files,
+every CLI output is byte-identical.
+
+Fix:
+
+- With an effective core potential (ECP), the electrostatic potential must
+  use the reduced nuclear charges, which Gaussian writes in the
+  `Nuclear charges` record of the FCHK file. Without that record kumo uses
+  the atomic numbers, which is right only for all-electron calculations. A
+  file that has ECP records but no `Nuclear charges` is now rejected when it
+  is loaded, with a clear error, instead of silently giving a wrong
+  potential. Gaussian always writes the record, so this only concerns FCHK
+  files written by other programs or edited by hand.
+
+Tests:
+
+- `fchk-gzip` removes `Nuclear charges` from the O2 and acrolein files and
+  checks that the charges then equal the atomic numbers, and that adding an
+  ECP record makes loading fail. The test now also returns a failure code
+  when one of its checks fails.
+
+Documentation:
+
+- The README opens with a Motivation section and thanks Tian Lu, the author
+  of Multiwfn, with the two Multiwfn papers (J. Comput. Chem. 2012 and
+  J. Chem. Phys. 2024).
+- The reference data cite Gaussian 09, Revision D.01, which computed all the
+  FCHK files and the Gaussian reference Cube files
+  (`tests/REFERENCE_CUBES.md`); the Cube files are described as made with
+  `cubegen`.
+
 # chem-kumo 2.0.2 — release notes
 
 A packaging release. Results and the public API are unchanged from 2.0.1;
