@@ -30,7 +30,9 @@ namespace {
 std::size_t channels(PropertyKind k) {
     switch (k) {
     case PropertyKind::Gradient:
-    case PropertyKind::OrbitalGradient: return 3;
+    case PropertyKind::OrbitalGradient:
+    case PropertyKind::TauComponents:
+    case PropertyKind::HamiltonianKineticEnergyComponents: return 3;
     case PropertyKind::Hessian:
     case PropertyKind::OrbitalHessian: return 6;
     default: return 1;
@@ -265,6 +267,24 @@ void store_block(PropertyField& output, const Property& key, const BlockDerivati
             break;
         case PropertyKind::EnergyDensity:
             output.components[0][p] = 0.25 * d.laplacian - d.tau;
+            break;
+        case PropertyKind::TauComponents:
+            for (int a = 0; a < 3; ++a)
+                output.components[a][p] = d.tau_axes[a];
+            break;
+        case PropertyKind::HamiltonianKineticEnergyComponents:
+            for (int a = 0; a < 3; ++a)
+                output.components[a][p] = d.tau_axes[a] - 0.25 * d.hessian(a, a);
+            break;
+        case PropertyKind::PotentialKineticRatio:
+            output.components[0][p] =
+                d.tau > 0.0 ? std::abs(0.25 * d.laplacian - 2.0 * d.tau) / d.tau : 0.0;
+            break;
+        case PropertyKind::EnergyDensityPerElectron:
+            output.components[0][p] = d.value > 0.0 ? (0.25 * d.laplacian - d.tau) / d.value : 0.0;
+            break;
+        case PropertyKind::KineticEnergyPerElectron:
+            output.components[0][p] = d.value > 0.0 ? d.tau / d.value : 0.0;
             break;
         case PropertyKind::ShannonEntropyDensity:
             output.components[0][p] = d.value > 0.0 ? -d.value * std::log(d.value) : 0.0;

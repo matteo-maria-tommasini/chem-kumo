@@ -374,8 +374,9 @@ test(
 )
 
 # Density fields added in 1.12.0 (LOL, IRI, DORI, K, V, H, spin polarization,
-# Shannon and Fisher densities) against their formulas, the orbital form of
-# K and finite differences for DORI.
+# Shannon and Fisher densities) and 2.1 (Cartesian terms of G and K, |V| / G,
+# H / rho, G / rho) against their formulas, the orbital forms of K and of the
+# Cartesian terms, and finite differences for DORI.
 test(
     'density-fields',
     executable(

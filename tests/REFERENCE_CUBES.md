@@ -220,6 +220,51 @@ relative tolerance alone there, so it cannot pass on near-zero values only.
 
 The largest difference is 0.54 of its tolerance (O2 LEAE).
 
+### Energy densities of 2.1.0
+
+Cube files of the Lagrangian kinetic energy density G (Multiwfn function 7,
+kumo's tau) and of Multiwfn's user functions 81-83 (K_x, K_y, K_z), 84-86
+(G_x, G_y, G_z), 35 (|V| / G), 17 (H / rho) and 13 (G / rho) were computed
+on 2026-11-16 with the same Multiwfn build (`Multiwfn_noGUI`, 2026.9.1
+macOS port), grid extension (3 bohr), spacing (0.3 bohr) and input
+sequence, from a scratch copy of the distributed `settings.ini` with only
+`iuserfunc` set to the function.
+
+| File | FCHK | Multiwfn function |
+|------|------|-------------------|
+| `h2o_kinetic_g.cube.gz` | water | 7, G(r) |
+| `o2_kinetic_g.cube.gz` | O2 | 7, G(r) |
+| `h2o_kinetic_g_x.cube.gz`, `_y`, `_z` | water | 100 with `iuserfunc= 84`, `85`, `86` |
+| `h2o_kinetic_k_x.cube.gz`, `_y`, `_z` | water | 100 with `iuserfunc= 81`, `82`, `83` |
+| `o2_kinetic_k_x.cube.gz` | O2 | 100 with `iuserfunc= 81` |
+| `h2o_potential_kinetic_ratio.cube.gz` | water | 100 with `iuserfunc= 35`, \|V\| / G |
+| `o2_potential_kinetic_ratio.cube.gz` | O2 | 100 with `iuserfunc= 35` |
+| `h2o_energy_density_per_electron.cube.gz` | water | 100 with `iuserfunc= 17`, H / rho |
+| `h2o_kinetic_g_per_electron.cube.gz` | water | 100 with `iuserfunc= 13`, G / rho |
+
+Multiwfn computes G_a as (1/2) sum_i n_i (d_a psi_i)^2, K_a as
+-(1/2) sum_i n_i psi_i d_a^2 psi_i, |V| / G as |-K - G| / G, H / rho as
+-K / rho and G / rho directly (`Lagkin` and `Hamkin` in `function.f90`).
+The test `multiwfn-reference` compares them like the other files:
+
+| Field | Tolerance | Largest difference |
+|-------|-----------|--------------------|
+| G (water, O2), G / rho | 2e-5 relative | 7.4e-6 relative |
+| G_x, G_y, G_z | 5e-5 relative | 1.7e-5 (water G_x, where it is 0.02) |
+| K_x, K_y, K_z (water, O2 K_x) | 5e-5 of \|G_a\| + \|H_aa\| / 4 | 1.2e-5 of that scale |
+| \|V\| / G (water, O2) | 5e-5 of (2 \|G\| + \|lap rho\| / 4) / G | 2.4e-5 of that scale (O2) |
+| H / rho | 5e-5 of (\|G\| + \|lap rho\| / 4) / rho | 9.0e-6 of that scale |
+
+H_aa is the diagonal of the density Hessian. K_a, |V| / G and H / rho
+cancel terms as K, V and H do, and are compared on the scale of those
+terms with the tolerance of K, V and H. The O2 grid contains one nucleus,
+at (0, 0, -1.143284): the six decimals of the Cube header move it by up to
+5e-7 bohr, and on the nuclear cusp G changes by about 2Z = 32 relative per
+bohr, so G differs there by 2.9e-5. That point is skipped for O2 G (points
+within 1e-3 bohr of a nucleus, as for the ESP); every other point agrees
+within 5.5e-6. The largest difference is 0.47 of its tolerance
+(O2 |V| / G).
+
 ### Orbital-weighted Fukui functions of 2.1.0
 
 Cube files of Multiwfn's user functions 95 (orbital-weighted f+), 96 (f-),

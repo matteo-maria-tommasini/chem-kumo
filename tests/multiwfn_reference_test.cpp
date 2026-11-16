@@ -45,7 +45,19 @@ struct Tolerance {
     /// |tau| + |lap rho| / 4 for K, V and H, and rho (1 + |ln rho|) for
     /// -rho ln rho, which vanishes at rho = 1, and (|ALIE| + |LEA|) / 2 for
     /// the local electronegativity (ALIE + LEA) / 2, which crosses zero.
-    enum class Scale { Value, Energy, Shannon, OrbitalEnergies } scale = Scale::Value;
+    /// For the energy-density fields of 2.1: |G_a| + |H_aa| / 4 for the term
+    /// K_a = G_a - H_aa / 4 (H_aa the diagonal of the density Hessian),
+    /// (|tau| + |lap rho| / 4) / rho for H / rho, and
+    /// (2 |tau| + |lap rho| / 4) / tau for |V| / G.
+    enum class Scale {
+        Value,
+        Energy,
+        Shannon,
+        OrbitalEnergies,
+        EnergyAxis,
+        EnergyPerElectron,
+        VirialRatio
+    } scale = Scale::Value;
     /// With significant > 0: at least minimum_significant points must have
     /// |expected| >= significant, and there the relative tolerance alone
     /// must hold, so that an absolute term cannot hide a disagreement and the
@@ -54,8 +66,10 @@ struct Tolerance {
     std::size_t minimum_significant = 0;
 };
 
+// `axis` selects the component of a property with several (x, y, z).
 void compare(const std::filesystem::path& fchk, const std::filesystem::path& cube_path,
-             Property key, const std::string& label, Tolerance tolerance = {}) {
+             Property key, const std::string& label, Tolerance tolerance = {},
+             std::size_t axis = 0) {
     const auto molecule = Molecule::from_fchk(fchk);
     const auto reference = read_cube(cube_path);
     const auto& grid = reference.field.grid();
@@ -73,17 +87,25 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
     request.add(key)
         .add(density::total.value())
         .add(density::total.tau())
-        .add(density::total.laplacian());
+        .add(density::total.laplacian())
+        .add(density::total.tau_components())
+        .add(density::total.hessian());
     const bool orbital_scale = tolerance.scale == Tolerance::Scale::OrbitalEnergies;
     if (orbital_scale)
         request.add(density::total.average_local_ionization_energy())
             .add(density::total.local_electron_affinity());
     // Keep the Results alive: component() is a view into it.
     const Results results = Evaluator(molecule).evaluate(grid, request);
-    const auto actual = results.get(key).component();
+    const auto actual = results.get(key).component(axis);
     const auto rho = results.get(density::total.value()).component();
     const auto tau = results.get(density::total.tau()).component();
     const auto laplacian = results.get(density::total.laplacian()).component();
+    const auto tau_axis = results.get(density::total.tau_components()).component(axis);
+    // Hessian components in the order xx, xy, xz, yy, yz, zz: the diagonal
+    // entry of `axis` is component 0, 3 or 5.
+    const std::size_t diagonal[] = {0, 3, 5};
+    const auto hessian_axis =
+        results.get(density::total.hessian()).component(diagonal[std::min<std::size_t>(axis, 2)]);
     const auto alie =
         orbital_scale ? results.get(density::total.average_local_ionization_energy()).component()
                       : std::span<const double>();
@@ -119,6 +141,13 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
                 ? std::abs(tau[p]) + 0.25 * std::abs(laplacian[p])
             : tolerance.scale == Tolerance::Scale::Shannon
                 ? (rho[p] > 0.0 ? rho[p] * (1.0 + std::abs(std::log(rho[p]))) : 0.0)
+            : tolerance.scale == Tolerance::Scale::EnergyAxis
+                ? std::abs(tau_axis[p]) + 0.25 * std::abs(hessian_axis[p])
+            : tolerance.scale == Tolerance::Scale::EnergyPerElectron
+                ? (rho[p] > 0.0 ? (std::abs(tau[p]) + 0.25 * std::abs(laplacian[p])) / rho[p] : 0.0)
+            : tolerance.scale == Tolerance::Scale::VirialRatio
+                ? (tau[p] > 0.0 ? (2.0 * std::abs(tau[p]) + 0.25 * std::abs(laplacian[p])) / tau[p]
+                                : 0.0)
             : orbital_scale ? 0.5 * (std::abs(alie[p]) + std::abs(lea[p]))
                             : std::abs(expected[p]);
         const double allowed = tolerance.relative * scale + tolerance.absolute;
@@ -393,6 +422,46 @@ int main(int argc, char** argv) {
                 electronegativity);
         compare(acrolein, directory / "acrolein_local_hardness.cube.gz",
                 density::total.local_hardness(), "acrolein local hardness", orbital);
+        // Energy densities of 2.1 (Multiwfn function 7 and user functions
+        // 81-86, 35, 17, 13).
+        // The Cartesian terms of G reach 1.7e-5 relative (water G_x, where
+        // it is 0.02 hartree/bohr^3): 5e-5, as for K, V and H. K_a, H / rho
+        // and |V| / G cancel terms as K, V and H do and are compared on the
+        // scale of those terms, with the same 5e-5.
+        const Tolerance energy_term{5e-5};
+        Tolerance energy_axis{5e-5};
+        energy_axis.scale = Tolerance::Scale::EnergyAxis;
+        Tolerance per_electron{5e-5};
+        per_electron.scale = Tolerance::Scale::EnergyPerElectron;
+        Tolerance virial{5e-5};
+        virial.scale = Tolerance::Scale::VirialRatio;
+        compare(water, directory / "h2o_kinetic_g.cube.gz", density::total.tau(), "water G");
+        // The O2 grid contains one nucleus. The six decimals of the Cube
+        // header move it by up to 5e-7 bohr, and on the nuclear cusp G
+        // changes by about 2Z = 32 relative per bohr: 2.9e-5 at the nucleus,
+        // above the tolerance. That point is skipped (as for the ESP); every
+        // other point agrees within 2e-5.
+        compare(o2, directory / "o2_kinetic_g.cube.gz", density::total.tau(), "O2 G",
+                Tolerance{relative_tolerance, 0.0, 1e-3});
+        const char* axes[] = {"x", "y", "z"};
+        for (std::size_t a = 0; a < 3; ++a) {
+            compare(water, directory / (std::string("h2o_kinetic_g_") + axes[a] + ".cube.gz"),
+                    density::total.tau_components(), std::string("water G_") + axes[a], energy_term,
+                    a);
+            compare(water, directory / (std::string("h2o_kinetic_k_") + axes[a] + ".cube.gz"),
+                    density::total.hamiltonian_kinetic_energy_components(),
+                    std::string("water K_") + axes[a], energy_axis, a);
+        }
+        compare(o2, directory / "o2_kinetic_k_x.cube.gz",
+                density::total.hamiltonian_kinetic_energy_components(), "O2 K_x", energy_axis, 0);
+        compare(water, directory / "h2o_potential_kinetic_ratio.cube.gz",
+                density::total.potential_kinetic_ratio(), "water |V| / G", virial);
+        compare(o2, directory / "o2_potential_kinetic_ratio.cube.gz",
+                density::total.potential_kinetic_ratio(), "O2 |V| / G", virial);
+        compare(water, directory / "h2o_energy_density_per_electron.cube.gz",
+                density::total.energy_density_per_electron(), "water H / rho", per_electron);
+        compare(water, directory / "h2o_kinetic_g_per_electron.cube.gz",
+                density::total.kinetic_energy_per_electron(), "water G / rho");
         // Orbital-weighted Fukui functions (closed shell only).
         compare_orbital_weighted(acrolein, directory, "acrolein", "acrolein", true);
         compare_orbital_weighted(water, directory, "h2o", "water", false);

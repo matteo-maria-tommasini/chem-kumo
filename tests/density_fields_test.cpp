@@ -1,9 +1,13 @@
 // Density fields of the Evaluator added in 1.12.0: LOL, IRI, DORI, the
 // kinetic and energy densities K, V and H, the spin polarization, and the
-// Shannon and Fisher densities.
+// Shannon and Fisher densities; and those of 2.1: the Cartesian terms of
+// G = tau and of K, |V| / G, H / rho and G / rho.
 //
 //  - Each value equals its formula applied to the Evaluator's own density,
 //    gradient, Hessian, Laplacian and tau of the same request.
+//  - The Cartesian terms of G and K add up to tau and K, and agree with
+//    their orbital forms (1/2) sum_i (d_a phi_i)^2 and
+//    -(1/2) sum_i phi_i d_a^2 phi_i.
 //  - K agrees with the orbital form -(1/2) sum_i phi_i lap phi_i, evaluated
 //    from Molecule::orbital_derivatives(), and DORI with central finite
 //    differences of |grad rho|^2 / rho^2 from Molecule::density_derivatives().
@@ -43,7 +47,9 @@ Request full_request() {
             .add(d.hessian())
             .add(d.laplacian())
             .add(d.tau())
-            .add(d.hamiltonian_kinetic_energy());
+            .add(d.hamiltonian_kinetic_energy())
+            .add(d.tau_components())
+            .add(d.hamiltonian_kinetic_energy_components());
     for (const auto& d : {density::total, density::alpha, density::beta})
         request.add(d.lol());
     request.add(density::total.interaction_region_indicator())
@@ -52,6 +58,9 @@ Request full_request() {
         .add(density::total.energy_density())
         .add(density::total.shannon_entropy_density())
         .add(density::total.fisher_information_density())
+        .add(density::total.potential_kinetic_ratio())
+        .add(density::total.energy_density_per_electron())
+        .add(density::total.kinetic_energy_per_electron())
         .add(density::difference.spin_polarization());
     return request;
 }
@@ -106,13 +115,27 @@ void check_molecule(const std::string& name) {
         molecule.occupied_count(SpinChannel::Alpha) == molecule.occupied_count(SpinChannel::Beta);
 
     // Formulas applied to the Evaluator's own inputs, to rounding.
-    Worst energy, lol, iri, dori, polarization, shannon, fisher;
+    Worst energy, lol, iri, dori, polarization, shannon, fisher, terms, ratios;
     bool ranges = true;
     for (std::size_t p = 0; p < n; ++p) {
         for (const auto& d : all_components) {
             const double tau = at(r, d.tau(), p), lap = at(r, d.laplacian(), p);
             energy.add(at(r, d.hamiltonian_kinetic_energy(), p), tau - 0.25 * lap,
                        std::abs(tau) + 0.25 * std::abs(lap) + 1e-300);
+            // The Cartesian terms: G_a, K_a = G_a - H_aa / 4, and their sums.
+            const Eigen::Matrix3d h = hessian_at(r, d, p);
+            double g_sum = 0.0, k_sum = 0.0;
+            for (std::size_t a = 0; a < 3; ++a) {
+                const double g = at(r, d.tau_components(), p, a);
+                const double k = at(r, d.hamiltonian_kinetic_energy_components(), p, a);
+                const auto i = static_cast<Eigen::Index>(a);
+                terms.add(k, g - 0.25 * h(i, i), std::abs(g) + 0.25 * std::abs(h(i, i)) + 1e-300);
+                g_sum += g;
+                k_sum += k;
+            }
+            const double scale = std::abs(tau) + 0.25 * std::abs(lap) + 1e-300;
+            terms.add(g_sum, tau, scale);
+            terms.add(k_sum, at(r, d.hamiltonian_kinetic_energy(), p), scale);
         }
         const double tau = at(r, density::total.tau(), p);
         const double lap = at(r, density::total.laplacian(), p);
@@ -120,6 +143,19 @@ void check_molecule(const std::string& name) {
         energy.add(at(r, density::total.potential_energy_density(), p), 0.25 * lap - 2.0 * tau,
                    scale);
         energy.add(at(r, density::total.energy_density(), p), 0.25 * lap - tau, scale);
+        {
+            const double rho_total = at(r, density::total.value(), p);
+            const double v = 0.25 * lap - 2.0 * tau, h = 0.25 * lap - tau;
+            ratios.add(at(r, density::total.potential_kinetic_ratio(), p),
+                       tau > 0.0 ? std::abs(v) / tau : 0.0,
+                       tau > 0.0 ? (2.0 * std::abs(tau) + 0.25 * std::abs(lap)) / tau : 1.0);
+            ratios.add(at(r, density::total.energy_density_per_electron(), p),
+                       rho_total > 0.0 ? h / rho_total : 0.0,
+                       rho_total > 0.0 ? scale / rho_total : 1.0);
+            ratios.add(at(r, density::total.kinetic_energy_per_electron(), p),
+                       rho_total > 0.0 ? tau / rho_total : 0.0,
+                       rho_total > 0.0 ? std::abs(tau) / rho_total + 1e-300 : 1.0);
+        }
 
         const double rho = at(r, density::total.value(), p);
         const double ra = at(r, density::alpha.value(), p), rb = at(r, density::beta.value(), p);
@@ -167,6 +203,8 @@ void check_molecule(const std::string& name) {
               name + ": " + what + " matches its formula to 1e-13 (worst " + num(w.ratio) + ")");
     };
     formula("K, V and H", energy);
+    formula("the Cartesian terms of G and K", terms);
+    formula("|V| / G, H / rho and G / rho", ratios);
     formula("LOL", lol);
     formula("IRI", iri);
     formula("the spin polarization", polarization);
@@ -195,7 +233,7 @@ void check_molecule(const std::string& name) {
     }
 
     // Independent checks at points spread over the grid with enough density.
-    Worst orbital_k, finite_difference;
+    Worst orbital_k, orbital_terms, finite_difference;
     std::size_t sampled = 0;
     const std::size_t stride = std::max<std::size_t>(1, n / 200);
     for (std::size_t p = 0; p < n; p += stride) {
@@ -210,13 +248,25 @@ void check_molecule(const std::string& name) {
         for (const auto& [channel, descriptor] : {std::pair{SpinChannel::Alpha, density::alpha},
                                                   std::pair{SpinChannel::Beta, density::beta}}) {
             double k = 0.0;
+            Eigen::Vector3d g_terms = Eigen::Vector3d::Zero(), k_terms = Eigen::Vector3d::Zero();
             for (std::size_t i = 1; i <= molecule.occupied_count(channel); ++i) {
                 const auto phi = kumo_test::Kernels::orbital_derivatives(molecule, x, i, channel);
                 k -= 0.5 * phi.value * phi.hessian.trace();
+                for (int a = 0; a < 3; ++a) {
+                    g_terms[a] += 0.5 * phi.gradient[a] * phi.gradient[a];
+                    k_terms[a] -= 0.5 * phi.value * phi.hessian(a, a);
+                }
             }
             const double tau = at(r, descriptor.tau(), p), lap = at(r, descriptor.laplacian(), p);
             orbital_k.add(at(r, descriptor.hamiltonian_kinetic_energy(), p), k,
                           std::abs(tau) + 0.25 * std::abs(lap));
+            for (std::size_t a = 0; a < 3; ++a) {
+                const auto i = static_cast<Eigen::Index>(a);
+                orbital_terms.add(at(r, descriptor.tau_components(), p, a), g_terms[i],
+                                  std::abs(tau) + 0.25 * std::abs(lap));
+                orbital_terms.add(at(r, descriptor.hamiltonian_kinetic_energy_components(), p, a),
+                                  k_terms[i], std::abs(tau) + 0.25 * std::abs(lap));
+            }
         }
         // theta from central differences (step 1e-4 bohr) of f = |grad rho|^2 / rho^2.
         const auto f = [&](const Eigen::Vector3d& y) {
@@ -236,6 +286,7 @@ void check_molecule(const std::string& name) {
                               theta / (1.0 + theta), 1.0);
     }
     std::cout << name << ": " << sampled << " sampled points; K vs orbital form " << orbital_k.ratio
+              << ", G_a and K_a vs orbital forms " << orbital_terms.ratio
               << ", DORI vs finite differences " << finite_difference.ratio << '\n';
     check(sampled >= 20, name + ": enough sampled points (got " + std::to_string(sampled) + ")");
     // The orbital form uses the MOs, the Evaluator possibly the FCHK density
@@ -243,6 +294,11 @@ void check_molecule(const std::string& name) {
     check(orbital_k.ratio <= 1e-7,
           name + ": K agrees with -(1/2) sum phi lap phi to 1e-7 of |tau| + |lap rho| / 4 (worst " +
               num(orbital_k.ratio) + ")");
+    check(orbital_terms.ratio <= 1e-7,
+          name +
+              ": G_a and K_a agree with (1/2) sum (d_a phi)^2 and -(1/2) sum phi d_a^2 phi to "
+              "1e-7 of |tau| + |lap rho| / 4 (worst " +
+              num(orbital_terms.ratio) + ")");
     check(finite_difference.ratio <= 1e-5,
           name + ": DORI agrees with finite differences to 1e-5 (worst " +
               num(finite_difference.ratio) + ")");
@@ -275,9 +331,12 @@ void check_molecule(const std::string& name) {
                    at(empty, density::difference.spin_polarization(), p) == 0.0 &&
                    at(empty, density::total.shannon_entropy_density(), p) == 0.0 &&
                    at(empty, density::total.fisher_information_density(), p) == 0.0 &&
-                   at(empty, density::total.hamiltonian_kinetic_energy(), p) == 0.0;
-    check(defaults, name + ": without density LOL, DORI, zeta, Shannon, Fisher and K are 0 and "
-                           "IRI is the cap");
+                   at(empty, density::total.hamiltonian_kinetic_energy(), p) == 0.0 &&
+                   at(empty, density::total.potential_kinetic_ratio(), p) == 0.0 &&
+                   at(empty, density::total.energy_density_per_electron(), p) == 0.0 &&
+                   at(empty, density::total.kinetic_energy_per_electron(), p) == 0.0;
+    check(defaults, name + ": without density LOL, DORI, zeta, Shannon, Fisher, K, |V| / G, "
+                           "H / rho and G / rho are 0 and IRI is the cap");
 
     // Components the fields are not defined for.
     const Evaluator evaluator(molecule);
@@ -286,8 +345,9 @@ void check_molecule(const std::string& name) {
           density::beta.density_overlap_regions_indicator(),
           density::alpha.potential_energy_density(), density::difference.energy_density(),
           density::total.spin_polarization(), density::alpha.spin_polarization(),
-          density::beta.shannon_entropy_density(),
-          density::difference.fisher_information_density()}) {
+          density::beta.shannon_entropy_density(), density::difference.fisher_information_density(),
+          density::alpha.potential_kinetic_ratio(), density::beta.energy_density_per_electron(),
+          density::difference.kinetic_energy_per_electron()}) {
         Request bad;
         bad.add(key);
         kumo_test::check_throws<std::invalid_argument>(

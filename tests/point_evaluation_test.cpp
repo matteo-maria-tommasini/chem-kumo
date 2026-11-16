@@ -56,7 +56,9 @@ Request full_request(const Molecule& molecule) {
                                             density::difference};
     for (const auto& d : components) {
         request.add(d.value()).add(d.gradient()).add(d.hessian()).add(d.laplacian()).add(d.tau());
-        request.add(d.hamiltonian_kinetic_energy());
+        request.add(d.hamiltonian_kinetic_energy())
+            .add(d.tau_components())
+            .add(d.hamiltonian_kinetic_energy_components());
         if (d.component != DensityComponent::Difference) request.add(d.elf()).add(d.lol());
     }
     const auto& t = density::total;
@@ -68,6 +70,9 @@ Request full_request(const Molecule& molecule) {
         .add(t.energy_density())
         .add(t.shannon_entropy_density())
         .add(t.fisher_information_density())
+        .add(t.potential_kinetic_ratio())
+        .add(t.energy_density_per_electron())
+        .add(t.kinetic_energy_per_electron())
         .add(t.electrostatic_potential())
         .add(t.average_local_ionization_energy())
         .add(t.local_electron_affinity())

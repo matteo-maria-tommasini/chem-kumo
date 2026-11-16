@@ -25,8 +25,11 @@ namespace chem::kumo::detail {
 ///    Fisher information densities from the total value and gradient;
 ///  - the density overlap regions indicator (DORI) from the total value,
 ///    gradient and Hessian;
-///  - the kinetic (K), potential (V) and total (H) energy densities from the
-///    Laplacian and tau of their component;
+///  - the kinetic (K), potential (V) and total (H) energy densities, the
+///    Cartesian terms of K, |V| / G and H / rho from the value, Hessian and
+///    tau (with its Cartesian terms) of their component (`energy_input`);
+///  - the Cartesian terms of tau and tau / rho from the value and tau
+///    (`tau_input`);
 ///  - the spin polarization from the Total and Difference values (`value_input`).
 struct ComponentPlan {
     bool density = false;
@@ -42,7 +45,8 @@ struct ComponentPlan {
     bool lol_input = false;        ///< value and tau feed a LOL
     bool gradient_input = false;   ///< value and gradient feed IRI, Shannon, Fisher
     bool hessian_input = false;    ///< value, gradient and Hessian feed DORI
-    bool energy_input = false;     ///< Laplacian and tau feed K, V or H
+    bool energy_input = false;     ///< Hessian and tau feed K, V, H and related fields
+    bool tau_input = false;        ///< value and tau feed its terms and tau / rho
     bool value_input = false;      ///< the value feeds the spin polarization
     /// Total only; computed from the density matrix by its own pass, so it
     /// needs no AO values or derivatives.
@@ -53,7 +57,7 @@ struct ComponentPlan {
     [[nodiscard]] bool derivatives() const noexcept {
         return gradient || hessian || laplacian || tau || elf_input || reduced_gradient ||
                sign_lambda2 || lol_input || gradient_input || hessian_input || energy_input ||
-               value_input;
+               tau_input || value_input;
     }
 
     /// Highest AO derivative order this component needs (-1: none).
@@ -62,7 +66,7 @@ struct ComponentPlan {
         // value_input needs only values, but the density-matrix (AO-P)
         // derivative kernel always computes at least first derivatives.
         if (gradient || tau || elf_input || reduced_gradient || lol_input || gradient_input ||
-            value_input)
+            tau_input || value_input)
             return 1;
         return density ? 0 : -1;
     }
@@ -199,6 +203,20 @@ struct EvaluationPlan {
             case PropertyKind::EnergyDensity:
                 require_total(property, "the energy density");
                 c.energy_input = true;
+                break;
+            case PropertyKind::HamiltonianKineticEnergyComponents: c.energy_input = true; break;
+            case PropertyKind::TauComponents: c.tau_input = true; break;
+            case PropertyKind::PotentialKineticRatio:
+                require_total(property, "|V| / G");
+                c.energy_input = true;
+                break;
+            case PropertyKind::EnergyDensityPerElectron:
+                require_total(property, "the energy density per electron");
+                c.energy_input = true;
+                break;
+            case PropertyKind::KineticEnergyPerElectron:
+                require_total(property, "the kinetic energy per electron");
+                c.tau_input = true;
                 break;
             case PropertyKind::SpinPolarization:
                 if (property.component != DensityComponent::Difference)

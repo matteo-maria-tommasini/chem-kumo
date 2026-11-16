@@ -147,13 +147,16 @@ struct OrbitalDerivatives {
 /// the Evaluator returns them as properties). Units: rho e/bohr^3, gradient
 /// e/bohr^4, Hessian and Laplacian e/bohr^5, and tau, the positive
 /// kinetic-energy density (1/2) sum_mu,nu P_mu,nu grad phi_mu . grad phi_nu,
-/// in hartree/bohr^3.
+/// in hartree/bohr^3. tau_axes holds its x, y and z terms
+/// (1/2) sum_mu,nu P_mu,nu d_a phi_mu d_a phi_nu; tau is their sum, added
+/// in the order x, y, z.
 struct DensityDerivatives {
     double value = 0.0;
     Eigen::Vector3d gradient = Eigen::Vector3d::Zero();
     Eigen::Matrix3d hessian = Eigen::Matrix3d::Zero();
     double laplacian = 0.0;
     double tau = 0.0;
+    Eigen::Vector3d tau_axes = Eigen::Vector3d::Zero();
 };
 } // namespace detail
 

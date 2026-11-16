@@ -359,6 +359,37 @@ data "$TMP/orbital.txt" | awk '
     END { exit bad || NR != 3 }' ||
     fail 'orbital-energy fields: ALIE <= 0, LEAE > 0 or chi, eta inconsistent with ALIE and LEA'
 
+# Energy densities: the Cartesian terms of G and K add up to tau and K,
+# kinetic-g is tau, and |V| / G, H / rho and G / rho follow from V, H, G and
+# rho. --surface-map rejects a single Cartesian term.
+run_kumo "$FCHK" --point @1 --point 0,0.3,1 --spin all \
+    --property tau,kinetic-g-x,kinetic-g-y,kinetic-g-z,kinetic-k,kinetic-k-x,kinetic-k-y,kinetic-k-z \
+    > "$TMP/energy-terms.txt"
+data "$TMP/energy-terms.txt" | awk '
+    function abs(x) { return x < 0 ? -x : x }
+    NF != 35 { bad = 1 }
+    { for (c = 0; c < 4; c++) { o = 4 + 8 * c
+        s = abs($(o)) + abs($(o + 4)) + 1e-300
+        if (abs($(o + 1) + $(o + 2) + $(o + 3) - $(o)) > 1e-9 * s) bad = 1
+        if (abs($(o + 5) + $(o + 6) + $(o + 7) - $(o + 4)) > 1e-9 * s) bad = 1 } }
+    END { exit bad || NR != 2 }' ||
+    fail 'Cartesian terms of G or K do not add up to tau or K'
+run_kumo "$FCHK" --point 0,0.3,1 --property kinetic-g > "$TMP/kinetic-g.txt"
+run_kumo "$FCHK" --point 0,0.3,1 --property tau > "$TMP/tau.txt"
+[ "$(data "$TMP/kinetic-g.txt")" = "$(data "$TMP/tau.txt")" ] || fail 'kinetic-g differs from tau'
+run_kumo "$FCHK" --point @1 --point 0,0.3,1 \
+    --property density,kinetic-g,potential-energy,energy-density,potential-kinetic-ratio,energy-density-per-electron,kinetic-g-per-electron \
+    > "$TMP/energy-ratios.txt"
+data "$TMP/energy-ratios.txt" | awk '
+    function abs(x) { return x < 0 ? -x : x }
+    function differ(a, b) { return abs(a - b) > 1e-9 * abs(b) }
+    NF != 10 || differ($8, abs($6) / $5) || differ($9, $7 / $4) || differ($10, $5 / $4) { bad = 1 }
+    END { exit bad || NR != 2 }' ||
+    fail '|V| / G, H / rho or G / rho inconsistent with V, H, G and rho'
+if "$KUMO" "$FCHK" --surface-map --property kinetic-g-x > "$TMP/error.log" 2>&1; then
+    fail '--surface-map of a Cartesian term unexpectedly accepted'
+fi
+
 # Orbital-weighted Fukui functions (closed shell only): f0 = (f+ + f-) / 2,
 # dual descriptor f+ - f-, f+ and f- positive; --fukui-delta changes them.
 # O2 (open shell), --fukui-delta without an ow-* property and a nonpositive

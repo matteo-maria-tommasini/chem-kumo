@@ -181,11 +181,12 @@ struct MappedSurface {
     Backend backend_used = Backend::AO_P;      ///< as Results::backend_used()
 };
 
-/// Evaluate `properties` (one-component Evaluator properties: not Gradient
-/// or Hessian) with Evaluator::evaluate(points) at the vertices of
-/// density_isosurface(molecule, isovalue, spacing), and the statistics of
-/// each on the surface (surface_statistics() with polar threshold 0). A
-/// property listed twice is evaluated once. The electrostatic potential is
+/// Evaluate `properties` (one-component Evaluator properties: not Gradient,
+/// Hessian, OrbitalGradient, OrbitalHessian, TauComponents or
+/// HamiltonianKineticEnergyComponents) with Evaluator::evaluate(points) at
+/// the vertices of density_isosurface(molecule, isovalue, spacing), and the
+/// statistics of each on the surface (surface_statistics() with polar
+/// threshold 0). A property listed twice is evaluated once. The electrostatic potential is
 /// evaluated as at any other points, so its values can differ from those of
 /// electrostatic_potential_surface() (both are within the tolerance). The
 /// result does not depend on the number of OpenMP threads. Throws

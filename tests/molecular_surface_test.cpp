@@ -672,6 +672,10 @@ void test_mapped_surface(const char* path) {
     rejected("no property", {});
     rejected("the gradient", {total.gradient()});
     rejected("the Hessian", {total.hessian()});
+    rejected("an orbital gradient", {chem::kumo::orbital::alpha(1).gradient()});
+    rejected("an orbital Hessian", {chem::kumo::orbital::alpha(1).hessian()});
+    rejected("the Cartesian terms of G", {total.tau_components()});
+    rejected("the Cartesian terms of K", {total.hamiltonian_kinetic_energy_components()});
     rejected("the ALIE of the alpha density",
              {chem::kumo::density::alpha.average_local_ionization_energy()});
 }
