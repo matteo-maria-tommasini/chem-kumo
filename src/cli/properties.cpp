@@ -74,6 +74,19 @@ const std::vector<DensityProperty>& known_properties() {
          OrbitalEnergies, &D::local_electronegativity},
         {PropertyKind::LocalHardness, "local-hardness", "Local hardness (ALIE - LEA) / 2 (hartree)",
          "local hardness", TotalOnly, OrbitalEnergies, &D::local_hardness},
+        {PropertyKind::OrbitalWeightedFukuiPlus, "ow-fukui-plus",
+         "Orbital-weighted Fukui function f+ (bohr^-3)", "orbital-weighted Fukui function f+",
+         TotalOnly, OrbitalEnergies, &D::orbital_weighted_fukui_plus},
+        {PropertyKind::OrbitalWeightedFukuiMinus, "ow-fukui-minus",
+         "Orbital-weighted Fukui function f- (bohr^-3)", "orbital-weighted Fukui function f-",
+         TotalOnly, OrbitalEnergies, &D::orbital_weighted_fukui_minus},
+        {PropertyKind::OrbitalWeightedFukuiZero, "ow-fukui-zero",
+         "Orbital-weighted Fukui function f0 = (f+ + f-) / 2 (bohr^-3)",
+         "orbital-weighted Fukui function f0", TotalOnly, OrbitalEnergies,
+         &D::orbital_weighted_fukui_zero},
+        {PropertyKind::OrbitalWeightedDualDescriptor, "ow-dual-descriptor",
+         "Orbital-weighted dual descriptor f+ - f- (bohr^-3)", "orbital-weighted dual descriptor",
+         TotalOnly, OrbitalEnergies, &D::orbital_weighted_dual_descriptor},
     };
     return known;
 }
@@ -253,6 +266,10 @@ DensitySelection select_density(const Options& o, const Molecule& mol, Console& 
                          return p.kind == PropertyKind::ElectrostaticPotential;
                      }))
         throw std::invalid_argument("--esp-tolerance applies only to --property esp");
+    if (o.fukui_delta_set &&
+        std::none_of(selection.properties.begin(), selection.properties.end(),
+                     [](const DensityProperty& p) { return p.name.starts_with("ow-"); }))
+        throw std::invalid_argument("--fukui-delta applies only to the ow-* properties");
     selection.backend = select_backend(o.backend, mol);
     console.say(backend_summary(selection.backend, mol));
     return selection;
@@ -263,6 +280,7 @@ chem::kumo::EvaluationOptions evaluation_options(const DensitySelection& selecti
     chem::kumo::EvaluationOptions options;
     options.backend = selection.backend;
     options.potential_tolerance = o.esp_tolerance;
+    options.fukui_delta = o.fukui_delta;
     options.progress = console.progress();
     return options;
 }

@@ -38,10 +38,15 @@ void usage() {
               << "                             fisher, esp (the electrostatic potential),\n"
               << "                             alie, lea, leae, local-electronegativity,\n"
               << "                             local-hardness (orbital-energy fields of SCF\n"
-              << "                             orbitals) (total only); spin-polarization\n"
-              << "                             (difference)\n"
+              << "                             orbitals), ow-fukui-plus, ow-fukui-minus,\n"
+              << "                             ow-fukui-zero, ow-dual-descriptor\n"
+              << "                             (orbital-weighted Fukui functions and dual\n"
+              << "                             descriptor, closed shell) (total only);\n"
+              << "                             spin-polarization (difference)\n"
               << "  --esp-tolerance HARTREE    Error bound of the electrostatic potential at\n"
               << "                             each point (default 1e-8; 0 is exact and slowest)\n"
+              << "  --fukui-delta HARTREE      Width of the orbital weights of the ow-*\n"
+              << "                             properties (default 0.1)\n"
               << "  --esp-surface              Print the electrostatic potential statistics on\n"
               << "                             a density isosurface (no Cube files; grid\n"
               << "                             spacing default 0.25 bohr)\n"
@@ -107,6 +112,10 @@ Options parse(int argc, char** argv) {
             if (o.esp_tolerance_set) throw std::invalid_argument("--esp-tolerance specified twice");
             o.esp_tolerance = real(value());
             o.esp_tolerance_set = true;
+        } else if (a == "--fukui-delta") {
+            if (o.fukui_delta_set) throw std::invalid_argument("--fukui-delta specified twice");
+            o.fukui_delta = real(value());
+            o.fukui_delta_set = true;
         } else if (a == "--esp-surface")
             o.esp_surface = true;
         else if (a == "--surface-map")
@@ -206,6 +215,9 @@ Options parse(int argc, char** argv) {
         throw std::invalid_argument("invalid grid spacing or margin");
     if (!std::isfinite(o.esp_tolerance) || o.esp_tolerance < 0)
         throw std::invalid_argument("--esp-tolerance must be finite and nonnegative");
+    if (!(o.fukui_delta > 0)) throw std::invalid_argument("--fukui-delta must be positive");
+    if (o.fukui_delta_set && o.properties.empty())
+        throw std::invalid_argument("--fukui-delta applies only to the ow-* properties");
     if (!o.output_set) o.prefix = o.input.stem().string();
     if (o.prefix.empty()) throw std::invalid_argument("empty output prefix");
     o.mode = o.list              ? Mode::ListOrbitals

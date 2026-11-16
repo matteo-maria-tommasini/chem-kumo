@@ -220,6 +220,53 @@ relative tolerance alone there, so it cannot pass on near-zero values only.
 
 The largest difference is 0.54 of its tolerance (O2 LEAE).
 
+### Orbital-weighted Fukui functions of 2.1.0
+
+Cube files of Multiwfn's user functions 95 (orbital-weighted f+), 96 (f-),
+97 (f0) and 98 (dual descriptor) were computed on 2026-11-16 with the same
+Multiwfn build (`Multiwfn_noGUI`, 2026.9.1 macOS port), grid extension (3 bohr), spacing (0.3 bohr), input sequence
+(function 100) and scratch `settings.ini` (with `ipolarpara= 0` and
+`iuserfunc` set to the function), with Multiwfn's default width
+delta = 0.1 hartree, from `acrolein.fchk.gz` and
+`hybrids/h2o_b3lyp_def2tzvp.fchk.gz` (both restricted closed-shell;
+Multiwfn defines these functions only for closed shells).
+
+| File | FCHK | Multiwfn function |
+|------|------|-------------------|
+| `acrolein_ow_fukui_plus.cube.gz` | acrolein | 100 with `iuserfunc= 95` |
+| `acrolein_ow_fukui_minus.cube.gz` | acrolein | 100 with `iuserfunc= 96` |
+| `acrolein_ow_fukui_zero.cube.gz` | acrolein | 100 with `iuserfunc= 97` |
+| `acrolein_ow_dual_descriptor.cube.gz` | acrolein | 100 with `iuserfunc= 98` |
+| `h2o_ow_fukui_plus.cube.gz` | water | 100 with `iuserfunc= 95` |
+| `h2o_ow_fukui_minus.cube.gz` | water | 100 with `iuserfunc= 96` |
+
+Multiwfn (`orbwei_Fukui` in `function.f90`) keeps only the orbitals whose
+unnormalized weight exp(-((mu - e_i) / delta)^2) is at least 1e-3,
+scanning up from the LUMO (f+) and down from the HOMO (f-) and stopping at
+the first orbital below; kumo sums over all orbitals (docs/API.md). At
+delta = 0.1 Multiwfn keeps the LUMO alone and the HOMO and HOMO-1 for
+acrolein, which drops 0.44% of the weight of f+ and 0.30% of f-, and the
+LUMO, LUMO+1, HOMO and HOMO-1 for water (9e-11 and 5.7e-6 of the weight).
+These differences are far above the Cube precision, so the test
+`multiwfn-reference` rebuilds Multiwfn's truncated sums from the orbitals
+evaluated by kumo, adds the dropped part (kumo's f+ minus the truncated
+sum, and likewise for f-) to each Cube value, and compares the result with
+kumo's field:
+
+| Quantity | Tolerance | Largest difference observed |
+|----------|-----------|-----------------------------|
+| f+, f-, f0 | 2e-5 relative + 1e-8 bohr^-3 | 9.4e-6 relative where \|value\| >= 1e-4 (water f+); 3e-9 bohr^-3 below |
+| Dual descriptor | 2e-5 of \|f+\| + \|f-\|, + 1e-8 bohr^-3 | 5.7e-6 of that scale where \|value\| >= 1e-4 |
+
+Where |value| >= 1e-4 bohr^-3 (6659 to 15591 points per Cube; the largest
+values are 0.14 to 0.47) the relative tolerance must hold alone. Below, at
+seven points with values of 1e-6 to 7e-5, the two programs differ by up to
+3e-9 bohr^-3 (4e-5 relative); the absolute term, about three times that,
+covers them. The correction matters: at some points (on the nodal surfaces
+of the kept orbitals) it is the whole of kumo's value, which Multiwfn
+gives as nearly zero. The largest difference is 0.47 of its tolerance
+(0.28 overall, 0.47 where the relative tolerance holds alone).
+
 ### Lines and planes (test `line-plane`)
 
 The test `line-plane` reuses `h2o_lol.cube.gz` and `h2o_elf.cube.gz`, with

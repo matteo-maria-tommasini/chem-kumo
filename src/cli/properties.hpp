@@ -88,13 +88,14 @@ struct DensitySelection {
 };
 
 /// Read --spin, --property and --backend, check them (and that
-/// --esp-tolerance comes with --property esp), and report the chosen
+/// --esp-tolerance comes with --property esp and --fukui-delta with an ow-*
+/// property), and report the chosen
 /// contraction on the console. Throws std::invalid_argument for invalid or
 /// inconsistent values.
 DensitySelection select_density(const Options& o, const Molecule& mol, Console& console);
 
-/// Evaluator options of a selection: backend, --esp-tolerance and the
-/// console's progress bar.
+/// Evaluator options of a selection: backend, --esp-tolerance, --fukui-delta
+/// and the console's progress bar.
 chem::kumo::EvaluationOptions evaluation_options(const DensitySelection& selection,
                                                  const Options& o, Console& console);
 } // namespace kumo_cli

@@ -338,7 +338,12 @@ kumo_cli_e2e = find_program('tests/cli_end_to_end.sh')
 test(
     'cli-end-to-end',
     kumo_cli_e2e,
-    args: [kumo_cli, meson.current_source_dir() / 'tests/data/o2.fchk.gz', meson.project_version()],
+    args: [
+        kumo_cli,
+        meson.current_source_dir() / 'tests/data/o2.fchk.gz',
+        meson.project_version(),
+        meson.current_source_dir() / 'tests/data/acrolein.fchk.gz',
+    ],
     timeout: 300,
 )
 
@@ -387,8 +392,9 @@ test(
 )
 
 # Evaluator::evaluate at arbitrary points against grid evaluation, and the
-# orbital-energy fields (ALIE, LEA, LEAE, local electronegativity, hardness)
-# against their orbital formulas.
+# orbital-energy fields (ALIE, LEA, LEAE, local electronegativity, hardness,
+# orbital-weighted Fukui functions and dual descriptor) against their orbital
+# formulas.
 test(
     'point-evaluation',
     executable(

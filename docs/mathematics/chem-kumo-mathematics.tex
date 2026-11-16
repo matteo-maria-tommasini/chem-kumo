@@ -527,8 +527,57 @@ cancel in $\mathrm{EA}_L$).
 $\chi_L$ and $\eta_L$ are local analogues of Mulliken's electronegativity
 $(I+A)/2$ and of the chemical hardness $(I-A)/2$.
 
+\paragraph{Orbital-weighted Fukui functions.} The Fukui function
+$f(\mathbf r)=(\partial\rho(\mathbf r)/\partial N)_v$, the response of the
+density to the number of electrons $N$ at a fixed external potential $v$,
+has two one-sided limits: $f^+$, for an added electron (where a nucleophile
+attacks), and $f^-$, for a removed one (where an electrophile attacks). In
+the frontier-orbital approximation they are the LUMO and HOMO densities,
+which is poor when other orbitals lie close in energy. Pino-Rios, Y\'a\~nez,
+C\'ardenas, Ayers and Fuentealba (J.~Comput.\ Chem.\ 38, 481 (2017))
+weight the orbitals near the frontier instead. For a restricted
+closed-shell calculation, with spatial orbitals $\psi_i$ and the chemical
+potential $\mu=\frac12(\varepsilon_{\mathrm{HOMO}}+\varepsilon_{\mathrm{LUMO}})$,
+\begin{gather}
+ f^+(\mathbf r)=\sum_{i\in\mathrm{vir}}g_i^+|\psi_i(\mathbf r)|^2,\qquad
+ f^-(\mathbf r)=\sum_{i\in\mathrm{occ}}g_i^-|\psi_i(\mathbf r)|^2,\\
+ g_i^\pm=\frac{t_i}{\sum_{j\in\mathrm{vir/occ}}t_j},\qquad
+ t_i=\exp\!\Big[-\Big(\frac{\mu-\varepsilon_i}{\delta}\Big)^2\Big],
+\end{gather}
+where the normalizing sum runs over the virtual orbitals for $g^+$ and over
+the occupied ones for $g^-$. The weights sum to one and the orbitals are
+normalized, so $f^+$ and $f^-$ each integrate to one electron; they are
+in bohr$^{-3}$. The width $\delta$ (default $0.1$ hartree, as in
+Multiwfn) controls how many orbitals contribute: as $\delta\to0$ the
+weight concentrates on the orbital closest to $\mu$ on each side, the LUMO
+and the HOMO (if they are not degenerate), and $f^\pm$ tend to the
+frontier-orbital densities. Their mean and difference are
+\begin{equation}
+ f^0=\tfrac12(f^++f^-),\qquad \Delta f=f^+-f^-,
+\end{equation}
+the Fukui function for radical attack and the dual descriptor, positive
+where the molecule accepts electrons better than it gives them
+(electrophilic sites) and negative where it gives them better
+(nucleophilic sites). The orbital occupations do not enter: $f^-$ sums
+$|\psi_i|^2$, not $2|\psi_i|^2$.
+
+The weights are computed as $t_i/\sum_jt_j$ with every exponent first
+shifted by the largest one on its side,
+$t_i\to\exp[-(x_i^2-\min_jx_j^2)]$ with $x_i=(\mu-\varepsilon_i)/\delta$.
+The shift cancels in the ratio, and the largest $t_i$ becomes 1, so the
+weights stay finite however small $\delta$ is. Every orbital enters the
+sums (an orbital whose weight underflows to zero adds exactly zero).
+Multiwfn (user functions 95--98) instead keeps only the orbitals with
+$t_i\ge10^{-3}$, scanning outwards from the LUMO or the HOMO and stopping
+at the first orbital below, and normalizes over those; its values differ
+from these by the weight it drops, $0.4\,\%$ of $f^+$ for acrolein at the
+default $\delta$. Since its cut applies to the unshifted $t_i$, Multiwfn
+returns zero once the HOMO--LUMO gap exceeds
+$2\delta\sqrt{\ln1000}\approx5.3\,\delta$.
+
 \paragraph{Evaluation.} The four orbital sums (occupied density and
-energy, virtual density and energy) and the attachment sum are accumulated
+energy, virtual density and energy), the attachment sum and the two
+weighted sums $f^\pm$ are accumulated
 on blocks of points from the orbital amplitudes
 $(\mathbf C_{\mathrm{occ}})^{\mathsf T}\Phi$ and
 $(\mathbf C_{\mathrm{vir}})^{\mathsf T}\Phi$, without AO screening. Each

@@ -8,6 +8,11 @@
 //    equals average_local_ionization_energy();
 //  - LEAE vanishes for a molecule without negative-energy virtual orbitals,
 //    and the documented values where there is no density;
+//  - the orbital-weighted Fukui functions and dual descriptor of the
+//    closed-shell molecules equal their orbital formulas for several widths
+//    delta, reach the frontier-orbital limit when delta is so small that
+//    every weight but one underflows, and are rejected for O2 (open shell),
+//    for spin components and for an invalid delta;
 //  - identical results with 1, 2 and 4 threads, no points, invalid input.
 //
 // Usage: kumo-point-evaluation-test WATER.fchk O2.fchk ACROLEIN.fchk
@@ -70,6 +75,12 @@ Request full_request(const Molecule& molecule) {
         .add(t.local_electronegativity())
         .add(t.local_hardness())
         .add(density::difference.spin_polarization());
+    // The orbital-weighted Fukui fields need a closed shell (not O2).
+    if (!molecule.unrestricted())
+        request.add(t.orbital_weighted_fukui_plus())
+            .add(t.orbital_weighted_fukui_minus())
+            .add(t.orbital_weighted_fukui_zero())
+            .add(t.orbital_weighted_dual_descriptor());
     const auto homo = molecule.occupied_count(SpinChannel::Alpha);
     request.add(orbital::alpha(1).value()).add(orbital::alpha(homo).value());
     request.add(orbital::alpha(homo + 1).value());
@@ -235,6 +246,135 @@ void check_orbital_energy_formulas(const Molecule& molecule, const std::string& 
     check(zero, name + ": the orbital-energy fields are 0 where there is no density");
 }
 
+// A sample of about 100 points of a grid around the molecule.
+Points sample_points(const Molecule& molecule) {
+    const Points all = points_of(Grid::around(molecule.atoms(), 2.0, 1.1));
+    Points points(3, 0);
+    for (Eigen::Index p = 0; p < all.cols(); p += std::max<Eigen::Index>(1, all.cols() / 100)) {
+        points.conservativeResize(Eigen::NoChange, points.cols() + 1);
+        points.col(points.cols() - 1) = all.col(p);
+    }
+    return points;
+}
+
+Request fukui_request() {
+    const auto& t = density::total;
+    Request request;
+    request.add(t.orbital_weighted_fukui_plus())
+        .add(t.orbital_weighted_fukui_minus())
+        .add(t.orbital_weighted_fukui_zero())
+        .add(t.orbital_weighted_dual_descriptor());
+    return request;
+}
+
+// The orbital-weighted Fukui functions of a restricted closed-shell molecule
+// from orbital_derivatives() and the orbital energies, with the weights
+// computed here directly (no shift of the exponents), for several delta.
+void check_orbital_weighted_fukui(const Molecule& molecule, const std::string& name) {
+    const Points points = sample_points(molecule);
+    const auto& energies = molecule.orbital_energies(SpinChannel::Alpha);
+    const std::size_t homo = molecule.occupied_count(SpinChannel::Alpha); // one-based
+    const std::size_t count = molecule.orbital_count(SpinChannel::Alpha);
+    const double mu = 0.5 * (energies[homo - 1] + energies[homo]);
+    const Request request = fukui_request();
+    const auto& t = density::total;
+    for (const double delta : {0.1, 0.05, 0.3}) {
+        const Results results =
+            Evaluator(molecule, {.fukui_delta = delta}).evaluate(points, request);
+        std::vector<double> gaussian(count);
+        double plus_norm = 0, minus_norm = 0;
+        for (std::size_t i = 0; i < count; ++i) {
+            const double x = (mu - energies[i]) / delta;
+            gaussian[i] = std::exp(-x * x);
+            (i < homo ? minus_norm : plus_norm) += gaussian[i];
+        }
+        double worst = 0;
+        for (Eigen::Index p = 0; p < points.cols(); ++p) {
+            double plus = 0, minus = 0;
+            for (std::size_t i = 0; i < count; ++i) {
+                const double phi = kumo_test::Kernels::orbital_derivatives(
+                                       molecule, points.col(p), i + 1, SpinChannel::Alpha)
+                                       .value;
+                if (i < homo)
+                    minus += gaussian[i] / minus_norm * phi * phi;
+                else
+                    plus += gaussian[i] / plus_norm * phi * phi;
+            }
+            const double expected[] = {plus, minus, 0.5 * (plus + minus), plus - minus};
+            const double scale = std::abs(plus) + std::abs(minus);
+            std::size_t f = 0;
+            for (const auto& key : request.properties()) {
+                const double actual = results.get(key).component()[static_cast<std::size_t>(p)];
+                if (scale > 0)
+                    worst = std::max(worst, std::abs(actual - expected[f]) / scale);
+                else
+                    worst = std::max(worst, std::abs(actual));
+                ++f;
+            }
+        }
+        check(worst <= 1e-12, name + ": with delta " + num(delta) +
+                                  ", f+, f-, f0 and the dual descriptor equal their orbital "
+                                  "formulas to 1e-12 of |f+| + |f-| (max " +
+                                  num(worst) + ")");
+    }
+
+    // A width so small that every Gaussian underflows without the shift of
+    // the exponents: f+ and f- are then the LUMO and HOMO densities.
+    const Results narrow = Evaluator(molecule, {.fukui_delta = 1e-3}).evaluate(points, request);
+    double worst = 0;
+    for (Eigen::Index p = 0; p < points.cols(); ++p) {
+        const auto at = [&](std::size_t index) {
+            const double phi = kumo_test::Kernels::orbital_derivatives(molecule, points.col(p),
+                                                                       index, SpinChannel::Alpha)
+                                   .value;
+            return phi * phi;
+        };
+        const double lumo = at(homo + 1), homo_density = at(homo);
+        const double scale = std::max(lumo + homo_density, 1e-300);
+        const auto q = static_cast<std::size_t>(p);
+        worst = std::max(
+            {worst,
+             std::abs(narrow.get(t.orbital_weighted_fukui_plus()).component()[q] - lumo) / scale,
+             std::abs(narrow.get(t.orbital_weighted_fukui_minus()).component()[q] - homo_density) /
+                 scale});
+    }
+    check(worst <= 1e-12, name +
+                              ": with delta 1e-3, f+ and f- are the LUMO and HOMO densities "
+                              "(max " +
+                              num(worst) + ")");
+
+    // No density far from the molecule: every field is 0.
+    Points far(3, 1);
+    far.col(0) = Eigen::Vector3d(500, 0, 0);
+    const Results empty = Evaluator(molecule).evaluate(far, request);
+    bool zero = true;
+    for (const auto& key : request.properties())
+        zero = zero && empty.get(key).component()[0] == 0.0;
+    check(zero, name + ": the orbital-weighted Fukui fields are 0 where there is no density");
+}
+
+// Open-shell molecules, spin components and invalid widths are rejected.
+void check_fukui_input(const Molecule& water, const Molecule& o2) {
+    kumo_test::check_throws<std::invalid_argument>(
+        [&] { (void)Evaluator(o2).evaluate(Points(3, 1), fukui_request()); },
+        "O2 (unrestricted): the orbital-weighted Fukui functions are rejected");
+    for (const Property key : {density::alpha.orbital_weighted_fukui_plus(),
+                               density::beta.orbital_weighted_fukui_minus(),
+                               density::difference.orbital_weighted_fukui_zero(),
+                               density::alpha.orbital_weighted_dual_descriptor()}) {
+        Request single;
+        single.add(key);
+        kumo_test::check_throws<std::invalid_argument>(
+            [&] { (void)Evaluator(water).evaluate(Points(3, 1), single); },
+            "an orbital-weighted Fukui field of a spin component is rejected");
+    }
+    for (const double delta : {0.0, -0.1, std::numeric_limits<double>::infinity(),
+                               std::numeric_limits<double>::quiet_NaN()})
+        kumo_test::check_throws<std::invalid_argument>(
+            [&] { (void)Evaluator(water, {.fukui_delta = delta}); },
+            "fukui_delta " + num(delta) + " is rejected");
+}
+
 void check_input(const Molecule& water) {
     const Evaluator evaluator(water);
     Request request;
@@ -294,7 +434,9 @@ int main(int argc, char** argv) {
             check_points_against_grid(molecule, names[m]);
             // Water has no virtual orbital with negative energy.
             check_orbital_energy_formulas(molecule, names[m], m == 0 ? 0 : 20);
+            if (!molecule.unrestricted()) check_orbital_weighted_fukui(molecule, names[m]);
             if (m == 0) check_input(molecule);
         }
+        check_fukui_input(Molecule::from_fchk(argv[1]), Molecule::from_fchk(argv[2]));
     });
 }

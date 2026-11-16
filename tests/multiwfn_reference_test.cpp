@@ -16,6 +16,9 @@
 // 1e-3 bohr of a nucleus are skipped: there the two programs treat the
 // singular nuclear term differently (Multiwfn writes about 2e16 on the O2
 // nucleus that its grid contains).
+//
+// The orbital-weighted Fukui functions are compared after removing a known
+// difference of definition (see compare_orbital_weighted).
 #include "chem/kumo.hpp"
 #include "chem/kumo/cube.hpp"
 #include "test_support.hpp"
@@ -26,6 +29,7 @@
 #include <iostream>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace {
 using namespace chem::kumo;
@@ -155,6 +159,146 @@ void compare(const std::filesystem::path& fchk, const std::filesystem::path& cub
                                        kumo_test::num(tolerance.absolute) + " absolute (max " +
                                        kumo_test::num(worst) + " of the tolerance)");
 }
+
+// Orbital-weighted Fukui functions f+ and f- (user functions 95 and 96)
+// and, if `all`, f0 and the dual descriptor (97 and 98), with Multiwfn's
+// default delta of 0.1 hartree.
+//
+// kumo sums over every orbital; Multiwfn keeps only the orbitals whose
+// unnormalized Gaussian t_i = exp(-((mu - e_i) / delta)^2) is at least 1e-3,
+// scanning up from the LUMO (f+) or down from the HOMO (f-) and stopping at
+// the first one below, and normalizes the weights over the kept orbitals.
+// The test rebuilds that truncated sum from the orbitals evaluated by kumo,
+//   m+ = sum_kept t_i |phi_i|^2 / sum_kept t_i   (likewise m-),
+// and adds the difference d+ = f+ - m+ (and d-) to the Cube values: then
+// the Cube value plus d+ must equal kumo's f+ within the Cube rounding.
+// Without this step the two programs differ by the truncated weight, 0.4 %
+// of f+ for acrolein, far above the Cube precision.
+//
+// Where |value| >= 1e-4 bohr^-3 (more than 6000 points per Cube, the largest
+// values being 0.14 to 0.47) the relative tolerance 2e-5 must hold alone.
+// Below, at a few points with values of 1e-6 to 7e-5, the programs differ by
+// up to 3e-9 bohr^-3 absolute, 4e-5 relative; an absolute term of 1e-8
+// bohr^-3, about three times that and 2e-8 to 7e-8 of the largest values,
+// covers them.
+void compare_orbital_weighted(const std::filesystem::path& fchk,
+                              const std::filesystem::path& directory, const std::string& prefix,
+                              const std::string& name, bool all) {
+    const auto molecule = Molecule::from_fchk(fchk);
+    const auto& energies = molecule.orbital_energies(SpinChannel::Alpha);
+    const std::size_t homo = molecule.occupied_count(SpinChannel::Alpha); // one-based
+    const std::size_t count = molecule.orbital_count(SpinChannel::Alpha);
+    constexpr double delta = 0.1, cut = 1e-3;
+    constexpr double absolute = 1e-8, significant_value = 1e-4;
+    constexpr std::size_t minimum_significant = 5000;
+    const double mu = 0.5 * (energies[homo - 1] + energies[homo]);
+    const auto gaussian = [&](std::size_t index) { // one-based
+        const double x = (mu - energies[index - 1]) / delta;
+        return std::exp(-x * x);
+    };
+    std::vector<std::size_t> plus_kept, minus_kept;
+    for (std::size_t i = homo + 1; i <= count && gaussian(i) >= cut; ++i)
+        plus_kept.push_back(i);
+    for (std::size_t i = homo; i >= 1 && gaussian(i) >= cut; --i)
+        minus_kept.push_back(i);
+    if (!kumo_test::check(!plus_kept.empty() && !minus_kept.empty(),
+                          name + ": Multiwfn keeps at least the LUMO and the HOMO"))
+        return;
+    std::cout << name << ": Multiwfn keeps " << plus_kept.size() << " orbitals in f+ and "
+              << minus_kept.size() << " in f-\n";
+
+    struct Function {
+        const char* file;
+        Property key;
+        const char* label;
+    };
+
+    const auto& t = density::total;
+    std::vector<Function> functions = {{"ow_fukui_plus", t.orbital_weighted_fukui_plus(), "f+"},
+                                       {"ow_fukui_minus", t.orbital_weighted_fukui_minus(), "f-"}};
+    if (all) {
+        functions.push_back({"ow_fukui_zero", t.orbital_weighted_fukui_zero(), "f0"});
+        functions.push_back(
+            {"ow_dual_descriptor", t.orbital_weighted_dual_descriptor(), "dual descriptor"});
+    }
+    for (const auto& function : functions) {
+        const auto label = name + " orbital-weighted " + function.label;
+        const auto reference = read_cube(directory / (prefix + "_" + function.file + ".cube.gz"));
+        const auto& grid = reference.field.grid();
+        const auto expected = reference.field.values();
+        Request request;
+        request.add(function.key)
+            .add(t.orbital_weighted_fukui_plus())
+            .add(t.orbital_weighted_fukui_minus());
+        for (const auto i : plus_kept)
+            request.add(orbital::alpha(i).value());
+        for (const auto i : minus_kept)
+            request.add(orbital::alpha(i).value());
+        // Keep the Results alive: component() is a view into it.
+        const Results results = Evaluator(molecule).evaluate(grid, request);
+        const auto actual = results.get(function.key).component();
+        const auto plus = results.get(t.orbital_weighted_fukui_plus()).component();
+        const auto minus = results.get(t.orbital_weighted_fukui_minus()).component();
+        if (!kumo_test::check(actual.size() == expected.size(),
+                              label + ": the Evaluator returns one value per Cube point"))
+            return;
+        const auto truncated = [&](const std::vector<std::size_t>& kept, std::size_t p) {
+            double sum = 0.0, norm = 0.0;
+            for (const auto i : kept) {
+                const double phi = results.get(orbital::alpha(i).value()).component()[p];
+                sum += gaussian(i) * phi * phi;
+                norm += gaussian(i);
+            }
+            return sum / norm;
+        };
+        double worst = 0.0, worst_significant = 0.0, worst_correction = 0.0;
+        std::size_t significant = 0;
+        for (std::size_t p = 0; p < expected.size(); ++p) {
+            const double d_plus = plus[p] - truncated(plus_kept, p);
+            const double d_minus = minus[p] - truncated(minus_kept, p);
+            const double correction = function.key == t.orbital_weighted_fukui_plus()    ? d_plus
+                                      : function.key == t.orbital_weighted_fukui_minus() ? d_minus
+                                      : function.key == t.orbital_weighted_fukui_zero()
+                                          ? 0.5 * (d_plus + d_minus)
+                                          : d_plus - d_minus;
+            // f+, f- and f0 are positive and compared relative to their
+            // value; the dual descriptor crosses zero and is compared on the
+            // scale |f+| + |f-|.
+            const double scale = function.key == t.orbital_weighted_dual_descriptor()
+                                     ? std::abs(plus[p]) + std::abs(minus[p])
+                                     : std::abs(actual[p]);
+            const double difference = std::abs(actual[p] - (expected[p] + correction));
+            const double relative = difference / std::max(relative_tolerance * scale, 1e-300);
+            worst = std::max(worst, difference / (relative_tolerance * scale + absolute));
+            if (std::abs(expected[p]) >= significant_value) {
+                ++significant;
+                worst_significant = std::max(worst_significant, relative);
+            }
+            worst_correction =
+                std::max(worst_correction, std::abs(correction) / std::max(scale, 1e-300));
+        }
+        std::cout << label << ": " << expected.size() << " points, max difference " << worst
+                  << " of the tolerance; " << significant
+                  << " points with |value| >= " << significant_value << ", max difference there "
+                  << worst_significant
+                  << " of the relative tolerance alone; largest truncation correction "
+                  << worst_correction << " of the value\n";
+        kumo_test::check(significant >= minimum_significant,
+                         label + ": at least " + std::to_string(minimum_significant) +
+                             " points with |value| >= " + kumo_test::num(significant_value) +
+                             " (got " + std::to_string(significant) + ")");
+        kumo_test::check(worst_significant <= 1.0,
+                         label + ": where |value| >= " + kumo_test::num(significant_value) +
+                             ", agrees with Multiwfn within " + kumo_test::num(relative_tolerance) +
+                             " relative alone after the truncation correction (max " +
+                             kumo_test::num(worst_significant) + " of the tolerance)");
+        kumo_test::check(worst <= 1.0, label + ": agrees with Multiwfn within " +
+                                           kumo_test::num(relative_tolerance) + " relative + " +
+                                           kumo_test::num(absolute) +
+                                           " absolute after the truncation correction (max " +
+                                           kumo_test::num(worst) + " of the tolerance)");
+    }
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -249,5 +393,8 @@ int main(int argc, char** argv) {
                 electronegativity);
         compare(acrolein, directory / "acrolein_local_hardness.cube.gz",
                 density::total.local_hardness(), "acrolein local hardness", orbital);
+        // Orbital-weighted Fukui functions (closed shell only).
+        compare_orbital_weighted(acrolein, directory, "acrolein", "acrolein", true);
+        compare_orbital_weighted(water, directory, "h2o", "water", false);
     });
 }

@@ -540,7 +540,7 @@ std::vector<double> average_local_ionization_energy(
     const detail::OrbitalEnergyFields fields(
         molecule, detail::SurfaceAccess::evaluator(molecule),
         detail::SurfaceAccess::orbitals(molecule, SpinChannel::Alpha),
-        detail::SurfaceAccess::orbitals(molecule, SpinChannel::Beta), false,
+        detail::SurfaceAccess::orbitals(molecule, SpinChannel::Beta), detail::OrbitalEnergyNeeds{},
         "the average local ionization energy");
     const auto count = static_cast<std::size_t>(points.cols());
     std::vector<double> result(count);

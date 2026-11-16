@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
-[ $# -eq 3 ] || { echo "usage: $0 KUMO FILE.fchk EXPECTED_VERSION" >&2; exit 2; }
+[ $# -eq 4 ] || { echo "usage: $0 KUMO FILE.fchk EXPECTED_VERSION CLOSED_SHELL.fchk" >&2; exit 2; }
 KUMO=$1
 FCHK=$2
+CLOSED_SHELL=$4
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/kumo-cli.XXXXXXXX")
 FAILED=
 # Every failure prints a message: through fail(), or, for a command that
@@ -357,6 +358,37 @@ data "$TMP/orbital.txt" | awk '
     abs($7 - ($4 + $5) / 2) > tolerance || abs($8 - ($4 - $5) / 2) > tolerance { bad = 1 }
     END { exit bad || NR != 3 }' ||
     fail 'orbital-energy fields: ALIE <= 0, LEAE > 0 or chi, eta inconsistent with ALIE and LEA'
+
+# Orbital-weighted Fukui functions (closed shell only): f0 = (f+ + f-) / 2,
+# dual descriptor f+ - f-, f+ and f- positive; --fukui-delta changes them.
+# O2 (open shell), --fukui-delta without an ow-* property and a nonpositive
+# --fukui-delta are rejected.
+OW=ow-fukui-plus,ow-fukui-minus,ow-fukui-zero,ow-dual-descriptor
+run_kumo "$CLOSED_SHELL" --point @1 --point 0.5,0.5,1 --property "$OW" > "$TMP/ow.txt"
+grep -Fxq '# x y z ow-fukui-plus_total ow-fukui-minus_total ow-fukui-zero_total ow-dual-descriptor_total' \
+    "$TMP/ow.txt" || fail 'orbital-weighted Fukui table lacks the expected column names'
+data "$TMP/ow.txt" | awk '
+    function abs(x) { return x < 0 ? -x : x }
+    { tolerance = 1e-9 * (abs($4) + abs($5)) }
+    NF != 7 || $4 <= 0 || $5 <= 0 { bad = 1 }
+    abs($6 - ($4 + $5) / 2) > tolerance || abs($7 - ($4 - $5)) > tolerance { bad = 1 }
+    END { exit bad || NR != 2 }' ||
+    fail 'orbital-weighted Fukui: f+ or f- not positive, or f0, dual descriptor inconsistent'
+run_kumo "$CLOSED_SHELL" --point @1 --point 0.5,0.5,1 --property "$OW" --fukui-delta 0.3 \
+    > "$TMP/ow-wide.txt"
+if [ "$(data "$TMP/ow.txt")" = "$(data "$TMP/ow-wide.txt")" ]; then
+    fail '--fukui-delta 0.3 did not change the orbital-weighted Fukui functions'
+fi
+if "$KUMO" "$FCHK" --point @1 --property ow-fukui-plus > "$TMP/error.log" 2>&1 ||
+    ! grep -q 'restricted closed-shell' "$TMP/error.log"; then
+    fail 'orbital-weighted Fukui function of open-shell O2 not rejected as expected'
+fi
+if "$KUMO" "$CLOSED_SHELL" --point @1 --property alie --fukui-delta 0.2 > "$TMP/error.log" 2>&1; then
+    fail '--fukui-delta without an ow-* property unexpectedly accepted'
+fi
+if "$KUMO" "$CLOSED_SHELL" --point @1 --property "$OW" --fukui-delta 0 > "$TMP/error.log" 2>&1; then
+    fail '--fukui-delta 0 unexpectedly accepted'
+fi
 
 LINE_OUTPUT=$(run_kumo "$FCHK" --line @1:@2 --margin 0.5 --spacing 0.05 --property density,lol \
     --output "$TMP/o2")
