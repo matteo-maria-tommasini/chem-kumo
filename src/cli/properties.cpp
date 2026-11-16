@@ -23,6 +23,18 @@ const std::vector<DensityProperty>& known_properties() {
          Any, Contraction, &D::laplacian},
         {PropertyKind::Tau, "tau", "Positive kinetic energy density tau (hartree/bohr^3)",
          "kinetic energy density tau", Any, Contraction, &D::tau},
+        {PropertyKind::Tau, "kinetic-g",
+         "Lagrangian kinetic energy density G = tau (hartree/bohr^3)", "kinetic energy density G",
+         Any, Contraction, &D::tau},
+        {PropertyKind::TauComponents, "kinetic-g-x",
+         "x term of the kinetic energy density G (hartree/bohr^3)", "x term of G", Any, Contraction,
+         &D::tau_components, 0},
+        {PropertyKind::TauComponents, "kinetic-g-y",
+         "y term of the kinetic energy density G (hartree/bohr^3)", "y term of G", Any, Contraction,
+         &D::tau_components, 1},
+        {PropertyKind::TauComponents, "kinetic-g-z",
+         "z term of the kinetic energy density G (hartree/bohr^3)", "z term of G", Any, Contraction,
+         &D::tau_components, 2},
         {PropertyKind::Elf, "elf", "Electron localization function ELF (dimensionless)", "ELF",
          NotDifference, Contraction, &D::elf},
         {PropertyKind::Lol, "lol", "Localized orbital locator LOL (dimensionless)", "LOL",
@@ -43,12 +55,31 @@ const std::vector<DensityProperty>& known_properties() {
         {PropertyKind::HamiltonianKineticEnergy, "kinetic-k",
          "Hamiltonian kinetic energy density K = tau - lap rho / 4 (hartree/bohr^3)",
          "kinetic energy density K", Any, Contraction, &D::hamiltonian_kinetic_energy},
+        {PropertyKind::HamiltonianKineticEnergyComponents, "kinetic-k-x",
+         "x term of the kinetic energy density K (hartree/bohr^3)", "x term of K", Any, Contraction,
+         &D::hamiltonian_kinetic_energy_components, 0},
+        {PropertyKind::HamiltonianKineticEnergyComponents, "kinetic-k-y",
+         "y term of the kinetic energy density K (hartree/bohr^3)", "y term of K", Any, Contraction,
+         &D::hamiltonian_kinetic_energy_components, 1},
+        {PropertyKind::HamiltonianKineticEnergyComponents, "kinetic-k-z",
+         "z term of the kinetic energy density K (hartree/bohr^3)", "z term of K", Any, Contraction,
+         &D::hamiltonian_kinetic_energy_components, 2},
         {PropertyKind::PotentialEnergyDensity, "potential-energy",
          "Potential energy density V = lap rho / 4 - 2 tau (hartree/bohr^3)",
          "potential energy density", TotalOnly, Contraction, &D::potential_energy_density},
         {PropertyKind::EnergyDensity, "energy-density",
          "Electronic energy density H = lap rho / 4 - tau (hartree/bohr^3)", "energy density",
          TotalOnly, Contraction, &D::energy_density},
+        {PropertyKind::PotentialKineticRatio, "potential-kinetic-ratio",
+         "Ratio |V| / G of the potential and kinetic energy densities (dimensionless)",
+         "ratio |V| / G", TotalOnly, Contraction, &D::potential_kinetic_ratio},
+        {PropertyKind::EnergyDensityPerElectron, "energy-density-per-electron",
+         "Energy density per electron H / rho (hartree/e)", "energy density per electron",
+         TotalOnly, Contraction, &D::energy_density_per_electron},
+        {PropertyKind::KineticEnergyPerElectron, "kinetic-g-per-electron",
+         "Kinetic energy density per electron G / rho (hartree/e)",
+         "kinetic energy density per electron", TotalOnly, Contraction,
+         &D::kinetic_energy_per_electron},
         {PropertyKind::SpinPolarization, "spin-polarization",
          "Spin polarization (rho_alpha - rho_beta) / rho (dimensionless)", "spin polarization",
          DifferenceOnly, Contraction, &D::spin_polarization},
@@ -152,8 +183,9 @@ std::vector<DensityProperty> select_properties(const std::string& list) {
             throw std::invalid_argument("unknown --property '" + token + "' (use one of " + names +
                                         ")");
         }
-        if (std::none_of(result.begin(), result.end(),
-                         [&](const DensityProperty& p) { return p.kind == match->kind; }))
+        if (std::none_of(result.begin(), result.end(), [&](const DensityProperty& p) {
+                return p.kind == match->kind && p.axis == match->axis;
+            }))
             result.push_back(*match);
         if (comma == std::string::npos) break;
         start = comma + 1;
@@ -231,9 +263,13 @@ evaluation_summary(const std::vector<std::pair<DensityComponent, std::string>>& 
     return "Evaluating the " + join(what) + " of the " + densities;
 }
 
-std::vector<double> scalar_values(const chem::kumo::PropertyField& field, PropertyKind kind) {
+std::vector<double> scalar_values(const chem::kumo::PropertyField& field,
+                                  const DensityProperty& property) {
     std::vector<double> values(field.points);
-    if (kind == PropertyKind::Gradient) {
+    if (property.axis >= 0) {
+        const auto source = field.component(static_cast<std::size_t>(property.axis));
+        std::copy(source.begin(), source.end(), values.begin());
+    } else if (property.kind == PropertyKind::Gradient) {
         for (std::size_t q = 0; q < field.points; ++q)
             values[q] = std::sqrt(field.component(0)[q] * field.component(0)[q] +
                                   field.component(1)[q] * field.component(1)[q] +

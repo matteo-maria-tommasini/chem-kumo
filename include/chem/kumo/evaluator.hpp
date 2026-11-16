@@ -38,6 +38,20 @@ namespace chem::kumo {
 ///    virial theorem, in hartree/bohr^3. Total only.
 ///  - EnergyDensity: H = tau + V = laplacian / 4 - tau = -K, in
 ///    hartree/bohr^3. Total only.
+///  - TauComponents: the x, y and z terms of tau (Bader's Lagrangian kinetic
+///    energy density G = tau), G_a = (1/2) sum_i n_i (d psi_i / d a)^2, in
+///    hartree/bohr^3; they add up to tau. Any component.
+///  - HamiltonianKineticEnergyComponents: the x, y and z terms of K,
+///    K_a = -(1/2) sum_i n_i psi_i d^2 psi_i / d a^2 = G_a - H_aa / 4 (H_aa
+///    the diagonal of the density Hessian), in hartree/bohr^3; they add up
+///    to K. Any component.
+///  - PotentialKineticRatio: |V| / G = |laplacian / 4 - 2 tau| / tau of the
+///    total density (dimensionless); 0 where tau is not positive. Total
+///    only.
+///  - EnergyDensityPerElectron: H / rho, in hartree/e; 0 where rho is not
+///    positive. Total only.
+///  - KineticEnergyPerElectron: G / rho = tau / rho, in hartree/e; 0 where
+///    rho is not positive. Total only.
 ///  - SpinPolarization: (rho_alpha - rho_beta) / (rho_alpha + rho_beta), in
 ///    [-1, 1]; 0 where the total density is not positive. Difference only.
 ///  - ShannonEntropyDensity: -rho ln rho of the total density; 0 where rho is
@@ -116,7 +130,13 @@ enum class PropertyKind {
     OrbitalWeightedFukuiPlus,
     OrbitalWeightedFukuiMinus,
     OrbitalWeightedFukuiZero,
-    OrbitalWeightedDualDescriptor
+    OrbitalWeightedDualDescriptor,
+    /// Energy densities (2.1), described above with K, V and H.
+    TauComponents,
+    HamiltonianKineticEnergyComponents,
+    PotentialKineticRatio,
+    EnergyDensityPerElectron,
+    KineticEnergyPerElectron
 };
 
 /// Upper bound of the reduced density gradient returned by the Evaluator.
@@ -211,6 +231,29 @@ struct DensityDescriptor {
 
     /// Electronic energy density H = tau + V (Total only).
     constexpr Property energy_density() const { return {PropertyKind::EnergyDensity, component}; }
+
+    /// The x, y and z terms of tau (= G), three components.
+    constexpr Property tau_components() const { return {PropertyKind::TauComponents, component}; }
+
+    /// The x, y and z terms of K, three components.
+    constexpr Property hamiltonian_kinetic_energy_components() const {
+        return {PropertyKind::HamiltonianKineticEnergyComponents, component};
+    }
+
+    /// |V| / G (Total only).
+    constexpr Property potential_kinetic_ratio() const {
+        return {PropertyKind::PotentialKineticRatio, component};
+    }
+
+    /// Energy density per electron H / rho (Total only).
+    constexpr Property energy_density_per_electron() const {
+        return {PropertyKind::EnergyDensityPerElectron, component};
+    }
+
+    /// Kinetic energy per electron G / rho = tau / rho (Total only).
+    constexpr Property kinetic_energy_per_electron() const {
+        return {PropertyKind::KineticEnergyPerElectron, component};
+    }
 
     /// Spin polarization (rho_alpha - rho_beta) / rho (Difference only).
     constexpr Property spin_polarization() const {

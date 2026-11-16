@@ -202,6 +202,10 @@ void report_surface_map(const Molecule& mol, const Options& o, const DensitySele
             if (property.kind == PropertyKind::Gradient)
                 throw std::invalid_argument(
                     "--surface-map cannot map the gradient (a vector); choose another property");
+            if (property.axis >= 0)
+                throw std::invalid_argument("--surface-map cannot map " + property.name +
+                                            " (one Cartesian term of a vector); choose another "
+                                            "property");
             properties.push_back(density_property(component, property));
             mapped.push_back(&property);
             // PLY property names have no hyphens.

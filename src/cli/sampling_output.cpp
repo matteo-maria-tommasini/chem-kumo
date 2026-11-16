@@ -112,8 +112,8 @@ public:
         std::vector<std::vector<double>> values;
         for (const auto& [component, suffix] : selection_.components)
             for (const auto& property : selection_.properties)
-                values.push_back(scalar_values(results.get(density_property(component, property)),
-                                               property.kind));
+                values.push_back(
+                    scalar_values(results.get(density_property(component, property)), property));
         return values;
     }
 

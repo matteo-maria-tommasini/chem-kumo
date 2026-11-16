@@ -482,6 +482,60 @@ Validation (tests `point-evaluation`, `multiwfn-reference`,
   [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)). The largest
   difference is 54% of its tolerance.
 
+## Energy densities: Cartesian terms of G and K, |V| / G, H / rho, G / rho (2.1.0)
+
+`tau()` is Bader's Lagrangian kinetic energy density G (Multiwfn's
+function 7); the CLI also accepts it as `--property kinetic-g`. 2.1 adds:
+
+- `tau_components()` (`PropertyKind::TauComponents`, any component, three
+  components x, y, z): `G_a = (1/2) sum_i n_i (d psi_i / d a)^2`
+  (hartree/bohr^3), which add up to tau (Multiwfn's user functions 84-86).
+- `hamiltonian_kinetic_energy_components()`
+  (`PropertyKind::HamiltonianKineticEnergyComponents`, any component, three
+  components): `K_a = -(1/2) sum_i n_i psi_i d^2 psi_i / d a^2 =
+  G_a - H_aa / 4`, with H_aa the diagonal of the density Hessian; they add
+  up to K (user functions 81-83). They show how the kinetic energy is
+  shared among the directions, for example along and across a bond.
+- `potential_kinetic_ratio()` (`PropertyKind::PotentialKineticRatio`,
+  Total only): `|V| / G = |lap rho / 4 - 2 tau| / tau`, dimensionless,
+  0 where tau <= 0 (user function 35). At a bond critical point it is
+  below 1 for closed-shell interactions, above 2 for shared ones and in
+  between for intermediate ones (Espinosa, Alkorta, Elguero and Molins,
+  J. Chem. Phys. 117, 5529 (2002)).
+- `energy_density_per_electron()` (`PropertyKind::EnergyDensityPerElectron`,
+  Total only): `H / rho` (hartree/e), 0 where rho <= 0 (user function 17;
+  the bond degree parameter of Espinosa et al.).
+- `kinetic_energy_per_electron()` (`PropertyKind::KineticEnergyPerElectron`,
+  Total only): `G / rho = tau / rho` (hartree/e), 0 where rho <= 0 (user
+  function 13).
+
+The Cartesian terms come from the same contractions as tau and the
+Hessian, with either backend; the terms of tau are kept before they are
+summed, so tau and every other field are unchanged. `Evaluator::field()`
+and `map_on_density_isosurface()` take one-component properties only, so
+they reject the two Cartesian-term properties, like the gradient; in the
+CLI, `kinetic-g-x`, `-y`, `-z` and `kinetic-k-x`, `-y`, `-z` write one term
+each (not with `--surface-map`), and `potential-kinetic-ratio`,
+`energy-density-per-electron` and `kinetic-g-per-electron` the ratios.
+
+Validation (tests `density-fields`, `point-evaluation`,
+`multiwfn-reference`, `cli-end-to-end`):
+
+- the terms add up to tau and K, and every field matches its formula from
+  the Evaluator's own value, Hessian, Laplacian and tau to 1e-13, for
+  water, O2 and acrolein and all four density components; G_a and K_a
+  agree with their orbital forms to 1e-7 of |tau| + |lap rho| / 4 (largest
+  1.3e-13); the ratios are 0 far from the molecule, and spin components of
+  the ratios are rejected;
+- Multiwfn 2026.9.1 Cube files of water (G, G_a, K_a, |V| / G, H / rho,
+  G / rho) and O2 (G, K_x, |V| / G) agree point by point: G and G / rho
+  within 2e-5 relative (O2 G without the grid point on a nucleus, which
+  the Cube header's rounding moves), G_a within 5e-5 relative, and K_a,
+  |V| / G and H / rho, which cancel terms as K, V and H do, within 5e-5 of
+  the scale of those terms (see
+  [tests/REFERENCE_CUBES.md](../tests/REFERENCE_CUBES.md)). The largest
+  difference is 47% of its tolerance.
+
 ## Orbital-weighted Fukui functions and dual descriptor (2.1.0)
 
 The Fukui function f(r) = (d rho(r) / dN) at fixed nuclei measures where the

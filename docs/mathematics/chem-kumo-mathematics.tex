@@ -461,6 +461,31 @@ $\mathcal H$ are
  \mathcal V=\frac{\nabla^2\rho}{4}-2\tau,\qquad
  \mathcal H=\tau+\mathcal V=-\mathcal K .
 \end{equation}
+Since $\tau$ is Bader's Lagrangian kinetic-energy density $G$, these are
+also written $\mathcal V=\nabla^2\rho/4-2G$ and $\mathcal H=G+\mathcal V$.
+
+Both kinetic-energy densities split into Cartesian terms. With
+$\partial_a$ the derivative along $a\in\{x,y,z\}$ and $H_{aa}$ the
+diagonal of the density Hessian,
+\begin{equation}
+ G_a=\frac12\sum_in_i(\partial_a\psi_i)^2,\qquad
+ \mathcal K_a=-\frac12\sum_in_i\psi_i\,\partial_a^2\psi_i=G_a-\frac{H_{aa}}4,
+\end{equation}
+where the second form follows from
+$H_{aa}=\partial_a^2\rho=2\sum_in_i[(\partial_a\psi_i)^2+\psi_i\partial_a^2\psi_i]$.
+They add up to $G$ and $\mathcal K$, and show how the kinetic energy is
+distributed among the directions (for example along and across a bond).
+They are computed from the same contractions as $\tau$ and the Hessian:
+each term of $\tau$ is kept before the sum.
+
+Three ratios characterize interactions at bond critical points: the
+ratio $|\mathcal V|/G$ (below 1 for closed-shell interactions, above 2 for
+shared ones, in between for intermediate ones), the energy density per
+electron $\mathcal H/\rho$ (Espinosa, Alkorta, Elguero and Molins,
+J.~Chem.\ Phys.\ 117, 5529 (2002)), and the kinetic energy per electron
+$G/\rho$. They are defined for the total density; $|\mathcal V|/G$ is set
+to 0 where $G\le0$ and the other two where $\rho\le0$.
+
 The spin polarization is $(\rho_\alpha-\rho_\beta)/\rho$. The Shannon
 entropy density is $-\rho\ln\rho$ and the Fisher information density is
 $|\nabla\rho|^2/\rho$.
@@ -480,6 +505,8 @@ DORI & 1 at critical points of $\rho$ ($\mathbf q=0$, the limit);\\
      & 0 where $\rho\le0$\\
 spin polarization & 0 where $\rho\le0$\\
 Shannon and Fisher densities & 0 where $\rho\le0$\\
+$|\mathcal V|/G$ & 0 where $G\le0$\\
+$\mathcal H/\rho$, $G/\rho$ & 0 where $\rho\le0$\\
 \bottomrule
 \end{tabular}
 \caption{Values used where a field divides by a vanishing quantity. The

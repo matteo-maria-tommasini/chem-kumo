@@ -636,10 +636,14 @@ MappedSurface map_on_density_isosurface(const Molecule& molecule,
     MappedSurface result;
     Request request;
     for (const Property& property : properties) {
-        if (property.kind == PropertyKind::Gradient || property.kind == PropertyKind::Hessian)
+        if (property.kind == PropertyKind::Gradient || property.kind == PropertyKind::Hessian ||
+            property.kind == PropertyKind::OrbitalGradient ||
+            property.kind == PropertyKind::OrbitalHessian ||
+            property.kind == PropertyKind::TauComponents ||
+            property.kind == PropertyKind::HamiltonianKineticEnergyComponents)
             throw std::invalid_argument(
-                "only one-component properties can be mapped on a surface (not the gradient "
-                "or the Hessian)");
+                "only one-component properties can be mapped on a surface (not a gradient, a "
+                "Hessian or the Cartesian terms of G or K)");
         if (std::find(result.properties.begin(), result.properties.end(), property) ==
             result.properties.end()) {
             result.properties.push_back(property);

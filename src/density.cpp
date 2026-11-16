@@ -31,7 +31,8 @@ void contract_derivatives(const Eigen::Ref<const Eigen::MatrixXd>& ao,
     for (int a = 0; a < 3; ++a) {
         const auto ga = ao.col((a + 1) * b + j);
         out.gradient[a] = 2.0 * ga.dot(y);
-        out.tau += 0.5 * ga.dot(product.col((a + 1) * b + j));
+        out.tau_axes[a] = 0.5 * ga.dot(product.col((a + 1) * b + j));
+        out.tau += out.tau_axes[a];
         if (ao_order == 2)
             for (int c = a; c < 3; ++c) {
                 const auto hac = ao.col((4 + detail::ao_hessian_column[a][c]) * b + j);
@@ -54,6 +55,7 @@ detail::DensityDerivatives combine(const detail::DensityDerivatives& a,
     d.hessian = scale * (a.hessian + sign * b.hessian);
     d.laplacian = d.hessian.trace();
     d.tau = scale * (a.tau + sign * b.tau);
+    d.tau_axes = scale * (a.tau_axes + sign * b.tau_axes);
     return d;
 }
 
@@ -85,7 +87,8 @@ detail::DensityDerivatives Molecule::density_derivatives(const Eigen::Vector3d& 
             result.hessian(a, b) = value;
             result.hessian(b, a) = value;
         }
-        result.tau += 0.5 * ao.gradient.col(a).dot(pg.col(a));
+        result.tau_axes[a] = 0.5 * ao.gradient.col(a).dot(pg.col(a));
+        result.tau += result.tau_axes[a];
     }
     result.laplacian = result.hessian.trace();
     return result;
@@ -290,7 +293,8 @@ Molecule::density_derivatives_mo(
         if (ao_order == 0) return d;
         for (int a = 0; a < 3; ++a) {
             d.gradient[a] = 2.0 * v[0].col(j).dot(v[a + 1].col(j));
-            d.tau += 0.5 * v[a + 1].col(j).squaredNorm();
+            d.tau_axes[a] = 0.5 * v[a + 1].col(j).squaredNorm();
+            d.tau += d.tau_axes[a];
             if (ao_order == 2)
                 for (int c = a; c < 3; ++c) {
                     const double value =

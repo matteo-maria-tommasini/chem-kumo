@@ -155,6 +155,13 @@ More fields follow Multiwfn's definitions:
 - `kinetic-k` is the kinetic energy density K = tau - lap rho / 4, for any
   `--spin`; `potential-energy` (V = lap rho / 4 - 2 tau) and
   `energy-density` (H = lap rho / 4 - tau) are for the total density.
+- `kinetic-g` is tau, Bader's Lagrangian kinetic energy density G;
+  `kinetic-g-x`, `kinetic-g-y`, `kinetic-g-z` and `kinetic-k-x`,
+  `kinetic-k-y`, `kinetic-k-z` are the Cartesian terms of G and K (any
+  `--spin`), which add up to G and K. `potential-kinetic-ratio` (|V| / G),
+  `energy-density-per-electron` (H / rho) and `kinetic-g-per-electron`
+  (G / rho) characterize interactions at bond critical points (total
+  density only).
 - `spin-polarization` is (rho_alpha - rho_beta) / rho, in [-1, 1], for
   `--spin difference` only.
 - `shannon` (-rho ln rho) and `fisher` (|grad rho|^2 / rho) are the Shannon

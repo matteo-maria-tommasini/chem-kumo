@@ -43,6 +43,9 @@ struct DensityProperty {
     /// Member function of DensityDescriptor that returns the library
     /// Property for a component: (descriptor.*property)().
     chem::kumo::Property (chem::kumo::DensityDescriptor::*property)() const;
+    /// For a property with x, y and z components (the Cartesian terms of G
+    /// and K), the one written (0, 1 or 2); -1 for the others.
+    int axis = -1;
 };
 
 /// Parse --property: a comma-separated list of names, duplicates ignored,
@@ -74,9 +77,11 @@ std::string
 evaluation_summary(const std::vector<std::pair<DensityComponent, std::string>>& components,
                    const std::vector<DensityProperty>& properties);
 
-/// Values at every point as written to files: the gradient as its norm, the
-/// other properties as they are.
-std::vector<double> scalar_values(const chem::kumo::PropertyField& field, PropertyKind kind);
+/// Values at every point as written to files: the gradient as its norm, one
+/// Cartesian term for the properties with an axis, the other properties as
+/// they are.
+std::vector<double> scalar_values(const chem::kumo::PropertyField& field,
+                                  const DensityProperty& property);
 
 /// Density components and properties selected with --spin and --property, and
 /// the contraction selected with --backend.
