@@ -1,3 +1,10 @@
+// Cube file reading and writing on a small skewed grid with one atom:
+//  - write/read round trip of comments, units, atomic number and charge,
+//    atom position, grid origin, steps and samples (within 1e-11);
+//  - a gzip-compressed copy reads back exactly as the plain file;
+//  - nonfinite samples are rejected on writing, and a damaged gzip file
+//    (bad checksum, truncation, trailing data) or malformed Cube is rejected
+//    on reading with a message naming the problem. No arguments.
 #include "chem/kumo/cube.hpp"
 #include "chem/kumo/field_sampler.hpp"
 #include "test_support.hpp"

@@ -23,8 +23,9 @@ enum class Mode {
 /// The parsed command line; all computation is left to libkumo. String
 /// options hold the option's argument (lower-cased for --mo, --spin,
 /// --property and --backend) and are empty when the option is not given.
-/// The *_set flags record which numerical options were given, because the
-/// defaults depend on the mode; parse() fills in those defaults.
+/// The *_set flags record which options were given: some defaults depend on
+/// the mode (parse() fills them in), and some options are rejected outside
+/// the modes they apply to.
 struct Options {
     Mode mode = Mode::DensityCubes;
     fs::path input;

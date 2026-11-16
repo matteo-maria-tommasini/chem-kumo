@@ -18,7 +18,7 @@ using chem::kumo::DensityComponent;
 /// Density components a property is defined for (as the library defines it).
 enum class Components {
     Any,            ///< total, alpha, beta and spin difference
-    NotDifference,  ///< total, alpha and beta (ELF, LOL)
+    NotDifference,  ///< total, alpha and beta (ELF, LOL and their Tsirelson-Stash forms)
     TotalOnly,      ///< total density only
     DifferenceOnly, ///< spin difference only (spin polarization)
 };
@@ -94,9 +94,8 @@ struct DensitySelection {
 
 /// Read --spin, --property and --backend, check them (and that
 /// --esp-tolerance comes with --property esp and --fukui-delta with an ow-*
-/// property), and report the chosen
-/// contraction on the console. Throws std::invalid_argument for invalid or
-/// inconsistent values.
+/// property), and report the chosen contraction on the console. Throws
+/// std::invalid_argument for invalid or inconsistent values.
 DensitySelection select_density(const Options& o, const Molecule& mol, Console& console);
 
 /// Evaluator options of a selection: backend, --esp-tolerance, --fukui-delta

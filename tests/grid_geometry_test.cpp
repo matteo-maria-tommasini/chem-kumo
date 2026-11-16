@@ -1,3 +1,7 @@
+// Grid geometry validation in the Field constructor, independent of physical
+// scale: grids with steps scaled down to 1e-9 bohr and an oblique grid are
+// accepted with the expected sample counts; linearly dependent step vectors
+// and a NaN origin are rejected with std::invalid_argument. No arguments.
 #include "chem/kumo/density.hpp"
 #include "test_support.hpp"
 

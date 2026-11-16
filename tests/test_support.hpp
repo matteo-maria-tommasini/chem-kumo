@@ -75,9 +75,9 @@ inline bool check_close(double actual, double expected, double rel, double abs,
                             num(tolerance) + ")");
 }
 
-// Largest |actual[i] - expected[i]|, accumulated with std::max from 0 (as the
-// tests' own loops did). A size mismatch is a failed check and returns
-// infinity, so that any later tolerance check fails as well.
+// Largest |actual[i] - expected[i]| (0 for empty inputs). A size mismatch is
+// a failed check and returns infinity, so that any later tolerance check
+// fails as well.
 inline double max_abs_diff(std::span<const double> actual, std::span<const double> expected,
                            std::string_view label = "max_abs_diff") {
     if (!check(actual.size() == expected.size(), std::string(label) +
@@ -108,10 +108,11 @@ double max_abs_diff(const Eigen::MatrixBase<A>& actual, const Eigen::MatrixBase<
     return (a - b).cwiseAbs().maxCoeff();
 }
 
-// Check the number of command-line arguments (not counting the program
-// name): on a mismatch print "usage: <prog> <usage>" and return false.
+// No upper limit on the number of arguments (for require_args).
 inline constexpr int unlimited = std::numeric_limits<int>::max();
 
+// Check the number of command-line arguments (not counting the program
+// name): on a mismatch print "usage: <prog> <usage>" and return false.
 inline bool require_args(int argc, char** argv, int min, int max, std::string_view usage) {
     const int given = argc - 1;
     if (given >= min && given <= max) return true;

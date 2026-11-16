@@ -1,3 +1,11 @@
+// Density derivatives from the stored density matrix against independent
+// routes at 13 points: blocked evaluation (block sizes 1, 5 and 7) and, for
+// alpha and beta, sums over the occupied molecular orbitals (MOs) and their
+// derivatives. Value, gradient, Hessian, Laplacian and tau agree within
+// 2e-5 + 2e-5 relative (the checkpoint stores about 9 significant digits).
+// Block size 0 is rejected.
+//
+// Usage: kumo-density-mo-block-consistency-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

@@ -130,7 +130,8 @@ void test_sphere() {
             values.push_back(direction.dot(v));
         const double threshold = 0.4;
         const auto s = chem::kumo::surface_statistics(mesh, values, threshold);
-        // Discretization errors at spacing 0.2: at most 1.4e-3 (relative).
+        // Discretization errors at spacing 0.2 (the coarser one) are at most
+        // 1.4e-3 relative; the tolerance is 4e-3.
         const double rel = 4e-3;
         kumo_test::check_close(s.area, area, 1e-12, 0, label + ": statistics area = mesh area");
         kumo_test::check_close(s.positive_area / s.area, 0.5, rel, rel, label + ": A+ / A");

@@ -1,3 +1,11 @@
+// Explicit Evaluator backends on a skewed 3x2x3 grid, block sizes 1, 7 and 32
+// and derivative orders 0 to 2: the AO_MO backend (density from molecular
+// orbitals) matches the direct MO kernel for total, alpha, beta and spin
+// value, gradient, tau, Hessian and Laplacian within 2e-11 * max(1, |values|);
+// the default and AUTO choices report AO_MO, explicit AO_P reports AO_P, and
+// an invalid backend value is rejected.
+//
+// Usage: kumo-evaluator-backend-test FILE.fchk...
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

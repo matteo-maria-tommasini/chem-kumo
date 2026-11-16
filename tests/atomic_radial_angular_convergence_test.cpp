@@ -1,5 +1,8 @@
-// Independent single-centre radial/angular quadrature validation.
-// No AO evaluator or FCHK parsing: analytic Gaussian moments are the oracle.
+// Single-centre radial/angular quadrature of the Cartesian moments of
+// exp(-beta r^2) against their closed forms, for exponents from diffuse to
+// tight: the relative error decreases with the radial order (12 to 80 points)
+// and is at most 2e-9 with 48 radial points and 2e-11 with 80. No AO
+// evaluator or FCHK file is involved.
 #include <Eigen/Eigenvalues>
 #include <algorithm>
 #include <array>

@@ -1,3 +1,9 @@
+// Grid integration of scalar fields (integrate_rectangular,
+// integrate_trapezoidal, grid_cell_volume) against exact values, within
+// 1e-12 * max(1, |expected|): hand-computed integrals on small and singleton
+// grids, exactness of the trapezoidal rule for an affine function on an
+// oblique cell, and its h^2/6 error for x^2 (ratio 4 when h is halved).
+// Nonfinite samples and overflowing integrals are rejected. No arguments.
 #include "chem/kumo/field_integrals.hpp"
 #include "chem/kumo/field_sampler.hpp"
 #include "test_support.hpp"

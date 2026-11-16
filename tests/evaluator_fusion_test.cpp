@@ -1,3 +1,12 @@
+// Fused Evaluator requests with the AO_P backend (density matrix
+// contraction): value, gradient, Hessian, Laplacian and tau of the total,
+// alpha, beta and spin densities requested together (in either order, block
+// sizes 1, 5 and 128) equal each property requested alone, the
+// Molecule::density() and blocked density-derivative kernels, and the Hessian
+// trace, all within 2e-11 * max(1, |values|); a duplicate property in a
+// request does not change the result.
+//
+// Usage: kumo-evaluator-fusion-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"
@@ -17,6 +26,8 @@ void require_close(double actual, double expected, const std::string& label) {
     kumo_test::check_close(actual, expected, 2e-11, 2e-11, label);
 }
 
+// Identity since 2.0, when the separate spin enum of the kernels was merged
+// into DensityComponent; kept so that the comparisons read as before.
 DensityComponent legacy_spin(DensityComponent c) {
     switch (c) {
     case DensityComponent::Total: return DensityComponent::Total;

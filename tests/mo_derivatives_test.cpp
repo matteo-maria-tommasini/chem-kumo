@@ -1,3 +1,13 @@
+// Analytic spatial derivatives of molecular orbitals (MOs), alpha and beta,
+// for MO 1, MO 3 and the lowest unoccupied MO at 8 points:
+//  - finite, with a Hessian symmetric within 1e-13;
+//  - gradient and Hessian match central differences (step 1e-4 bohr) within
+//    1e-3 and 1e-2 absolute;
+//  - the Evaluator's orbital gradient and Hessian, on a plane grid and at the
+//    same points, equal the pointwise reference within 1e-12 relative;
+//  - MO index 0 and an invalid spin channel are rejected.
+//
+// Usage: kumo-mo-spatial-derivatives-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

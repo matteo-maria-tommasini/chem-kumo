@@ -1,3 +1,11 @@
+// Analytic atomic orbital (AO) overlap matrix S: finite and symmetric within
+// 1e-12, and (for at most 128 AOs) positive definite. The molecular orbital
+// (MO) coefficients C of each spin read from the checkpoint are orthonormal
+// in this metric: |C^T S C - I| <= 1e-5 (the stored coefficients carry about
+// 9 significant digits). The AO diagonal error, eigenvalue range and
+// condition number are printed as diagnostics only.
+//
+// Usage: kumo-analytic-overlap-test FILE.fchk...
 #include "chem/kumo/basis_evaluator.hpp"
 #include "test_support.hpp"
 #include <Eigen/Eigenvalues>

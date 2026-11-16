@@ -48,9 +48,9 @@ void report_areas(const chem::kumo::TriangleMesh& mesh, double total,
         << "\n";
 }
 
-// Local extrema table: the value in atomic units (column title `hartree`,
-// for example hartree/e) and in `unit` (`factor` units per atomic unit), and
-// the position in Angstrom.
+// Local extrema table: the value in atomic units (the parameter `hartree` is
+// that column's title, for example "hartree/e") and in `unit` (`factor`
+// units per atomic unit), and the position in Angstrom.
 void report_extrema(const std::string& name, const std::vector<std::size_t>& vertices,
                     const chem::kumo::TriangleMesh& mesh, const std::vector<double>& values,
                     const std::string& hartree, const std::string& unit, double factor) {
@@ -174,6 +174,8 @@ void report_alie_surface(const Molecule& mol, const Options& o, Console& console
     energy("Minimum", s.minimum);
     energy("Maximum", s.maximum);
     energy("Average", s.average);
+    // charge_separation is Pi = (1/A) integral |w - average| dA, the average
+    // absolute deviation (named after its meaning for the ESP).
     energy("Average deviation Pi", s.charge_separation);
     out << '\n' << row("") << std::setw(14) << "hartree^2" << std::setw(14) << "eV^2" << '\n';
     out << row("Variance sigma^2") << cell(s.total_variance, 10)
@@ -240,7 +242,7 @@ void report_surface_map(const Molecule& mol, const Options& o, const DensitySele
         line("Average", s.average);
         line("Positive average", s.positive_average);
         line("Negative average", s.negative_average);
-        line("Average deviation Pi", s.charge_separation);
+        line("Average deviation Pi", s.charge_separation); // Pi, as above
         line("Variance sigma^2_tot", s.total_variance);
         line("Positive variance sigma^2_+", s.positive_variance);
         line("Negative variance sigma^2_-", s.negative_variance);

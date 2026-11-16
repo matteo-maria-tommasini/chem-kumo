@@ -1,3 +1,10 @@
+// read_cube() on Gaussian-generated reference Cube files (O2 density and spin
+// density, acrolein density): comments, bohr units, grid counts, origin and
+// steps, first atom, sample count and three sample values match literal
+// values copied from the files (within 1e-12 for geometry and charges,
+// 1e-12 + 1e-10 relative for samples).
+//
+// Usage: kumo-cube-real-reference-test DATA_DIRECTORY (tests/data)
 #include "chem/kumo/cube.hpp"
 #include "test_support.hpp"
 

@@ -1,3 +1,13 @@
+// The AO-MO density kernel (density built from the occupied molecular
+// orbitals evaluated on the atomic orbitals) against the AO-P reference
+// (atomic orbitals contracted with the density matrix P reconstructed from
+// the same orbitals), for the total, alpha, beta and spin densities, first
+// and second derivative order, and block sizes 1, 7 and 32 at 19 points.
+// Density, gradient, tau, Laplacian and Hessian agree within
+// 2e-10 * max(1, |values|); Hessian eigenvalues agree within the Weyl bound
+// and a well-separated lambda2 has the same sign.
+//
+// Usage: kumo-ao-mo-kernel-test FILE.fchk...
 #include "chem/kumo/density.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

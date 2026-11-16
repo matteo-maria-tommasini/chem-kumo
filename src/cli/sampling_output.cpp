@@ -68,6 +68,7 @@ std::vector<Eigen::Vector3d> locations(const std::string& option, const std::str
     return points;
 }
 
+// "(x, y, z)" with six decimals; + 0.0 prints -0 as 0.
 std::string coordinates(const Eigen::Vector3d& p) {
     std::ostringstream out;
     out << std::fixed << std::setprecision(6) << "(" << p.x() + 0.0 << ", " << p.y() + 0.0 << ", "
@@ -77,7 +78,8 @@ std::string coordinates(const Eigen::Vector3d& p) {
 
 // A table of density properties: '#' comment lines describing the sampling
 // and each column, a '#' line with the column names, then one row per point
-// with the coordinates (bohr, fixed) and the values (scientific, 10 digits).
+// with the coordinates (bohr, fixed, 8 decimals) and the values
+// (scientific, 10 decimals).
 class Table {
 public:
     Table(const DensitySelection& selection, std::vector<std::string> coordinate_columns)

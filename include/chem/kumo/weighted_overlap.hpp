@@ -53,7 +53,6 @@ public:
     [[nodiscard]] const Eigen::MatrixXd& matrix() const noexcept { return matrix_; }
 
     /// Clear the accumulated matrix.
-
     void reset() noexcept { matrix_.setZero(); }
 
 private:

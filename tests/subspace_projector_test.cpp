@@ -1,3 +1,11 @@
+// SubspaceProjector, the projector onto a subspace orthogonal in a metric S:
+// S-orthonormal basis, idempotent, self-adjoint in S, preserves the subspace
+// and is invariant under a change of basis, within 1e-11 for a 4x4 example
+// and 1e-9 with the atomic orbital overlap matrix of each file as S (first two
+// basis functions as the subspace). Rank-deficient input, invalid metrics,
+// nonfinite or misshaped vectors and a zero rank tolerance are rejected.
+//
+// Usage: kumo-subspace-projector-test FILE.fchk...
 #include "chem/kumo/subspace_projector.hpp"
 #include "chem/kumo/density.hpp"
 #include "test_support.hpp"

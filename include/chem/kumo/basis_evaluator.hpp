@@ -12,8 +12,8 @@
 
 namespace chem::kumo {
 
-/// Exponents of one Cartesian Gaussian component x^x * y^y * z^z * exp(-a r^2),
-/// where the members x, y and z are the powers of the corresponding coordinates.
+/// Powers of one Cartesian Gaussian component x^i y^j z^k exp(-a r^2): the
+/// members x, y and z hold the powers i, j and k of those coordinates.
 struct CartesianPower {
     int x = 0;
     int y = 0;

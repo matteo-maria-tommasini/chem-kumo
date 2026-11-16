@@ -1,3 +1,10 @@
+// Signed molecular orbital (MO) amplitudes on the grid of a Gaussian
+// reference orbital Cube file (tests/data/mo_reference_cubes; see
+// tests/REFERENCE_CUBES.md), after aligning the arbitrary overall sign:
+// maximum absolute error <= 2e-4 and relative L1 error <= 2e-5.
+//
+// Usage: kumo-orbital-reference-test molecule.fchk orbital.cube
+//            alpha|beta INDEX
 #include <chem/kumo.hpp>
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

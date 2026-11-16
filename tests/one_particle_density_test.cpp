@@ -1,3 +1,12 @@
+// Spin-resolved one-particle density matrices (1-RDMs) P from the checkpoint:
+// P_total = P_alpha + P_beta and P_spin = P_alpha - P_beta within 2e-14; the
+// alpha and beta matrices are finite and symmetric (1e-12), tr(P S) equals the
+// electron count within 2e-4 (S = atomic orbital overlap), and P S P = P
+// within 2e-4 when the density can be built from occupied orbitals (AO-MO
+// eligible). At one point, phi^T P phi equals the density within
+// 1e-9 * max(1, |values|).
+//
+// Usage: kumo-one-particle-density-test FILE.fchk...
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/basis_evaluator.hpp"
 #include "molecule_test_access.hpp"

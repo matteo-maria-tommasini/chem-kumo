@@ -1,3 +1,9 @@
+// Molecular dipole moment from the total density matrix and the atomic
+// orbital first-moment matrices, plus the nuclear contribution, against the
+// "Dipole Moment" record that Gaussian writes in the checkpoint: every
+// Cartesian component within 2e-5 atomic units.
+//
+// Usage: kumo-gaussian-dipole-reference-test file.fchk[.gz]...
 #include "chem/kumo/basis_evaluator.hpp"
 #include "chem/kumo/density.hpp"
 #include "chem/kumo/fchk.hpp"

@@ -1,3 +1,8 @@
+// Automatic backend selection (detail::choose_backend): AUTO picks AO_MO
+// (density from molecular orbitals) when the molecule is eligible and the
+// request needs a density, and AO_P (density matrix contraction) otherwise;
+// an explicit backend is kept, and an explicit AO_MO for an ineligible
+// molecule is rejected with std::invalid_argument. No arguments.
 #include "automatic_backend.hpp"
 #include <stdexcept>
 #include <iostream>

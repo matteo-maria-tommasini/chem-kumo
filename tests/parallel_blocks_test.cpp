@@ -2,8 +2,9 @@
 // inside a parallel loop to the calling thread, for_each_block (every block
 // visited exactly once, first exception rethrown, no call for zero blocks),
 // and the point-block loops (consecutive ranges covering every point once,
-// one workspace per worker, a failing workspace reported). In OpenMP builds the loops really run on
-// several threads; in serial builds the same code runs on one thread.
+// one workspace per worker, a failing workspace reported). In OpenMP builds
+// the loops really run on several threads; in serial builds the same code
+// runs on one thread.
 #include "parallel_blocks.hpp"
 #include "test_support.hpp"
 

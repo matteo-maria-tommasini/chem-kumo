@@ -1,5 +1,7 @@
-// End-to-end, all atomic-center AO overlaps by radial/angular quadrature.
-// The integration rule is deliberately test-only; no production quadrature API.
+// Overlap of the AOs on each atom by single-centre radial/angular quadrature
+// (16 logarithmic radial panels with 8, 12 and 16 Gauss-Legendre points each)
+// against the analytic overlap: with 16 points per panel the error is at most
+// 3e-7 and not larger than with 12. The quadrature exists only in this test.
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
 #include "test_support.hpp"

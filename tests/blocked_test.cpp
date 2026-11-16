@@ -1,3 +1,9 @@
+// Blocked density kernel: the total, alpha, beta and spin densities on a grid
+// around the molecule, evaluated with block sizes 1, 16, 32, 64, 128 and 256,
+// equal those with the default block size within 1e-9 absolute. A repeated
+// component is evaluated once and block size 0 is rejected.
+//
+// Usage: kumo-blocked-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

@@ -1,3 +1,10 @@
+// The default blocked density paths (Molecule::density(), densities_blocked()
+// with block size 128 and with the default size, and spin_densities()) against
+// the original pointwise implementation density_pointwise(), for the total,
+// alpha, beta and spin densities on a grid around the molecule: finite and
+// within 1e-9 absolute.
+//
+// Usage: kumo-default-blocked-test FILE1.fchk FILE2.fchk
 #include <chem/kumo.hpp>
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"

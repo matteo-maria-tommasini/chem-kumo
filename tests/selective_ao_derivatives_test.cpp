@@ -1,3 +1,10 @@
+// First-order Evaluator requests (gradient and tau of the total, alpha, beta
+// and spin densities, which need only first atomic orbital derivatives) equal
+// the same properties from a request that also includes the Hessian, within
+// 5e-11 * max(1, |values|), on a skewed 3x4x5 grid with block sizes 1, 7
+// and 128.
+//
+// Usage: kumo-selective-ao-derivatives-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "test_support.hpp"
 #include <algorithm>

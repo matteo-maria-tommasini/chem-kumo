@@ -1,3 +1,14 @@
+// Gzip-compressed formatted checkpoint (FCHK) files: for O2 and acrolein, the
+// compressed file and a decompressed copy give identical scalars, coordinates
+// and density derivatives (exact equality); compression is detected from the
+// file content, not the suffix; a damaged or truncated gzip file is rejected.
+// Without a "Nuclear charges" record, the charges fall back to the atomic
+// numbers, and an effective core potential file without it is rejected. For
+// the three hexabenzocoronene (HBC) files, the atom, electron and basis
+// function counts are checked.
+//
+// Usage: kumo-fchk-gzip-test O2.fchk.gz ACROLEIN.fchk.gz
+//            HBC1.fchk.gz HBC2.fchk.gz HBC3.fchk.gz
 #include <chem/kumo.hpp>
 #include <chem/kumo/fchk.hpp>
 #include "molecule_test_access.hpp"

@@ -7,7 +7,10 @@
 #include <string>
 
 namespace chem::kumo::detail {
+// Size arithmetic on counts read from files: an overflow of size_t throws
+// std::overflow_error, a negative count std::runtime_error (malformed input).
 
+/// a + b, or std::overflow_error if it does not fit in size_t.
 inline std::size_t checked_add(std::size_t a, std::size_t b, const char* what) {
     if (a > std::numeric_limits<std::size_t>::max() - b) {
         throw std::overflow_error(std::string(what) + " overflows size_t");
@@ -15,6 +18,7 @@ inline std::size_t checked_add(std::size_t a, std::size_t b, const char* what) {
     return a + b;
 }
 
+/// a * b, or std::overflow_error if it does not fit in size_t.
 inline std::size_t checked_mul(std::size_t a, std::size_t b, const char* what) {
     if (a != 0U && b > std::numeric_limits<std::size_t>::max() / a) {
         throw std::overflow_error(std::string(what) + " overflows size_t");
@@ -22,6 +26,8 @@ inline std::size_t checked_mul(std::size_t a, std::size_t b, const char* what) {
     return a * b;
 }
 
+/// A count read from a file as size_t: std::runtime_error if it is
+/// negative, std::overflow_error if it does not fit.
 inline std::size_t checked_size(std::int64_t value, const char* what) {
     if (value < 0) {
         throw std::runtime_error(std::string(what) + " is negative");

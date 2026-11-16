@@ -1,3 +1,10 @@
+// Analytic spatial derivatives of the atomic orbitals (AOs) from
+// BasisEvaluator::evaluate_derivatives() at 12 points:
+//  - the AO values equal evaluate() within 1e-11;
+//  - the gradients and Hessians match central finite differences (step
+//    1e-4 bohr) of the values and gradients within 3e-3 and 3e-2 absolute.
+//
+// Usage: kumo-ao-spatial-derivatives-test FILE1.fchk FILE2.fchk
 #include "chem/kumo/basis_evaluator.hpp"
 #include "chem/kumo/basis.hpp"
 #include "chem/kumo/fchk.hpp"

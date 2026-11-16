@@ -16,11 +16,13 @@ namespace chem::kumo::detail {
  * validate_orbital_backend() (backend_selection.hpp). For integer
  * occupations, P_alpha = C_alpha,occ C_alpha,occ^T and
  * P_beta = C_beta,occ C_beta,occ^T. Molecule checks this equivalence once
- * while loading the FCHK file and caches the result as `eligible`.
+ * while loading the FCHK file (ElectronicStructureInfo::ao_mo_eligible());
+ * the result is passed here as `eligible`.
  *
  * Across the tested systems and workloads, AO_MO was faster than AO_P;
- * this is empirical evidence, NOT a claim of universal superiority. We
- * deliberately avoid an unvalidated AO-count/occupation threshold.
+ * this is empirical evidence, NOT a claim of universal superiority. AUTO
+ * therefore does not switch between AO_MO and AO_P by the number of AOs or
+ * of occupied orbitals: no such threshold has been validated.
  *
  * AO_P remains essential for general FCHK density matrices (including
  * correlated densities), incomplete orbitals, unsupported occupations,

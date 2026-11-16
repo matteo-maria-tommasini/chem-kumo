@@ -1,4 +1,8 @@
 #!/bin/sh
+# End-to-end tests of the kumo program: FILE.fchk is open-shell O2,
+# CLOSED_SHELL.fchk a closed-shell molecule (acrolein). Every mode, its Cube
+# files, tables and reports, the consistency of the printed values, and the
+# rejection of invalid options.
 set -eu
 [ $# -eq 4 ] || { echo "usage: $0 KUMO FILE.fchk EXPECTED_VERSION CLOSED_SHELL.fchk" >&2; exit 2; }
 KUMO=$1
@@ -336,7 +340,8 @@ grep -Fxq '# x y z density_total kinetic-k_total density_alpha kinetic-k_alpha d
 [ "$(data "$TMP/points.txt" | wc -l | tr -d ' ')" -eq 2 ] || fail '--point table has not 2 rows'
 data "$TMP/points.txt" | awk '
     function abs(x) { return x < 0 ? -x : x }
-    # Values have 10 significant digits: compare on the scale |alpha| + |beta|.
+    # Values have 11 significant digits (10 decimals, scientific): compare
+    # on the scale |alpha| + |beta|.
     function differ(a, b, alpha, beta) { return abs(a - b) > 1e-9 * (abs(alpha) + abs(beta)) }
     NF != 11 { bad = 1 }
     differ($4, $6 + $8, $6, $8) || differ($10, $6 - $8, $6, $8) { bad = 1 }
@@ -390,8 +395,8 @@ if "$KUMO" "$FCHK" --surface-map --property kinetic-g-x > "$TMP/error.log" 2>&1;
     fail '--surface-map of a Cartesian term unexpectedly accepted'
 fi
 
-# Tsirelson-Stash ELF and LOL: the ELF lies in [0, 1] for total, alpha and
-# beta; --spin difference is rejected.
+# Tsirelson-Stash ELF and LOL: the ELF of the total density lies in [0, 1];
+# --spin difference is rejected.
 run_kumo "$FCHK" --point @1 --point 0,0.3,1 --spin total --property elf-ts,lol-ts > "$TMP/ts.txt"
 grep -Fxq '# x y z elf-ts_total lol-ts_total' "$TMP/ts.txt" ||
     fail 'Tsirelson-Stash table lacks the expected column names'
@@ -459,7 +464,8 @@ run_kumo "$FCHK" --plane @1:@2:1,0,0 --margin 1 --spacing 0.25 --spin difference
     --property density,spin-polarization --output "$TMP/o2" > /dev/null
 grep -Fxq '# u v x y z density_spin spin-polarization_spin' "$TMP/o2_plane.dat" ||
     fail '--plane table lacks the expected column names'
-# The plane is y = 0; rows of constant u are separated by blank lines.
+# The plane is y = 0, the spin polarization lies in [-1, 1], and rows of
+# constant u are separated by blank lines.
 awk '/^#/ { next } NF == 0 { ++blank; next }
      { ++rows; if ($4 != 0 || $7 < -1 || $7 > 1) bad = 1; if ($1 != u) ++groups; u = $1 }
      END { exit bad || rows < 4 || blank != groups - 1 }' "$TMP/o2_plane.dat" ||

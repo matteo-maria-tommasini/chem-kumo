@@ -1,3 +1,10 @@
+// Molecular orbitals (MOs 1, 3 and the lowest unoccupied, alpha and beta)
+// with 1, 2 and 4 OpenMP threads: grid values are finite and bit-identical to
+// 1 thread; Evaluator value, gradient and Hessian of MO 3 at 137 points, with
+// block sizes 1, 32, 64 and 128, are within 1e-10 of the 1-thread, block-64
+// reference and bit-identical to 1 thread with the same block size.
+//
+// Usage: kumo-parallel-orbitals-test FILE1.fchk FILE2.fchk
 #include "chem/kumo.hpp"
 #include "omp_support.hpp"
 #include "molecule_test_access.hpp"

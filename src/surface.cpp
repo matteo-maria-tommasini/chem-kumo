@@ -128,8 +128,9 @@ CornerPolygon tetrahedron_polygon(const std::array<std::size_t, 4>& masks,
     return polygon;
 }
 
-// A grid edge crossed by the isosurface: the linear indices of its inside
-// and outside end points, and the grid indices (i, j, k) of its lower end.
+// A tetrahedron edge (a cell edge, a face diagonal or the main diagonal of a
+// grid cell) crossed by the isosurface: the linear indices of its inside and
+// outside end points, and the grid indices (i, j, k) of its lower end.
 struct CrossedEdge {
     std::size_t inside = 0, outside = 0;
     Eigen::Vector3i cell;

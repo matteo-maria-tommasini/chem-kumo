@@ -333,7 +333,8 @@ test(
     args: [kumo_cli, meson.current_source_dir() / 'tests/data/o2.fchk.gz', 'alpha'],
 )
 
-# Exercise the installed command-line interface on a real FCHK file.
+# The kumo command line (from the build tree) on O2 and acrolein: every mode,
+# its files and tables, and rejected option combinations.
 kumo_cli_e2e = find_program('tests/cli_end_to_end.sh')
 test(
     'cli-end-to-end',
@@ -373,10 +374,11 @@ test(
     timeout: 300,
 )
 
-# Density fields added in 1.12.0 (LOL, IRI, DORI, K, V, H, spin polarization,
-# Shannon and Fisher densities) and 2.1 (Cartesian terms of G and K, |V| / G,
-# H / rho, G / rho, Tsirelson-Stash ELF and LOL) against their formulas, the orbital forms of K and of the
-# Cartesian terms, and finite differences for DORI.
+# Density fields added in 1.12.0 (LOL, IRI, DORI, K, V, H, spin
+# polarization, Shannon and Fisher densities) and 2.1 (Cartesian terms of G
+# and K, |V| / G, H / rho, G / rho, Tsirelson-Stash ELF and LOL) against
+# their formulas, the orbital forms of K and of the Cartesian terms, and
+# finite differences for DORI.
 test(
     'density-fields',
     executable(
@@ -428,7 +430,8 @@ test(
     timeout: 120,
 )
 
-# Derived density properties against Multiwfn reference Cube files.
+# Density fields, the electrostatic potential, the orbital-energy fields and
+# the orbital-weighted Fukui functions against Multiwfn reference Cube files.
 test(
     'multiwfn-reference',
     executable(
@@ -650,7 +653,8 @@ test(
     args: [meson.current_source_dir() / 'tests/data/o2.fchk.gz'],
 )
 
-# Fused/individual evaluator requests against validated 1.3 kernels.
+# Fused and individual Evaluator requests against the private
+# density-derivative kernels (any order, duplicates, block sizes).
 test(
     'evaluator-fusion',
     executable(
@@ -735,9 +739,10 @@ test(
 )
 
 # Surface analyses against Multiwfn references at a grid spacing of 0.05
-# bohr (water, O2 and acrolein): the electrostatic potential and the average
-# local ionization energy. Local extrema are compared for water and acrolein;
-# those of O2 lie on rings of equal value.
+# bohr: the electrostatic potential and the average local ionization energy
+# (water, O2, acrolein), the local electron attachment energy (acrolein, O2)
+# and the local electron affinity (acrolein). Local extrema of O2 lie on
+# rings of equal value and are not compared.
 multiwfn_surface_reference_exe = executable(
     'kumo-multiwfn-surface-reference-test',
     ['tests/multiwfn_surface_reference_test.cpp'],
@@ -778,7 +783,7 @@ test(
     timeout: 300,
 )
 
-# Internal dependency planning, without changing numerical kernels.
+# EvaluationPlan: the AO derivative order each request needs.
 test(
     'evaluation-plan',
     executable(
@@ -789,7 +794,8 @@ test(
     ),
 )
 
-# Direct numerical regression against the legacy AO-P derivative kernel.
+# Shared AO derivative path against the AO-P derivative kernel, including
+# the spin algebra.
 test(
     'shared-ao-validation',
     executable(
@@ -837,7 +843,8 @@ if benchmarks_enabled
     )
 endif
 
-# Validate AO-MO eligibility without changing production contractions.
+# AO-MO eligibility: the occupied orbitals must reproduce the FCHK density
+# matrices.
 test(
     'backend-selection',
     executable(
@@ -852,7 +859,8 @@ test(
     ],
 )
 
-# Experimental AO-MO kernel, independent of Evaluator selection.
+# AO-MO kernel against the AO-P contraction of the density matrix rebuilt
+# from the MOs.
 test(
     'ao-mo-kernel',
     executable('kumo-ao-mo-kernel-test', 'tests/ao_mo_kernel_test.cpp', dependencies: kumo_dep),
@@ -947,7 +955,9 @@ test(
     timeout: 300,
 )
 
-# Expose the stored spin-resolved FCHK 1-RDM without duplicating state.
+# Spin-resolved FCHK density matrices: P_total = P_alpha + P_beta and
+# P_spin = P_alpha - P_beta, symmetry, tr(P S) = electron count and
+# P S P = P.
 test(
     'one-particle-density',
     executable(
@@ -992,7 +1002,7 @@ test(
     timeout: 300,
 )
 
-# Quadrature-weighted AO overlap accumulation (no grid policy).
+# Quadrature-weighted AO overlap accumulation.
 test(
     'weighted-overlap',
     executable(
@@ -1007,7 +1017,8 @@ test(
     timeout: 300,
 )
 
-# Diagnostic convergence of spatial quadrature toward analytic AO overlap.
+# Diagnostic: Gauss-Hermite quadrature of one AO overlap at orders 8 to 24;
+# the errors are printed, only finiteness is checked.
 test(
     'weighted-overlap-quadrature',
     executable(
@@ -1059,7 +1070,8 @@ test(
     timeout: 300,
 )
 
-# Becke multicenter overlap diagnostic.
+# Diagnostic: Becke multicentre quadrature of the AO overlap; checks the
+# Lebedev rules and the partition of unity, prints the overlap errors.
 test(
     'weighted-overlap-multicenter',
     executable(

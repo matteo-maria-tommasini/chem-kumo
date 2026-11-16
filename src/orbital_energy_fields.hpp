@@ -51,7 +51,9 @@ namespace chem::kumo::detail {
 /// the sums: unlike Multiwfn, which drops the orbitals whose unnormalized
 /// Gaussian is below 1e-3, nothing is cut off.
 ///
-/// The orbitals are evaluated exactly (no atomic-orbital screening). Virtual
+/// The orbitals are evaluated without the per-block screening of atomic
+/// orbitals (only the 1e-14 shell cutoff of BasisEvaluator::ao_cutoff
+/// applies). Virtual
 /// orbitals are those above the occupied ones in each channel, among the MOs
 /// of the FCHK (fewer than the basis functions if Gaussian removed linear
 /// dependencies).

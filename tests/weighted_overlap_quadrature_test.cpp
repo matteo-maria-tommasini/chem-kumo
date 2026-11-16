@@ -1,3 +1,9 @@
+// Diagnostic: the overlap of the first atomic orbital with itself, integrated
+// with WeightedOverlapAccumulator on tensor Gauss-Hermite grids of order 8,
+// 12, 16 and 24 around its center, is printed with its error against the
+// analytic overlap matrix; only finiteness is checked.
+//
+// Usage: kumo-weighted-overlap-quadrature-test FILE.fchk...
 #include "chem/kumo/weighted_overlap.hpp"
 #include "chem/kumo/fchk.hpp"
 #include "test_support.hpp"

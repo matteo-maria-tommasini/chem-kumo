@@ -1,8 +1,8 @@
 // AO screening of grid densities and density derivatives (AO_P and AO_MO
-// contractions): with the
-// default threshold every result matches the exact contraction (threshold 0)
-// to rounding level, a large threshold really changes the result (so
-// screening is exercised), and invalid thresholds are rejected.
+// contractions): with the default threshold every result matches the exact
+// contraction (threshold 0) within 1e-10 for densities and 1e-12 for
+// derivatives; a threshold of 1e-3 changes the result (so screening is
+// exercised); invalid thresholds are rejected.
 #include "chem/kumo.hpp"
 #include "molecule_test_access.hpp"
 #include "test_support.hpp"
